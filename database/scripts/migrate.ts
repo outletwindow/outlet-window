@@ -18,7 +18,8 @@ async function main(): Promise<void> {
   try {
     const migrations = await Promise.all([
       { version: "0001_identity_access_sessions", file: "0001_identity_access_sessions.sql" },
-      { version: "0002_merchants_branches", file: "0002_merchants_branches.sql" }
+      { version: "0002_merchants_branches", file: "0002_merchants_branches.sql" },
+      { version: "0003_audit_events", file: "0003_audit_events.sql" }
     ].map(async migration => ({
       version: migration.version,
       sql: await readFile(resolve(process.cwd(), `../../database/migrations/${migration.file}`), "utf8")
