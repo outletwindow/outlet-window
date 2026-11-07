@@ -28,6 +28,8 @@ export interface AppOptions {
   actorResolution?: ActorResolutionDependencies;
   /** Repository adapter must apply merchantId and branchId predicates in its database query. */
   merchantBranches?: MerchantBranchReader;
+  /** Optional dependency check used by readiness; failures keep the instance out of service. */
+  readinessCheck?: () => Promise<boolean>;
 }
 
 type AuthorizationResult =
@@ -97,10 +99,18 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     version
   }));
 
-  app.get("/ready", async (_request, reply) => reply.code(200).send({
-    status: "ready",
-    checks: { process: "ok" }
-  }));
+  app.get("/ready", async (_request, reply) => {
+    let database: "ok" | "unavailable" = "ok";
+    if (options.readinessCheck) {
+      try { if (!(await options.readinessCheck())) database = "unavailable"; }
+      catch { database = "unavailable"; }
+    }
+    const ready = database === "ok";
+    return reply.code(ready ? 200 : 503).send({
+      status: ready ? "ready" : "not_ready",
+      checks: { process: "ok", ...(options.readinessCheck ? { database } : {}) }
+    });
+  });
 
   app.get("/api/v1", async () => ({
     name: "Outlet Window API",
