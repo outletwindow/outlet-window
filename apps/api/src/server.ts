@@ -25,7 +25,7 @@ const pool = databaseUrl ? new Pool({
   ...(production ? { ssl: { rejectUnauthorized: true } } : {})
 }) : null;
 
-function grantsForAssignments(assignments: readonly RoleAssignment[]): readonly PermissionGrant[] {
+export function grantsForAssignments(assignments: readonly RoleAssignment[]): readonly PermissionGrant[] {
   const readRoles = new Set([
     "merchant_owner", "merchant_admin", "branch_manager", "merchant_employee"
   ]);
