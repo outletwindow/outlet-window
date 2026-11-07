@@ -44,7 +44,8 @@ async function tick(): Promise<void> {
       limit: batchSize,
       maxAttempts: 8,
       baseDelaySeconds: 15,
-      maxDelaySeconds: 900
+      maxDelaySeconds: 900,
+      clock: () => new Date()
     });
     if (result.claimed > 0) process.stdout.write(JSON.stringify({
       event: "scheduled_task_batch",
