@@ -41,6 +41,10 @@ export class PostgresOrderStore {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
+      await client.query(
+        "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+        [input.tenantId + ":" + input.customerId + ":" + input.idempotencyKey]
+      );
       const existing = await client.query<{ id: string; currency: string; total_minor: string | number; metadata: Record<string, unknown> }>(
         `SELECT id, currency, total_minor, metadata FROM customer_orders
          WHERE tenant_id = $1 AND customer_id = $2 AND idempotency_key = $3 FOR UPDATE`,
