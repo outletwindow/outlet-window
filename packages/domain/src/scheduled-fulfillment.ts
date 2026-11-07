@@ -44,7 +44,7 @@ export interface ScheduledOrderPlan {
   /** Preparation task is released at scheduledFor minus preparationMinutes and bufferMinutes. */
   preparationReleaseAtUtc: string;
   /** Courier dispatch may be released at this instant; for home delivery this allows travel time. */
-  courierDispatchAtUtc: string;
+  courierDispatchAtUtc?: string;
   estimate: FulfillmentEstimate;
   createdAt: string;
 }
