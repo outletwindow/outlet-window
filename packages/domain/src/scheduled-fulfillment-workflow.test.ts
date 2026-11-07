@@ -71,12 +71,12 @@ describe("scheduled checkout orchestration decisions", () => {
     };
     const tasks = buildScheduledFulfillmentTasks(plan, 1);
     expect(tasks.map(task => task.taskType)).toEqual([
-      "merchant_reservation", "merchant_preparation", "courier_dispatch"
+      "merchant_preparation", "courier_dispatch"
     ]);
-    expect(tasks[0]?.executeAtUtc).toBe(plan.inventoryReservationDueAt);
-    expect(tasks[1]?.executeAtUtc).toBe(plan.preparationReleaseAtUtc);
-    expect(tasks[2]?.executeAtUtc).toBe(plan.courierDispatchAtUtc);
-    expect(new Set(tasks.map(task => task.idempotencyKey)).size).toBe(3);
+    expect(tasks[0]?.executeAtUtc).toBe(plan.preparationReleaseAtUtc);
+    expect(tasks[1]?.executeAtUtc).toBe(plan.courierDispatchAtUtc);
+    expect(tasks.some(task => task.taskType === "merchant_reservation")).toBe(false);
+    expect(new Set(tasks.map(task => task.idempotencyKey)).size).toBe(2);
   });
 
   it("creates a shopper collection task instead of a courier dispatch task", () => {
@@ -92,7 +92,7 @@ describe("scheduled checkout orchestration decisions", () => {
       createdAt: "2026-11-07T09:00:00.000Z"
     };
     expect(buildScheduledFulfillmentTasks(plan, 1).map(task => task.taskType))
-      .toEqual(["merchant_reservation", "shopper_collection"]);
+      .toEqual(["shopper_collection"]);
   });
 
   it("creates deterministic idempotency keys", () => {
