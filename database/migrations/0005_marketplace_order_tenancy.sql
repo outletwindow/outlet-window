@@ -24,6 +24,24 @@ ALTER TABLE merchants
 ALTER TABLE merchants
   ADD CONSTRAINT merchants_tenant_id_id_key UNIQUE (tenant_id, id);
 
+CREATE OR REPLACE FUNCTION ensure_merchant_tenant()
+RETURNS trigger LANGUAGE plpgsql AS $
+BEGIN
+  IF NEW.tenant_id IS NULL OR length(trim(NEW.tenant_id)) = 0 THEN
+    NEW.tenant_id := NEW.id;
+  END IF;
+  INSERT INTO tenants (id, tenant_type, display_name, status)
+  VALUES (NEW.tenant_id, 'merchant', NEW.display_name,
+    CASE WHEN NEW.status = 'active' THEN 'active' ELSE 'suspended' END)
+  ON CONFLICT (id) DO NOTHING;
+  RETURN NEW;
+END;
+$;
+
+CREATE TRIGGER merchants_ensure_tenant_before_insert
+BEFORE INSERT ON merchants
+FOR EACH ROW EXECUTE FUNCTION ensure_merchant_tenant();
+
 -- Preserve any pre-existing order tenant IDs while making them explicit tenants.
 INSERT INTO tenants (id, tenant_type, display_name, status)
 SELECT DISTINCT o.tenant_id, 'platform', 'Migrated order tenant ' || o.tenant_id, 'active'
