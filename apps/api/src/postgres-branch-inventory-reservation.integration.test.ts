@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Pool } from "pg";
 import { PostgresBranchInventoryReservationAdapter } from "../../../packages/domain/src/postgres-branch-inventory-reservation.js";
-import { PostgresScheduledOrderTransactionRunner } from "../../../packages/domain/src/postgres-scheduled-task-store.js";
+import { PostgresScheduledOrderTransactionRunner, PostgresScheduledTaskInboxPublisher } from "../../../packages/domain/src/postgres-scheduled-task-store.js";
+import type { ScheduledFulfillmentTaskEnvelope } from "../../../packages/domain/src/scheduled-fulfillment-workflow.js";
 import { PostgresBranchInventoryReservationLifecycle } from "../../../packages/domain/src/postgres-branch-inventory-reservation-lifecycle.js";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -14,6 +15,7 @@ integration("PostgreSQL branch inventory reservations", () => {
   const pool: Pool = configuredPool;
   const adapter = new PostgresBranchInventoryReservationAdapter(pool);
   const paymentRecorder = new PostgresScheduledOrderTransactionRunner(pool);
+  const inboxPublisher = new PostgresScheduledTaskInboxPublisher(pool);
   const lifecycle = new PostgresBranchInventoryReservationLifecycle(pool);
   const suffix = randomUUID();
   const merchantId = "inventory-merchant-" + suffix;
@@ -122,6 +124,43 @@ integration("PostgreSQL branch inventory reservations", () => {
       [merchantId, branchId, variantId]
     );
     expect(stock.rows[0]?.reserved_quantity).toBe(1);
+  });
+
+  it("publishes a targeted fulfillment task only for its exact merchant suborder", async () => {
+    const request = await createPaidOrder(1);
+    const task: ScheduledFulfillmentTaskEnvelope = {
+      idempotencyKey: "scheduled-fulfillment:" + request.orderId + ":suborder:" +
+        request.suborderId + ":merchant_preparation:v1",
+      orderId: request.orderId,
+      taskType: "merchant_preparation",
+      executeAtUtc: "2026-11-08T10:00:00.000Z",
+      plan: {
+        orderId: request.orderId, fulfillmentType: "store_pickup",
+        scheduledFor: "2026-11-08T13:00:00+03:00",
+        scheduledForUtc: "2026-11-08T10:00:00.000Z",
+        paymentDueAt: request.requestedAtUtc,
+        inventoryReservationDueAt: request.requestedAtUtc,
+        preparationReleaseAtUtc: "2026-11-08T10:00:00.000Z",
+        estimate: { preparationMinutes: 60, bufferMinutes: 0, travelMinutes: 0 },
+        createdAt: request.requestedAtUtc
+      },
+      target: {
+        merchantTenantId: request.tenantId,
+        suborderId: request.suborderId,
+        merchantId: request.merchantId,
+        branchId: request.branchId
+      }
+    };
+    await inboxPublisher.publish(task, task.idempotencyKey);
+    await inboxPublisher.publish(task, task.idempotencyKey);
+    const inbox = await pool.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM scheduled_task_inbox WHERE order_id = $1",
+      [request.orderId]
+    );
+    expect(inbox.rows[0]?.count).toBe("1");
+    await expect(inboxPublisher.publish({
+      ...task, target: { ...task.target!, branchId: "wrong-branch" }
+    }, task.idempotencyKey)).rejects.toThrow("scheduled_inbox_target_not_found");
   });
 
   it("releases an allocation once and restores available stock", async () => {
