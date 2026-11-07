@@ -24,17 +24,32 @@ export type CreateCustomerOrderResult =
   | { outcome: "already_exists"; orderId: string }
   | { outcome: "idempotency_conflict"; orderId: string };
 
-function canonicalJson(value: unknown): string {
-  if (value === null || typeof value !== "object") {
-    const encoded = JSON.stringify(value);
-    if (encoded === undefined) throw new Error("Metadata must contain JSON values");
-    return encoded;
+function canonicalJson(value: unknown, ancestors = new Set<object>()): string {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return JSON.stringify(value);
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new Error("Metadata numbers must be finite");
+    return JSON.stringify(value);
   }
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  const record = value as Record<string, unknown>;
-  return `{${Object.keys(record).sort().map((key) =>
-    `${JSON.stringify(key)}:${canonicalJson(record[key])}`
-  ).join(",")}}`;
+  if (typeof value !== "object") throw new Error("Metadata must contain JSON values");
+  if (ancestors.has(value)) throw new Error("Metadata cannot contain circular references");
+  ancestors.add(value);
+  try {
+    if (Array.isArray(value)) return "[" + value.map(item => canonicalJson(item, ancestors)).join(",") + "]";
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) throw new Error("Metadata must contain plain JSON objects");
+    const record = value as Record<string, unknown>;
+    return "{" + Object.keys(record).sort().map(key =>
+      JSON.stringify(key) + ":" + canonicalJson(record[key], ancestors)
+    ).join(",") + "}";
+  } finally { ancestors.delete(value); }
+}
+
+function validateMetadata(value: Readonly<Record<string, unknown>> | undefined, field: string): string {
+  const metadata = value ?? {};
+  if (metadata === null || Array.isArray(metadata) || typeof metadata !== "object") {
+    throw new Error(field + " must be a JSON object");
+  }
+  return canonicalJson(metadata);
 }
 
 function requireIdentifier(value: string, field: string): void {
@@ -51,6 +66,8 @@ export class PostgresOrderStore {
     requireIdentifier(input.tenantId, "Tenant ID");
     requireIdentifier(input.customerId, "Customer ID");
     requireIdentifier(input.idempotencyKey, "Idempotency key");
+    if (input.idempotencyKey.trim().length < 8 || input.idempotencyKey.trim().length > 200) throw new Error("Idempotency key must contain 8 to 200 characters");
+    const canonicalOrderMetadata = validateMetadata(input.metadata, "Order metadata");
     if (!Array.isArray(input.suborders) || !input.suborders.length) {
       throw new Error("An order requires at least one merchant suborder");
     }
@@ -61,6 +78,7 @@ export class PostgresOrderStore {
       requireIdentifier(item.id, "Suborder ID");
       requireIdentifier(item.merchantId, "Merchant ID");
       requireIdentifier(item.branchId, "Branch ID");
+      validateMetadata(item.metadata, "Suborder metadata");
       if (ids.has(item.id)) throw new Error("Duplicate suborder ID");
       ids.add(item.id);
       if (!Number.isSafeInteger(item.subtotalMinor) || item.subtotalMinor < 0) {
@@ -105,7 +123,7 @@ export class PostgresOrderStore {
           });
         const same = row.currency === input.currency &&
           String(row.total_minor) === String(input.totalMinor) &&
-          canonicalJson(row.metadata ?? {}) === canonicalJson(input.metadata ?? {}) &&
+          canonicalJson(row.metadata ?? {}) === canonicalOrderMetadata &&
           sameSuborders;
         await client.query("COMMIT");
         return same
@@ -121,13 +139,14 @@ export class PostgresOrderStore {
           input.currency, input.totalMinor, JSON.stringify(input.metadata ?? {})]
       );
       for (const item of input.suborders) {
-        await client.query(
+        const inserted = await client.query(
           `INSERT INTO merchant_suborders
            (id, tenant_id, order_id, merchant_id, branch_id, status, subtotal_minor, metadata)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)`,
           [item.id, input.tenantId, input.id, item.merchantId, item.branchId,
             item.status, item.subtotalMinor, JSON.stringify(item.metadata ?? {})]
         );
+        if (inserted.rowCount !== 1) throw new Error("Merchant branch is unavailable for order creation");
       }
       await client.query("COMMIT");
       return { outcome: "created", orderId: input.id };
