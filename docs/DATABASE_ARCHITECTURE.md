@@ -3,13 +3,12 @@
 ## 1. Purpose
 Define the logical database architecture for a global, multi-merchant commerce and logistics platform. The initial implementation is planned for Jubail, Saudi Arabia, with a design that supports future countries and cities.
 
-## 2. Database Technology — Proposal, Not Yet Approved
-- Proposed primary relational database: PostgreSQL.
-- Proposed ORM candidate: Prisma.
-- Redis is an optional candidate for caching, queues, and short-lived operational data.
-- Object storage is required for product images, invoices, and delivery evidence; provider selection is pending.
-- These are architecture proposals only. Final database, ORM, cache, and cloud-provider choices remain pending an explicit owner decision.
-- Database migrations must be version-controlled and reviewed.
+## 2. Database Technology — Initial Owner Direction
+- Primary relational database: PostgreSQL.
+- Initial managed hosting target: Amazon RDS for PostgreSQL, subject to region availability, compliance review, cost review, and owner approval before production provisioning.
+- The persistence adapter uses a small PostgreSQL-compatible query interface and does not force an ORM.
+- Redis and object storage remain separate future decisions; neither is required for the identity/session schema migration.
+- Database migrations are version-controlled and must be reviewed and tested before production rollout.
 
 ## 3. Core Design Principles
 - Use stable unique identifiers for all records.
@@ -253,7 +252,7 @@ Each domain owns its records and business rules. Other domains access data throu
 - Validate order, inventory, payment, shopper, courier, and handover workflows end to end.
 
 ## 22. Implementation Status
-This document defines the logical database design only. The production schema, migrations, database infrastructure, and integrations have not yet been implemented.
+The first PostgreSQL identity/access/session schema migration and a PostgreSQL-compatible persistence adapter are now present in the development branch. No database instance, credentials, network, backup policy, production deployment, or live database acceptance test has been provisioned; the adapter is not yet connected to the running API.
 
 Project: Outlet Window
 Phase: Phase 0 - Database Architecture
@@ -280,3 +279,9 @@ The domain package defines a storage boundary for sessions:
 - Keep token generation, hashing, secure cookie policy, and cryptographic primitives in approved infrastructure adapters.
 
 The current code supplies contracts and validation only. It does not issue tokens, hash secrets, set cookies, perform password/passkey authentication, implement MFA, detect token reuse by itself, or persist/revoke sessions in a live database. The production adapter must make rotation and family revocation atomic and audit every security-sensitive outcome.
+
+
+## 24. PostgreSQL IAM schema and adapter (development branch)
+The initial migration creates identities, scoped role assignments, sessions, unique contact indexes, expiry indexes, and foreign-key constraints. The adapter implements identity/session readers and transactional writers, including compare-and-swap account status updates, session rotation under row lock, and family revocation. It accepts a PostgreSQL-compatible pool supplied by the host; it does not create a pool or load secrets.
+
+Acceptance remains pending: run the migration against a real PostgreSQL instance, add integration tests using a disposable database, validate concurrent session rotation and rollback, connect the API composition root to the adapter, and configure encrypted backups/restore drills. No production data store is live yet.
