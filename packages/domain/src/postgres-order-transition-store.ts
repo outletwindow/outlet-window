@@ -1,0 +1,103 @@
+import type { PostgresPool } from "./postgres-iam-store.js";
+import {
+  aggregateParentOrderStatus,
+  transitionOrder,
+  type OrderStatus,
+  type OrderTransitionContext,
+  type OrderTransitionResult
+} from "./order-lifecycle.js";
+
+export type PersistedOrderTransitionResult =
+  | { outcome: "updated"; transition: Extract<OrderTransitionResult, { ok: true }>; parentStatus: OrderStatus }
+  | { outcome: "not_found" }
+  | { outcome: "conflict" }
+  | { outcome: "rejected"; reason: Extract<OrderTransitionResult, { ok: false }>["reason"] };
+
+type LockedSuborder = {
+  id: string; order_id: string; tenant_id: string; status: OrderStatus;
+  version: number; merchant_id: string; branch_id: string;
+};
+type StatusRow = { status: OrderStatus };
+
+/**
+ * Persists a merchant-suborder transition and its derived parent status atomically.
+ * Callers must authorize the actor and scope before invoking this repository.
+ */
+export class PostgresOrderTransitionStore {
+  constructor(private readonly pool: PostgresPool) {}
+
+  async transitionSuborder(input: {
+    tenantId: string;
+    orderId: string;
+    suborderId: string;
+    nextStatus: OrderStatus;
+    context: OrderTransitionContext;
+  }): Promise<PersistedOrderTransitionResult> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const locked = await client.query<LockedSuborder>(
+        `SELECT s.id, s.order_id, s.tenant_id, s.status, s.version,
+                s.merchant_id, s.branch_id
+         FROM merchant_suborders s
+         JOIN customer_orders o ON o.tenant_id = s.tenant_id AND o.id = s.order_id
+         WHERE s.tenant_id = $1 AND s.order_id = $2 AND s.id = $3
+         FOR UPDATE OF o, s`,
+        [input.tenantId, input.orderId, input.suborderId]
+      );
+      if (!locked.rowCount) {
+        await client.query("ROLLBACK");
+        return { outcome: "not_found" };
+      }
+      const current = locked.rows[0]!;
+      if (current.version !== input.context.expectedVersion) {
+        await client.query("ROLLBACK");
+        return { outcome: "conflict" };
+      }
+      const transition = transitionOrder({
+        orderId: current.id,
+        status: current.status,
+        version: current.version,
+        updatedAt: new Date().toISOString(),
+        merchantId: current.merchant_id,
+        branchId: current.branch_id,
+        parentOrderId: current.order_id
+      }, input.nextStatus, input.context);
+      if (!transition.ok) {
+        await client.query("ROLLBACK");
+        return { outcome: "rejected", reason: transition.reason };
+      }
+
+      const changed = await client.query(
+        `UPDATE merchant_suborders
+         SET status = $4, version = version + 1, updated_at = $5
+         WHERE tenant_id = $1 AND order_id = $2 AND id = $3 AND version = $6`,
+        [input.tenantId, input.orderId, input.suborderId, input.nextStatus,
+          transition.order.updatedAt, input.context.expectedVersion]
+      );
+      if (changed.rowCount !== 1) {
+        await client.query("ROLLBACK");
+        return { outcome: "conflict" };
+      }
+
+      const statuses = await client.query<StatusRow>(
+        "SELECT status FROM merchant_suborders WHERE tenant_id = $1 AND order_id = $2 ORDER BY id",
+        [input.tenantId, input.orderId]
+      );
+      const parentStatus = aggregateParentOrderStatus(statuses.rows.map(row => row.status));
+      await client.query(
+        `UPDATE customer_orders
+         SET status = $3, version = version + 1, updated_at = $4
+         WHERE tenant_id = $1 AND id = $2`,
+        [input.tenantId, input.orderId, parentStatus, transition.order.updatedAt]
+      );
+      await client.query("COMMIT");
+      return { outcome: "updated", transition, parentStatus };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+}
