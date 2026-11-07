@@ -42,6 +42,7 @@ export async function runScheduledTaskBatch(input: {
   maxAttempts?: number;
   baseDelaySeconds?: number;
   maxDelaySeconds?: number;
+  clock?: () => Date;
 }): Promise<ScheduledTaskWorkerResult> {
   const now = Date.parse(input.nowUtc);
   const maxAttempts = input.maxAttempts ?? 8;
@@ -55,6 +56,7 @@ export async function runScheduledTaskBatch(input: {
     leaseDurationSeconds: input.leaseDurationSeconds ?? 60,
     limit: input.limit ?? 10
   });
+  const clock = input.clock ?? (() => new Date(now));
   const result: ScheduledTaskWorkerResult = {
     claimed: records.length, published: 0, retried: 0, deadLettered: 0, leaseLost: 0
   };
@@ -76,24 +78,26 @@ export async function runScheduledTaskBatch(input: {
     }
     try {
       await input.publisher.publish(record.payload, record.idempotencyKey);
+      const publishedAtUtc = clock().toISOString();
       const acknowledged = await input.store.markPublished({
-        id: record.id, leaseToken, publishedAtUtc: new Date(now).toISOString()
+        id: record.id, leaseToken, publishedAtUtc
       });
       if (acknowledged) result.published += 1;
       else result.leaseLost += 1;
     } catch (error) {
       const errorCode = safeErrorCode(error);
+      const failedAtUtc = clock().toISOString();
       const permanent = error instanceof ScheduledTaskPublishError && !error.retryable;
       if (permanent || record.attemptCount >= maxAttempts) {
         const moved = await input.store.deadLetter({
-          id: record.id, leaseToken, nowUtc: new Date(now).toISOString(), errorCode
+          id: record.id, leaseToken, nowUtc: failedAtUtc, errorCode
         });
         if (moved) result.deadLettered += 1;
         else result.leaseLost += 1;
         continue;
       }
       const retryAt = scheduledTaskRetryAtUtc({
-        nowUtc: new Date(now).toISOString(),
+        nowUtc: failedAtUtc,
         attemptCount: record.attemptCount,
         baseDelaySeconds: input.baseDelaySeconds,
         maxDelaySeconds: input.maxDelaySeconds
@@ -101,7 +105,7 @@ export async function runScheduledTaskBatch(input: {
       if (!retryAt) throw new Error("scheduled_task_retry_time_invalid");
       const retried = await input.store.retry({
         id: record.id, leaseToken, availableAtUtc: retryAt,
-        nowUtc: new Date(now).toISOString(), errorCode
+        nowUtc: failedAtUtc, errorCode
       });
       if (retried) result.retried += 1;
       else result.leaseLost += 1;
