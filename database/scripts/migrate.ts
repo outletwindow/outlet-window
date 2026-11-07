@@ -16,7 +16,7 @@ async function main(): Promise<void> {
   });
 
   try {
-    const sql = await readFile(resolve(process.cwd(), "database/migrations/0001_identity_access_sessions.sql"), "utf8");
+    const sql = await readFile(resolve(process.cwd(), "../../database/migrations/0001_identity_access_sessions.sql"), "utf8");
     const client = await pool.connect();
     try {
       const result = await applyPostgresMigrations(
