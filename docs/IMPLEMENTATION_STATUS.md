@@ -17,8 +17,8 @@ Last updated: 2026-11-08
 - [x] Customer delivery instruction contract: optional contact, doorbell and handover preferences; up to eight photo references; validation and tests.
 - [x] Scheduled fulfillment plan: timezone-aware time calculations and capacity validation.
 - [x] Scheduled checkout saga decisions: payment-before-reservation sequence, customer alternative/refund outcomes, idempotency keys and timed task envelopes.
-- [x] Scheduled task outbox domain contract: idempotent enqueue port, lease-token validation, bounded retry scheduling and tests (adapter not yet implemented).
-- [x] Atomic scheduled-order commit port: validates order/task consistency and coordinates order persistence plus outbox enqueue in one transaction boundary, with rollback/idempotency tests (database adapter not yet implemented).
+- [x] Scheduled task outbox domain contract and PostgreSQL adapter: idempotent enqueue, lease-token validation, bounded retry scheduling and integration tests.
+- [x] Atomic scheduled-order commit port and PostgreSQL transaction adapter: validates payment-capture evidence and coordinates order confirmation plus outbox enqueue in one transaction boundary, with rollback/idempotency tests.
 - [x] Scheduled-task reconciliation contract: detects missing, duplicate, unexpected, dead-letter, expired-lease and stale-pending records with tenant-scoped reader port and tests (reader/worker not yet implemented).
 
 ## In progress
@@ -41,7 +41,7 @@ Last updated: 2026-11-08
 - [ ] Live slot capacity aggregation across branches, shoppers and couriers.
 
 ## Not yet implemented
-The customer, merchant, shopper, courier, admin, owner, payment, inventory, dispatch, AI operations, Telegram, and external integration applications are not yet operational. The scheduled outbox-to-inbox worker is implemented on the development branch but does not yet execute merchant reservation, preparation, shopper collection, or courier dispatch consumers. Customer delivery photo uploads, media storage, customer UI, API persistence and courier/pickup integration are not yet operational. Scheduled order booking UI, live slot capacity, payment execution, immediate merchant stock reservations, durable task queue workers, customer alternative selection and rescheduling are not yet operational.
+The customer, merchant, shopper, courier, admin, owner, payment, inventory synchronization, dispatch, AI operations, Telegram, and external integration applications are not yet operational. The scheduled outbox-to-inbox worker is implemented on the development branch but preparation, shopper collection, and courier dispatch inbox consumers are pending. A PostgreSQL branch inventory ledger and atomic platform-side reservation adapter exist, but checkout wiring and merchant POS/ERP hard-reservation acknowledgements remain pending. Customer delivery photo uploads, media storage, customer UI, API persistence and courier/pickup integration are not yet operational. Scheduled order booking UI, live slot capacity, payment execution, reservation expiry/release/consumption, reconciliation, customer alternative selection and rescheduling are not yet operational.
 
 ## Acceptance rule
 A checkbox is marked complete only when code is present and automated checks or documented acceptance evidence verify it. A design document or interface alone is not proof of an operational feature.
