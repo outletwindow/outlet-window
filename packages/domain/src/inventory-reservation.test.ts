@@ -4,6 +4,7 @@ import { canReleasePreparation, reserveInventoryForPaidOrder } from "./inventory
 const request = {
   tenantId: "merchant-tenant-1",
   orderId: "order-1",
+  suborderId: "suborder-1",
   merchantId: "merchant-1",
   branchId: "branch-1",
   idempotencyKey: "inventory-reservation:order-1:v1",
