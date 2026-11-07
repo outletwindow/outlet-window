@@ -30,7 +30,7 @@ Last updated: 2026-11-07
 - [x] Persisted-session actor resolution contract: bearer parsing, digest comparison, active identity/session checks, scoped role validation, multiple active roles with independently scoped grants, and injected role-to-grant mapping (concrete crypto and persistence adapters not yet implemented).
 - [x] Centralized API authentication/authorization guard shared by protected routes; authentication and scope authorization run before repository availability checks or business-data access. Tests cover unauthenticated requests, scope denial without repository calls, and authorized branch reads.
 - [x] Initial PostgreSQL merchant/branch registry migration and tenant-scoped read adapter; API branch summary route uses the PostgreSQL reader by default.
-- [x] Authorized merchant-scoped branch creation API and PostgreSQL writer; validates payloads, rejects cross-merchant writes, does not overwrite duplicates, and refuses branch creation for inactive merchants. CI integration coverage added; merchant onboarding and full branch management remain pending.
+- [x] Authorized merchant-scoped branch creation and update APIs with PostgreSQL writer; validates payloads, rejects cross-merchant writes, does not overwrite duplicates, refuses writes for inactive merchants, and limits create/update grants to merchant owners/admins. Branch update supports safe activation/deactivation and address preservation when omitted. CI coverage added; merchant onboarding and full branch management remain pending.
 - [ ] Durable scheduled task queue adapter, transactional outbox persistence, and worker execution.
 - [ ] Production transaction adapter and payment-to-order reconciliation/compensation workflow.
 - [ ] Payment provider capture/void/refund integration.
@@ -53,7 +53,7 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [ ] Provision a persistent managed PostgreSQL instance; CI currently validates the application migration runner against an ephemeral PostgreSQL 16 service.
 - [x] Add CI integration checks against a real ephemeral PostgreSQL 16 service for migration execution, identity/role/session persistence, principal isolation, and foreign-key enforcement.
 - [x] Add versioned merchant/branch schema and CI tests for tenant-bound branch reads, orphan-branch foreign-key rejection, and unknown branch behavior.
-- [x] Add PostgreSQL branch creation tests for active merchant inserts, duplicate protection, and unknown merchant rejection; add API authorization and payload validation tests.
+- [x] Add PostgreSQL branch creation/update tests for active merchant inserts, duplicate protection, tenant isolation, and unknown merchant handling; add API authorization and payload validation tests.
 - [x] Wire the API server to PostgreSQL when DATABASE_URL is configured; production startup refuses to run without it, readiness checks database connectivity, and graceful shutdown closes the pool.
 - [x] Add a CLI migration command using the advisory-locked versioned migration runner; migrations are explicit and are not silently applied by API startup.
 - [x] CI acceptance for TypeScript adapter tests covering tenant-bound session reads and concurrent one-time session rotation (run 42404896175 passed typecheck, tests, and build).
