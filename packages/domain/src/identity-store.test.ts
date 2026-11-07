@@ -25,14 +25,16 @@ describe("identity persistence contracts", () => {
   });
 
   it("requires a contact method for humans and validates phone/email", () => {
-    expect(isIdentityProfileValid({ ...identity, primaryEmail: undefined })).toBe(false);
+    const { primaryEmail: _email, ...withoutEmail } = identity;
+    expect(isIdentityProfileValid(withoutEmail)).toBe(false);
     expect(isIdentityProfileValid({ ...identity, primaryEmail: "bad-email" })).toBe(false);
     expect(isIdentityProfileValid({ ...identity, primaryPhone: "0550000000" })).toBe(false);
   });
 
   it("allows service principals without human contact details", () => {
+    const { primaryEmail: _email, ...serviceWithoutEmail } = identity;
     expect(isIdentityProfileValid({
-      ...identity, principalType: "service", primaryEmail: undefined
+      ...serviceWithoutEmail, principalType: "service"
     })).toBe(true);
   });
 
