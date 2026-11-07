@@ -50,8 +50,7 @@ integration("PostgresMerchantBranchWriter", () => {
       displayName: "Unknown", cityCode: "JUB"
     })).resolves.toBe("merchant_not_found");
   });
-});
-  it("updates only the requested merchant branch and persists the new state", async () => {
+it("updates only the requested merchant branch and persists the new state", async () => {
     await expect(writer.updateBranch({
       merchantId, branchId, displayName: "Jubail Updated", cityCode: "JUB",
       status: "inactive", address: { district: "Al Fanateer" }
@@ -66,4 +65,4 @@ integration("PostgresMerchantBranchWriter", () => {
       cityCode: "JUB", status: "active"
     })).resolves.toBe("merchant_not_found");
   });
-
+});
