@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import {
   authorize,
   type Actor,
@@ -67,7 +67,7 @@ async function authorizeRequest(
 }
 
 function sendAuthorizationFailure(
-  reply: Parameters<Parameters<FastifyInstance["get"]>[1]>[1],
+  reply: FastifyReply,
   result: Extract<AuthorizationResult, { actor: null }>
 ) {
   return reply.code(result.statusCode).send({
