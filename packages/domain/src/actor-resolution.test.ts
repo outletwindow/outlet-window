@@ -22,7 +22,12 @@ const assignment: RoleAssignment = {
   scope: { merchantId: "merchant-1", branchId: "branch-1" },
   active: true, validFrom: "2026-11-07T09:00:00.000Z", assignedBy: "admin-1"
 };
-function dependencies(options: { stored?: StoredSession | null; identityStatus?: "active" | "suspended"; assignments?: RoleAssignment[] } = {}) {
+function dependencies(options: {
+  stored?: StoredSession | null;
+  identityStatus?: "active" | "suspended";
+  assignments?: RoleAssignment[];
+  now?: string;
+} = {}) {
   const sessions: SessionStoreReader = {
     async findStoredSession() { return null; },
     async findStoredSessionById() { return options.stored === undefined ? session : options.stored; }
@@ -43,7 +48,7 @@ function dependencies(options: { stored?: StoredSession | null; identityStatus?:
   return {
     sessions, identities,
     async digestToken() { return "digest-value"; },
-    now: () => new Date("2026-11-07T10:30:00.000Z"),
+    now: () => new Date(options.now ?? "2026-11-07T10:30:00.000Z"),
     grantsForAssignments: () => [{
       resource: "merchant.branch" as const,
       actions: ["read" as const],
@@ -59,6 +64,7 @@ describe("actor resolution from persisted sessions", () => {
     });
     expect(result.actor?.id).toBe("principal-1");
     expect(result.actor?.role).toBe("merchant_owner");
+    expect(result.actor?.grants[0]?.scope).toEqual({ merchantId: "merchant-1", branchId: "branch-1" });
   });
 
   it("rejects absent or malformed bearer tokens", async () => {
@@ -80,13 +86,46 @@ describe("actor resolution from persisted sessions", () => {
     })).failure).toBe("invalid_session");
   });
 
+  it("rejects expired, idle-expired, and revoked sessions", async () => {
+    const expired = {
+      ...session,
+      descriptor: { ...session.descriptor, expiresAt: "2026-11-07T10:00:00.000Z" }
+    };
+    const idleExpired = { ...session, idleExpiresAt: "2026-11-07T10:00:00.000Z" };
+    const revoked = {
+      ...session,
+      descriptor: { ...session.descriptor, revokedAt: "2026-11-07T10:15:00.000Z" }
+    };
+    for (const stored of [expired, idleExpired, revoked]) {
+      const result = await resolveActorFromBearerToken({
+        authorizationHeader: `Bearer ${token}`, dependencies: dependencies({ stored })
+      });
+      expect(result).toEqual({ actor: null, failure: "invalid_session" });
+    }
+  });
+
+  it("rejects an identity that does not own the persisted session", async () => {
+    const foreignSession = {
+      ...session,
+      descriptor: { ...session.descriptor, principalId: "another-principal" }
+    };
+    const result = await resolveActorFromBearerToken({
+      authorizationHeader: `Bearer ${token}`,
+      dependencies: dependencies({ stored: foreignSession })
+    });
+    expect(result).toEqual({ actor: null, failure: "invalid_session" });
+  });
+
   it("rejects inactive identities and accepts multiple explicit active roles", async () => {
     expect((await resolveActorFromBearerToken({
       authorizationHeader: `Bearer ${token}`, dependencies: dependencies({ identityStatus: "suspended" })
     })).failure).toBe("inactive_identity");
+
     const multiRole = await resolveActorFromBearerToken({
       authorizationHeader: `Bearer ${token}`,
-      dependencies: dependencies({ assignments: [assignment, { ...assignment, id: "role-2", role: "branch_manager" }] })
+      dependencies: dependencies({ assignments: [
+        assignment, { ...assignment, id: "role-2", role: "branch_manager" }
+      ] })
     });
     expect(multiRole.actor?.role).toBe("merchant_owner");
     expect(multiRole.actor?.roles).toEqual(["merchant_owner", "branch_manager"]);
@@ -96,5 +135,26 @@ describe("actor resolution from persisted sessions", () => {
       authorizationHeader: `Bearer ${token}`,
       dependencies: dependencies({ assignments: [] })
     })).failure).toBe("invalid_role_assignments");
+  });
+
+  it("rejects malformed and inactive role assignments", async () => {
+    const malformed = { ...assignment, id: " ", validFrom: "not-a-date" };
+    const inactive = { ...assignment, id: "role-inactive", active: false };
+    for (const role of [malformed, inactive]) {
+      const result = await resolveActorFromBearerToken({
+        authorizationHeader: `Bearer ${token}`,
+        dependencies: dependencies({ assignments: [role] })
+      });
+      expect(result).toEqual({ actor: null, failure: "invalid_role_assignments" });
+    }
+  });
+
+  it("rejects a role assignment that has not become valid yet", async () => {
+    const futureRole = { ...assignment, validFrom: "2026-11-07T11:00:00.000Z" };
+    const result = await resolveActorFromBearerToken({
+      authorizationHeader: `Bearer ${token}`,
+      dependencies: dependencies({ assignments: [futureRole] })
+    });
+    expect(result).toEqual({ actor: null, failure: "invalid_role_assignments" });
   });
 });
