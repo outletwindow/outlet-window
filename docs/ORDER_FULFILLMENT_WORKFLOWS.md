@@ -99,19 +99,53 @@ If stock becomes unavailable:
 
 Eligibility must consider service radius, route distance, vehicle capacity, merchant readiness and operational availability.
 
-## 7. Scheduled Orders
+## 7. Scheduled Orders and Customer-Selected Time Slots
 
-- Customer selects a permitted future delivery date and time window.
-- The platform checks merchant and workforce availability.
-- Inventory is checked before accepting the schedule.
-- Where supported, stock may be reserved under a documented reservation policy.
-- Otherwise, stock must be revalidated before preparation.
-- Customer receives reminders and status updates.
-- Delays and unavailable products trigger an exception workflow.
+Customers may select a preferred date and time window for all supported fulfillment modes:
+- Home delivery by courier.
+- Store/branch pickup.
+- Personal shopper collection or handover.
 
-The scheduling horizon may extend up to three months, subject to market and merchant capability.
+The scheduling engine must:
+- Show only slots supported by branch, merchant, shopper and courier capacity.
+- Calculate a preparation estimate per cart, branch, fulfillment type and current workload.
+- Include packing, store queue, mall walking/collection, consolidation and travel time where applicable.
+- Include a configurable safety buffer and avoid promising an exact minute when only a time window is reliable.
+- Revalidate slot capacity atomically at checkout to prevent overbooking.
+- Use the market's local time zone and preserve the UTC instant; daylight-saving transitions must not create ambiguous bookings.
+- Support a configurable horizon up to 90 days, subject to merchant and market capability.
 
-A scheduled order is not a guarantee of inventory unless an actual reservation exists.
+### Payment and early stock reservation
+
+For a confirmed paid booking, the configured payment policy captures/collects the amount at checkout (or authorizes it where the payment method requires later capture). Payment is recorded immediately and idempotently; payment must never be inferred from order status.
+
+As soon as payment succeeds and the order is confirmed, Order Management sends the branch an immediate reservation request. Inventory must attempt an atomic reservation of the exact SKU, size, color and quantity. The merchant receives a reservation notice early, even when the preparation task is scheduled for later. If the merchant integration cannot reserve stock, the customer must see that availability is not guaranteed and the platform must revalidate before the preparation cutoff.
+
+### Preparation release calculation
+
+For a target handover time T:
+- Home delivery: preparation release = T − estimated travel time − preparation time − safety buffer. Courier dispatch = T − estimated travel time.
+- Store pickup: preparation release = T − preparation time − safety buffer.
+- Personal shopper handover/collection: preparation release = T − estimated shopping/collection time − safety buffer. Shopper assignment and task release are scheduled accordingly.
+
+Example: customer books delivery for 17:00, preparation estimate is 30 minutes, travel estimate is 20 minutes, and buffer is zero. The order is created and paid at checkout; the branch is asked to reserve the item immediately. The preparation task is released at 16:10 and courier dispatch at 16:40 to target the 17:00 arrival. For a store pickup at 17:00 with a 30-minute preparation estimate, the branch preparation task is released at 16:30.
+
+The engine must not wait until the preparation cutoff to create the order or reserve stock. Only the operational preparation/dispatch task is delayed. If a booking is made inside the calculated preparation window, release the task immediately and show the customer the earliest realistic available slot.
+
+### Out-of-stock and alternatives
+
+If the exact item cannot be reserved:
+- Do not silently confirm the requested variant as reserved.
+- Show alternatives such as another authorized branch, the same product in another eligible variant, or a similar product.
+- Display price difference, availability confidence and revised preparation/arrival time.
+- Hold the booking in a clear exception/pending-customer-choice state; do not purchase or substitute without approval.
+- If the customer declines or no eligible alternative exists, cancel the affected line/order and process the appropriate refund or release under the payment policy and applicable law.
+
+Slot alternatives must also be offered if the requested time has no remaining capacity.
+
+### Notifications and rescheduling
+
+Notify the customer when the slot is confirmed, stock is reserved (or could not be reserved), preparation begins, a courier/shopper is assigned, and the order is ready or approaching handover. A time or price change requires customer approval. Preserve the original booking and every reschedule in the audit history.
 
 ## 7A. Customer Delivery Photos and Preferences
 
