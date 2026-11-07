@@ -35,7 +35,8 @@ describe("fulfillment provider dispatch handlers", () => {
     const dispatch = vi.fn(async () => ({ status: "accepted" as const, providerReference: "provider-task-1" }));
     const handlers = createFulfillmentDispatchHandlers({ merchant_preparation: { dispatch } });
     await handlers.merchant_preparation!.handle(task, task.idempotencyKey);
-    expect(dispatch).toHaveBeenCalledExactlyOnceWith({
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(dispatch).toHaveBeenCalledWith({
       taskType: "merchant_preparation", orderId: "order-1",
       tenantId: "tenant-1", suborderId: "suborder-1",
       merchantId: "merchant-1", branchId: "branch-1",
