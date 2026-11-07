@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Pool } from "pg";
 import {
   createScheduledTaskOutboxRecord,
@@ -58,6 +58,8 @@ integration("PostgreSQL scheduled task outbox", () => {
     await pool.query("DELETE FROM customer_orders WHERE id = $1", [orderId]);
   }
 
+  afterEach(async () => { await cleanup(); });
+
   it("deduplicates identical enqueue requests and rejects conflicting payload reuse", async () => {
     const record = createScheduledTaskOutboxRecord({
       id: "outbox-" + randomUUID(), task: task(), nowUtc: "2026-11-08T09:00:00.000Z"
@@ -70,7 +72,6 @@ integration("PostgreSQL scheduled task outbox", () => {
       nowUtc: "2026-11-08T09:00:00.000Z"
     })!;
     await expect(store.enqueue(conflicting)).rejects.toThrow("scheduled_outbox_idempotency_conflict");
-    await cleanup();
   });
 
   it("allows only one concurrent worker to claim a due task", async () => {
