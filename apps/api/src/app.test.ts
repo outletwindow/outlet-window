@@ -122,4 +122,72 @@ describe("Outlet Window API foundation", () => {
       await protectedApp.close();
     }
   });
+  it("requires merchant-scoped create permission before branch creation", async () => {
+    let writes = 0;
+    const protectedApp = buildApp({
+      resolveActor: async () => merchantActor,
+      merchantBranchWriter: {
+        createBranch: async () => { writes += 1; return "created"; }
+      }
+    });
+    await protectedApp.ready();
+    try {
+      const denied = await protectedApp.inject({
+        method: "POST",
+        url: "/api/v1/merchants/merchant-2/branches",
+        payload: { branchId: "branch-2", displayName: "Jubail East", cityCode: "JUB" }
+      });
+      expect(denied.statusCode).toBe(403);
+      expect(writes).toBe(0);
+
+      const actorWithCreate: Actor = {
+        ...merchantActor,
+        grants: [{ resource: "merchant.branch", actions: ["create"], scope: { merchantId: "merchant-1" } }]
+      };
+      const createApp = buildApp({
+        resolveActor: async () => actorWithCreate,
+        merchantBranchWriter: {
+          createBranch: async () => { writes += 1; return "created"; }
+        }
+      });
+      await createApp.ready();
+      try {
+        const allowed = await createApp.inject({
+          method: "POST",
+          url: "/api/v1/merchants/merchant-1/branches",
+          payload: { branchId: "branch-2", displayName: "Jubail East", cityCode: "JUB" }
+        });
+        expect(allowed.statusCode).toBe(201);
+        expect(writes).toBe(1);
+      } finally {
+        await createApp.close();
+      }
+    } finally {
+      await protectedApp.close();
+    }
+  });
+
+  it("validates branch creation payloads", async () => {
+    const actorWithCreate: Actor = {
+      ...merchantActor,
+      grants: [{ resource: "merchant.branch", actions: ["create"], scope: { merchantId: "merchant-1" } }]
+    };
+    const protectedApp = buildApp({
+      resolveActor: async () => actorWithCreate,
+      merchantBranchWriter: { createBranch: async () => "created" }
+    });
+    await protectedApp.ready();
+    try {
+      const response = await protectedApp.inject({
+        method: "POST",
+        url: "/api/v1/merchants/merchant-1/branches",
+        payload: { branchId: "x", displayName: " ", cityCode: "jub" }
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toEqual({ error: "invalid_request" });
+    } finally {
+      await protectedApp.close();
+    }
+  });
+
 });
