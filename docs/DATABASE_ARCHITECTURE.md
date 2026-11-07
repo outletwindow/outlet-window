@@ -269,3 +269,14 @@ The domain package defines database-agnostic ports for:
 Validation rules require human identities to have a valid email or E.164-style phone number; service principals may omit human contact details. Role scopes must be explicit. Branch scope requires a merchant scope; city scope requires a country; platform-wide scope must be explicitly platform-only. Role validity windows use a half-open interval: validFrom is inclusive and validUntil is exclusive.
 
 These are contracts and validation helpers, not authentication. Password hashing, passkeys, MFA, identity-provider integration, session token issuance, database constraints, persistent adapters, and API middleware remain unimplemented. Raw passwords, bearer tokens, OTPs, and recovery secrets must never be stored in these identity records.
+
+## 24. Session security and token lifecycle
+The domain package defines a storage boundary for sessions:
+- Store only a cryptographic digest of an opaque bearer token; never persist the raw token.
+- Bind every session to its principal and a session family.
+- Validate absolute expiry, idle expiry, revocation, principal ownership, and allowed authentication methods.
+- Rotate a session using compare-and-swap against the active prior session and its expected token digest.
+- Revoke the complete session family on logout/security events/token-reuse detection/password reset.
+- Keep token generation, hashing, secure cookie policy, and cryptographic primitives in approved infrastructure adapters.
+
+The current code supplies contracts and validation only. It does not issue tokens, hash secrets, set cookies, perform password/passkey authentication, implement MFA, detect token reuse by itself, or persist/revoke sessions in a live database. The production adapter must make rotation and family revocation atomic and audit every security-sensitive outcome.
