@@ -294,5 +294,54 @@ app.patch<{
     } });
   });
 
+
+  app.post<{
+    Params: { merchantId: string; branchId: string; orderId: string; suborderId: string };
+    Body: { nextStatus: OrderStatus; expectedVersion: number; reason?: string };
+  }>("/api/v1/merchants/:merchantId/branches/:branchId/orders/:orderId/suborders/:suborderId/transitions", async (request, reply) => {
+    const { merchantId, branchId, orderId, suborderId } = request.params;
+    const result = await authorizeRequest(request, options, {
+      resource: "merchant.order", action: "update", scope: { merchantId, branchId, orderId }
+    });
+    if (!result.actor) return sendAuthorizationFailure(reply, result.statusCode, result.decision.reason);
+    if (!options.orderTransitions) return reply.code(503).send({ error: "service_unavailable" });
+    const body = request.body;
+    if (!body || !ORDER_STATUSES.includes(body.nextStatus) ||
+        !Number.isSafeInteger(body.expectedVersion) || body.expectedVersion < 1 ||
+        (body.reason !== undefined && (typeof body.reason !== "string" || body.reason.trim().length > 500))) {
+      return reply.code(400).send({ error: "invalid_request" });
+    }
+    const context: OrderTransitionContext = {
+      actorId: result.actor.id, actorRole: result.actor.role,
+      occurredAt: new Date().toISOString(), expectedVersion: body.expectedVersion,
+      paymentAuthorized: false, inventoryReserved: false,
+      deliveryProofVerified: false, refundConfirmed: false,
+      ...(body.reason === undefined ? {} : { reason: body.reason.trim() })
+    };
+    const actorType = ["merchant_owner", "merchant_admin", "branch_manager", "merchant_employee"].includes(result.actor.role)
+      ? "merchant_user" : result.actor.role === "customer" ? "customer" :
+        result.actor.role === "shopper" ? "shopper" : result.actor.role === "courier" ? "courier" :
+        result.actor.role === "ai_agent" ? "ai_agent" : "platform_user";
+    const auditEvent = createAuditEvent({
+      id: randomUUID(), type: "order.suborder.transitioned", category: "order_lifecycle",
+      occurredAt: context.occurredAt, actor: { id: result.actor.id, type: actorType, role: result.actor.role },
+      action: "order.suborder.transition", outcome: "success",
+      resourceType: "merchant_suborder", resourceId: suborderId,
+      tenantId: merchantId, merchantId, branchId, correlationId: request.id,
+      source: "api", severity: "info",
+      metadata: { orderId, nextStatus: body.nextStatus, expectedVersion: body.expectedVersion }
+    });
+    const persisted = await options.orderTransitions.transitionSuborder({
+      tenantId: merchantId, orderId, suborderId, nextStatus: body.nextStatus, context, auditEvent
+    });
+    if (persisted.outcome === "not_found") return reply.code(404).send({ error: "not_found" });
+    if (persisted.outcome === "conflict") return reply.code(409).send({ error: "version_conflict" });
+    if (persisted.outcome === "rejected") return reply.code(409).send({ error: persisted.reason });
+    return reply.code(200).send({
+      suborder: { id: suborderId, status: persisted.transition.order.status, version: persisted.transition.order.version },
+      previousStatus: persisted.transition.previousStatus, parentStatus: persisted.parentStatus
+    });
+  });
+
   return app;
 }
