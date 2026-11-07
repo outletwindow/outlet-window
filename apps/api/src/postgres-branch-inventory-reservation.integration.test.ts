@@ -130,7 +130,7 @@ integration("PostgreSQL branch inventory reservations", () => {
     if (reservation.outcome !== "reserved") throw new Error("expected reservation");
     const released = await lifecycle.release({
       tenantId, reservationId: reservation.reservationReference,
-      nowUtc: new Date().toISOString()
+      nowUtc: new Date().toISOString(), reason: "customer_cancelled"
     });
     expect(released).toEqual({ outcome: "updated", status: "released" });
     await expect(lifecycle.release({
@@ -148,14 +148,20 @@ integration("PostgreSQL branch inventory reservations", () => {
     const request = await createPaidOrder(1);
     const reservation = await adapter.reserveExactVariants(request);
     if (reservation.outcome !== "reserved") throw new Error("expected reservation");
+    await expect(lifecycle.consume({
+      tenantId, reservationId: reservation.reservationReference,
+      nowUtc: new Date().toISOString(), handoverVerified: false, handoverReference: ""
+    })).rejects.toThrow("inventory_reservation_handover_proof_required");
     const consumed = await lifecycle.consume({
       tenantId, reservationId: reservation.reservationReference,
-      nowUtc: new Date().toISOString()
+      nowUtc: new Date().toISOString(), handoverVerified: true,
+      handoverReference: "handover-proof-" + randomUUID()
     });
     expect(consumed).toEqual({ outcome: "updated", status: "consumed" });
     await expect(lifecycle.consume({
       tenantId, reservationId: reservation.reservationReference,
-      nowUtc: new Date().toISOString()
+      nowUtc: new Date().toISOString(), handoverVerified: true,
+      handoverReference: "handover-proof-" + randomUUID()
     })).resolves.toEqual({ outcome: "already_finalized", status: "consumed" });
     const stock = await pool.query<{ available_quantity: number; reserved_quantity: number }>(
       "SELECT available_quantity, reserved_quantity FROM branch_inventory WHERE merchant_id=$1 AND branch_id=$2 AND product_variant_id=$3",
