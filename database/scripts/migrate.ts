@@ -23,7 +23,8 @@ async function main(): Promise<void> {
       { version: "0004_customer_orders", file: "0004_customer_orders.sql" },
       { version: "0005_marketplace_order_tenancy", file: "0005_marketplace_order_tenancy.sql" },
       { version: "0006_scheduled_task_outbox", file: "0006_scheduled_task_outbox.sql" },
-      { version: "0007_branch_inventory_reservations", file: "0007_branch_inventory_reservations.sql" }
+      { version: "0007_branch_inventory_reservations", file: "0007_branch_inventory_reservations.sql" },
+      { version: "0008_scheduled_task_inbox_leases", file: "0008_scheduled_task_inbox_leases.sql" }
     ].map(async migration => ({
       version: migration.version,
       sql: await readFile(resolve(process.cwd(), `../../database/migrations/${migration.file}`), "utf8")
