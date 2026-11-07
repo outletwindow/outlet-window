@@ -54,6 +54,10 @@ jobs:
         env:
           PGPASSWORD: ci_only_password
         run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0002_merchants_branches.integration.sql
+      - name: Verify append-only audit event isolation
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0003_audit_events.integration.sql
       - name: Typecheck
         run: pnpm typecheck
       - name: Test
