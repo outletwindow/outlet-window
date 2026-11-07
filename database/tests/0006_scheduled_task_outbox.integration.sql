@@ -16,8 +16,23 @@ VALUES
    'pending',0,now(),now(),now(),
    '{"orderId":"ci-scheduled-outbox-order","taskType":"merchant_reservation"}'::jsonb);
 
-DO $$
+INSERT INTO scheduled_task_inbox
+  (id,tenant_id,order_id,idempotency_key,task_type,payload)
+VALUES
+  ('ci-scheduled-outbox-task-v1','platform','ci-scheduled-outbox-order',
+   'ci-scheduled-outbox-task-v1','merchant_reservation',
+   '{"orderId":"ci-scheduled-outbox-order","taskType":"merchant_reservation"}'::jsonb);
+
+DO $
 BEGIN
+  BEGIN
+    INSERT INTO scheduled_task_inbox (id,tenant_id,order_id,idempotency_key,task_type,payload)
+    VALUES ('ci-scheduled-inbox-duplicate','platform','ci-scheduled-outbox-order',
+      'ci-scheduled-outbox-task-v1','merchant_reservation','{}'::jsonb);
+    RAISE EXCEPTION 'duplicate inbox idempotency key unexpectedly accepted';
+  EXCEPTION WHEN unique_violation THEN NULL;
+  END;
+
   BEGIN
     INSERT INTO scheduled_task_outbox
       (id,tenant_id,order_id,idempotency_key,task_type,execute_at,status,attempt_count,
