@@ -16,3 +16,4 @@ export * from "./postgres-migrations.js";
 export * from "./postgres-merchant-branch-reader.js";
 
 export * from "./postgres-merchant-branch-writer.js";
+export * from "./postgres-audit-event-store.js";
