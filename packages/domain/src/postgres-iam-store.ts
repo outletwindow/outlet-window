@@ -89,7 +89,7 @@ export class PostgresIamStore implements IdentityReader, SessionStoreReader,
     const result = await this.pool.query<SessionRow>(
       "SELECT * FROM sessions WHERE id = $1 AND principal_id = $2", [input.sessionId, input.principalId]
     );
-    return result.rows[0]?.let ? null : result.rows[0] ? sessionFromRow(result.rows[0]).descriptor : null;
+    return result.rows[0] ? sessionFromRow(result.rows[0]).descriptor : null;
   }
 
   async findStoredSession(input: { sessionId: string; principalId: string }): Promise<StoredSession | null> {
