@@ -41,9 +41,9 @@ BEGIN
     INSERT INTO branch_inventory
       (merchant_id,branch_id,product_variant_id,sku,available_quantity,reserved_quantity,
        source,last_synced_at,availability_confidence)
-    VALUES ('ci-inventory-merchant','ci-inventory-branch','ci-inventory-overbook',
-      'CI-SKU-OVER',1,2,'merchant_portal',now(),'high');
-    RAISE EXCEPTION 'inventory reserved quantity above available unexpectedly accepted';
+    VALUES ('ci-inventory-merchant','ci-inventory-branch','ci-inventory-negative',
+      'CI-SKU-NEG',-1,0,'merchant_portal',now(),'high');
+    RAISE EXCEPTION 'negative available inventory unexpectedly accepted';
   EXCEPTION WHEN check_violation THEN NULL;
   END;
 
