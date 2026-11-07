@@ -30,6 +30,7 @@ export function createHttpFulfillmentProvider(input: {
       try {
         response = await fetchImpl(endpoint, {
           method: "POST",
+          redirect: "error",
           headers: {
             "content-type": "application/json",
             authorization: `Bearer ${input.bearerToken}`,
