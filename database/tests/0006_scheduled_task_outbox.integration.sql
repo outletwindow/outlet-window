@@ -23,7 +23,7 @@ VALUES
    'ci-scheduled-outbox-task-v1','merchant_reservation',
    '{"orderId":"ci-scheduled-outbox-order","taskType":"merchant_reservation"}'::jsonb);
 
-DO $
+DO $$
 BEGIN
   BEGIN
     INSERT INTO scheduled_task_inbox (id,tenant_id,order_id,idempotency_key,task_type,payload)
