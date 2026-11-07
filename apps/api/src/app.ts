@@ -12,6 +12,10 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     bodyLimit: 1_048_576
   });
 
+  app.addHook("onRequest", async (request, reply) => {
+    reply.header("x-correlation-id", request.id);
+  });
+
   const serviceName = options.serviceName ?? "outlet-window-api";
   const version = options.version ?? "0.1.0";
 
