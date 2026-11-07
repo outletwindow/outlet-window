@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildScheduledFulfillmentTasks,
   getScheduledCheckoutNextAction,
   scheduledFulfillmentIdempotencyKey,
   type ScheduledCheckoutSnapshot
@@ -55,6 +56,45 @@ describe("scheduled checkout orchestration decisions", () => {
     })).toBe("manual_review");
   });
 
+  it("creates immediate reservation and delayed preparation/dispatch tasks", () => {
+    const plan = {
+      orderId: "order-1",
+      fulfillmentType: "home_delivery" as const,
+      scheduledFor: "2026-11-07T17:00:00+03:00",
+      scheduledForUtc: "2026-11-07T14:00:00.000Z",
+      paymentDueAt: "2026-11-07T09:00:00.000Z",
+      inventoryReservationDueAt: "2026-11-07T09:00:00.000Z",
+      preparationReleaseAtUtc: "2026-11-07T13:10:00.000Z",
+      courierDispatchAtUtc: "2026-11-07T13:40:00.000Z",
+      estimate: { preparationMinutes: 30, bufferMinutes: 0, travelMinutes: 20 },
+      createdAt: "2026-11-07T09:00:00.000Z"
+    };
+    const tasks = buildScheduledFulfillmentTasks(plan, 1);
+    expect(tasks.map(task => task.taskType)).toEqual([
+      "merchant_reservation", "merchant_preparation", "courier_dispatch"
+    ]);
+    expect(tasks[0]?.executeAtUtc).toBe(plan.inventoryReservationDueAt);
+    expect(tasks[1]?.executeAtUtc).toBe(plan.preparationReleaseAtUtc);
+    expect(tasks[2]?.executeAtUtc).toBe(plan.courierDispatchAtUtc);
+    expect(new Set(tasks.map(task => task.idempotencyKey)).size).toBe(3);
+  });
+
+  it("creates a shopper collection task instead of a courier dispatch task", () => {
+    const plan = {
+      orderId: "order-2",
+      fulfillmentType: "personal_shopper_pickup" as const,
+      scheduledFor: "2026-11-07T17:00:00+03:00",
+      scheduledForUtc: "2026-11-07T14:00:00.000Z",
+      paymentDueAt: "2026-11-07T09:00:00.000Z",
+      inventoryReservationDueAt: "2026-11-07T09:00:00.000Z",
+      preparationReleaseAtUtc: "2026-11-07T13:30:00.000Z",
+      estimate: { preparationMinutes: 30, bufferMinutes: 0, travelMinutes: 0 },
+      createdAt: "2026-11-07T09:00:00.000Z"
+    };
+    expect(buildScheduledFulfillmentTasks(plan, 1).map(task => task.taskType))
+      .toEqual(["merchant_reservation", "shopper_collection"]);
+  });
+
   it("creates deterministic idempotency keys", () => {
     expect(scheduledFulfillmentIdempotencyKey("order-1", "merchant_reservation", 2))
       .toBe("scheduled-fulfillment:order-1:merchant_reservation:v2");
@@ -62,3 +102,4 @@ describe("scheduled checkout orchestration decisions", () => {
     expect(scheduledFulfillmentIdempotencyKey("order-1", "merchant_reservation", 0)).toBeNull();
   });
 });
+
