@@ -21,9 +21,9 @@ Last updated: 2026-11-07
 - [x] Atomic scheduled-order commit port: validates order/task consistency and coordinates order persistence plus outbox enqueue in one transaction boundary, with rollback/idempotency tests (database adapter not yet implemented).
 
 ## In progress
-- [ ] Persistent identity, user, role, and permission storage.
+- [x] PostgreSQL IAM schema migration and database-agnostic persistence adapter for identities, scoped roles, and sessions; API composition root can resolve actors from the persistent store when a configured PostgreSQL pool and approved token-digest adapter are supplied. Live database provisioning, API runtime wiring, and real-PostgreSQL integration acceptance remain pending.
 - [ ] Authentication, password/passkey flows, MFA, and session revocation.
-- [ ] Database provider selection and versioned migrations.
+- [x] PostgreSQL selected as the initial relational database direction; versioned IAM migration and advisory-locked transactional migration runner added. Managed database provisioning and deployment remain pending.
 - [ ] Audit event persistence and protected access.
 - [ ] Production API authentication and authorization integration across all customer, merchant, shopper, courier, admin and owner data routes.
 - [x] API authorization reference route: server-side actor resolver seam, deny-by-default behavior, and merchant/branch isolation tests.
@@ -40,3 +40,14 @@ The customer, merchant, shopper, courier, admin, owner, payment, inventory, disp
 
 ## Acceptance rule
 A checkbox is marked complete only when code is present and automated checks or documented acceptance evidence verify it. A design document or interface alone is not proof of an operational feature.
+
+
+## PostgreSQL persistence progress (development branch)
+- [x] Initial identities, role_assignments, and sessions schema migration with foreign keys, uniqueness constraints, and expiry indexes.
+- [x] PostgreSQL IAM repository adapter implementing identity/session reads and transactional writes, session rotation and family revocation.
+- [x] API composition root that wires persisted session and identity readers into bearer actor resolution when supplied a configured pool and digest implementation.
+- [x] Versioned migration runner with PostgreSQL advisory lock, per-migration transaction, duplicate detection, and rollback on failure.
+- [x] Automated migration-runner tests for ordering, repeatability, malformed versions, lock release, and rollback.
+- [ ] Provision a real PostgreSQL instance and run the migration against it.
+- [ ] Add real-database integration/concurrency tests and connect the runtime server to managed database configuration.
+- [ ] Configure encrypted backups, retention, monitoring, and perform a restore drill.
