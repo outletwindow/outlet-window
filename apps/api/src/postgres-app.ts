@@ -23,9 +23,9 @@ export interface PostgresApiOptions {
 export function buildPostgresApp(options: PostgresApiOptions) {
   const iam = new PostgresIamStore(options.pool);
   const appOptions: AppOptions = {
-    serviceName: options.serviceName,
-    version: options.version,
-    merchantBranches: options.merchantBranches,
+    ...(options.serviceName === undefined ? {} : { serviceName: options.serviceName }),
+    ...(options.version === undefined ? {} : { version: options.version }),
+    ...(options.merchantBranches === undefined ? {} : { merchantBranches: options.merchantBranches }),
     actorResolution: {
       sessions: iam,
       identities: iam,
