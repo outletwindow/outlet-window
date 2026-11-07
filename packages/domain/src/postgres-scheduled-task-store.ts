@@ -264,10 +264,22 @@ export class PostgresScheduledTaskInboxPublisher implements ScheduledTaskPublish
   constructor(private readonly pool: PostgresPool) {}
 
   async publish(task: ScheduledFulfillmentTaskEnvelope, idempotencyKey: string): Promise<void> {
+    const target = task.target;
     if (!task.orderId.trim() || task.plan.orderId !== task.orderId ||
         task.idempotencyKey !== idempotencyKey || !idempotencyKey.trim() ||
-        !Number.isFinite(Date.parse(task.executeAtUtc))) {
+        !Number.isFinite(Date.parse(task.executeAtUtc)) ||
+        (target !== undefined && (!target.merchantTenantId.trim() || !target.suborderId.trim() ||
+          !target.merchantId.trim() || !target.branchId.trim()))) {
       throw new Error("scheduled_inbox_invalid_payload");
+    }
+    if (target !== undefined) {
+      const suborder = await this.pool.query<{ tenant_id: string }>(
+        `SELECT tenant_id FROM merchant_suborders
+         WHERE order_id = $1 AND id = $2 AND tenant_id = $3
+           AND merchant_id = $4 AND branch_id = $5`,
+        [task.orderId, target.suborderId, target.merchantTenantId, target.merchantId, target.branchId]
+      );
+      if (!suborder.rowCount) throw new Error("scheduled_inbox_target_not_found");
     }
     const tenant = await this.pool.query<{ tenant_id: string }>(
       "SELECT tenant_id FROM customer_orders WHERE id = $1",
