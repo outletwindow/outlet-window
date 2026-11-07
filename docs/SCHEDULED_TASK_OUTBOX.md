@@ -88,3 +88,7 @@ Not implemented: persisted task reader, scheduled reconciliation worker, alert d
 
 ## Inventory reservation ordering
 Provider-confirmed payment evidence is now persistable before inventory allocation. The branch inventory adapter requires this evidence and reserves the exact persisted merchant suborder lines atomically. The application checkout orchestrator must call these stages in order: persist verified payment capture evidence, reserve branch inventory, then enqueue timed preparation/dispatch tasks. The current repository adapters provide these boundaries but are not yet composed into a live checkout API route.
+
+
+## Merchant-targeted task envelopes
+Timed tasks may carry a merchant target (`merchantTenantId`, `suborderId`, `merchantId`, `branchId`). Idempotency keys are scoped to the suborder, allowing a multi-merchant parent order to create independent preparation/dispatch work without key collisions. Before publishing a targeted envelope into the durable inbox, the PostgreSQL publisher verifies that the suborder belongs to the parent order and matches the exact merchant tenant and branch. The inbox row remains scoped to the platform parent order; merchant ownership is carried in the validated payload for the eventual consumer.
