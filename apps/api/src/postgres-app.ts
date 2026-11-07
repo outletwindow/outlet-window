@@ -6,6 +6,7 @@ import {
 } from "../../../packages/domain/src/postgres-iam-store.js";
 import { buildApp, type AppOptions, type MerchantBranchReader } from "./app.js";
 import { PostgresMerchantBranchReader } from "../../../packages/domain/src/postgres-merchant-branch-reader.js";
+import { PostgresMerchantBranchWriter } from "../../../packages/domain/src/postgres-merchant-branch-writer.js";
 
 export interface PostgresApiOptions {
   pool: PostgresPool;
@@ -27,6 +28,7 @@ export function buildPostgresApp(options: PostgresApiOptions) {
     ...(options.serviceName === undefined ? {} : { serviceName: options.serviceName }),
     ...(options.version === undefined ? {} : { version: options.version }),
     merchantBranches: options.merchantBranches ?? new PostgresMerchantBranchReader(options.pool),
+    merchantBranchWriter: new PostgresMerchantBranchWriter(options.pool),
     readinessCheck: async () => {
       const requiredMigrations = [
         "0001_identity_access_sessions",
