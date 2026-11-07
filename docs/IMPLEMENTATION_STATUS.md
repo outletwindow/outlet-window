@@ -17,6 +17,7 @@ Last updated: 2026-11-07
 - [x] Customer delivery instruction contract: optional contact, doorbell and handover preferences; up to eight photo references; validation and tests.
 - [x] Scheduled fulfillment plan: timezone-aware time calculations and capacity validation.
 - [x] Scheduled checkout saga decisions: payment-before-reservation sequence, customer alternative/refund outcomes, idempotency keys and timed task envelopes.
+- [x] Scheduled task outbox domain contract: idempotent enqueue port, lease-token validation, bounded retry scheduling and tests (adapter not yet implemented).
 
 ## In progress
 - [ ] Persistent identity, user, role, and permission storage.
@@ -24,7 +25,7 @@ Last updated: 2026-11-07
 - [ ] Database provider selection and versioned migrations.
 - [ ] Audit event persistence and protected access.
 - [ ] API-level authentication and authorization integration.
-- [ ] Durable scheduled task queue and worker execution.
+- [ ] Durable scheduled task queue adapter, transactional outbox persistence, and worker execution.
 - [ ] Payment provider capture/void/refund integration.
 - [ ] Merchant inventory reservation API and reservation expiry/reconciliation.
 - [ ] Live slot capacity aggregation across branches, shoppers and couriers.
