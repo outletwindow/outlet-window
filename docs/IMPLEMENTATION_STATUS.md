@@ -48,6 +48,10 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] API composition root that wires persisted session and identity readers into bearer actor resolution when supplied a configured pool and digest implementation.
 - [x] Versioned migration runner with PostgreSQL advisory lock, per-migration transaction, duplicate detection, and rollback on failure.
 - [x] Automated migration-runner tests for ordering, repeatability, malformed versions, lock release, and rollback.
-- [ ] Provision a real PostgreSQL instance and run the migration against it.
-- [x] Add CI integration checks against a real ephemeral PostgreSQL 16 service for migration execution, identity/role/session persistence, principal isolation, and foreign-key enforcement. Full adapter concurrency tests and runtime server wiring to managed database configuration remain pending.
-- [ ] Configure encrypted backups, retention, monitoring, and perform a restore drill.
+- [ ] Provision a persistent managed PostgreSQL instance; CI currently validates the application migration runner against an ephemeral PostgreSQL 16 service.
+- [x] Add CI integration checks against a real ephemeral PostgreSQL 16 service for migration execution, identity/role/session persistence, principal isolation, and foreign-key enforcement.
+- [x] Wire the API server to PostgreSQL when DATABASE_URL is configured; production startup refuses to run without it, readiness checks database connectivity, and graceful shutdown closes the pool.
+- [x] Add a CLI migration command using the advisory-locked versioned migration runner; migrations are explicit and are not silently applied by API startup.
+- [ ] Confirm CI acceptance for TypeScript adapter tests covering tenant-bound session reads and concurrent one-time session rotation.
+- [x] Document the encrypted backup and isolated restore procedure and production acceptance checklist.
+- [ ] Configure provider-managed encrypted backups, retention, monitoring, and perform a restore drill in the selected cloud account.
