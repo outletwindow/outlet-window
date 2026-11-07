@@ -99,8 +99,8 @@ export async function runScheduledTaskBatch(input: {
       const retryAt = scheduledTaskRetryAtUtc({
         nowUtc: failedAtUtc,
         attemptCount: record.attemptCount,
-        baseDelaySeconds: input.baseDelaySeconds,
-        maxDelaySeconds: input.maxDelaySeconds
+        ...(input.baseDelaySeconds === undefined ? {} : { baseDelaySeconds: input.baseDelaySeconds }),
+        ...(input.maxDelaySeconds === undefined ? {} : { maxDelaySeconds: input.maxDelaySeconds })
       });
       if (!retryAt) throw new Error("scheduled_task_retry_time_invalid");
       const retried = await input.store.retry({
