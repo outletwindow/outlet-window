@@ -113,6 +113,19 @@ The scheduling horizon may extend up to three months, subject to market and merc
 
 A scheduled order is not a guarantee of inventory unless an actual reservation exists.
 
+## 7A. Customer Delivery Photos and Preferences
+
+Customers may optionally attach up to eight private instruction photos to an order, such as the building entrance, gate, parking bay, vehicle or pickup meeting point. Each photo may have a purpose label and short caption, with an additional access note.
+
+Customers may independently choose:
+- Phone call, in-app message, both or neither as preferred contact channels.
+- Hand the order directly to the customer or leave at the door for eligible home deliveries.
+- Ring the doorbell, do not ring, or no preference.
+
+These preferences are optional and editable before the operational cutoff. They are instructions, not proof of identity or delivery. Leave-at-door is unavailable for store pickup and pickup points. Safety, law, merchant policy and fulfillment capability take precedence; conflicts must be explained rather than silently overridden.
+
+Photos are private order data visible only to the customer and authorized personnel assigned to fulfill the order. Store media asset references rather than raw image bytes in order records. Upload security, retention, deletion and access controls must be implemented by the media service.
+
 ## 8. Store Pickup
 
 1. Customer selects a branch offering pickup.
