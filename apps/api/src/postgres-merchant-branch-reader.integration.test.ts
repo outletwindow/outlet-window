@@ -7,7 +7,8 @@ const databaseUrl = process.env.DATABASE_URL;
 const integration = describe.skipIf(!databaseUrl);
 
 integration("PostgresMerchantBranchReader", () => {
-  const pool = new Pool({ connectionString: databaseUrl, max: 3 });
+  const pool = databaseUrl ? new Pool({ connectionString: databaseUrl, max: 3 }) : null;
+  if (!pool) throw new Error("Pool must exist when DATABASE_URL is configured");
   const merchantId = `merchant-${randomUUID()}`;
   const branchId = `branch-${randomUUID()}`;
   const reader = new PostgresMerchantBranchReader(pool);
