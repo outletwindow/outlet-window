@@ -57,7 +57,7 @@ describe("PostgresOrderTransitionStore", () => {
     expect(db.statements.at(-2)).toContain("INSERT INTO audit_events");
     expect(db.statements.at(-1)).toBe("COMMIT");
     expect(db.statements.some(sql => sql.includes("WHERE tenant_id = $1 AND order_id = $2 AND id = $3 AND version = $6"))).toBe(true);
-    expect(db.statements.some(sql => sql.includes("SET status = $3, version = version + 1"))).toBe(true);
+    expect(db.statements.some(sql => sql.includes("SET status = $2, version = version + 1"))).toBe(true);
     expect(db.client.release).toHaveBeenCalledOnce();
   });
 
