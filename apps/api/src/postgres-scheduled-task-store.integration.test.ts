@@ -135,6 +135,29 @@ integration("PostgreSQL scheduled task outbox", () => {
     await cleanup();
   });
 
+  it("serializes concurrent confirmation retries without duplicating outbox work", async () => {
+    const scheduledTask = task();
+    const confirmation = {
+      orderId, tenantId: "platform", paymentReference: "provider-" + randomUUID(),
+      paymentCapturedAtUtc: "2026-11-08T09:59:00.000Z",
+      confirmedAtUtc: "2026-11-08T10:00:00.000Z", fulfillmentVersion: 1
+    };
+    const commit = () => commitScheduledOrderAndTasks({
+      order: confirmation,
+      tasks: [scheduledTask],
+      outboxIdForTask: () => "outbox-" + randomUUID(),
+      transactionRunner
+    });
+    const results = await Promise.all([commit(), commit()]);
+    expect(results.every(result => result.status === "committed")).toBe(true);
+    expect(await store.listByOrder({ tenantId: "platform", orderId })).toHaveLength(1);
+    const confirmations = await pool.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM scheduled_order_confirmations WHERE order_id = $1",
+      [orderId]
+    );
+    expect(confirmations.rows[0]?.count).toBe("1");
+  });
+
   it("publishes to the durable inbox idempotently", async () => {
     const scheduledTask = task();
     await inboxPublisher.publish(scheduledTask, scheduledTask.idempotencyKey);
