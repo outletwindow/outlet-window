@@ -1,6 +1,6 @@
 import type { Actor, PermissionGrant } from "./authorization.js";
 import type { IdentityReader } from "./identity-store.js";
-import { isRoleAssignmentActiveAt } from "./identity-store.js";
+import { isRoleAssignmentActiveAt, isRoleAssignmentValid } from "./identity-store.js";
 import type { IdentityProfile, RoleAssignment } from "./identity.js";
 import type { SessionStoreReader, StoredSession } from "./session-security.js";
 import { validateStoredSession } from "./session-security.js";
@@ -67,7 +67,7 @@ export async function resolveActorFromBearerToken(input: {
     atUtc: nowUtc
   });
   if (assignments.some(assignment =>
-    assignment.principalId !== identity.id || !isRoleAssignmentActiveAt(assignment, nowUtc)
+    assignment.principalId !== identity.id || !isRoleAssignmentValid(assignment) || !isRoleAssignmentActiveAt(assignment, nowUtc)
   )) return { actor: null, failure: "invalid_role_assignments" };
 
   const grants = input.dependencies.grantsForAssignments(assignments);
