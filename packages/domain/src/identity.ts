@@ -57,7 +57,7 @@ export type IdentityLifecycleAction =
   | "request_deletion";
 
 const ALLOWED_TRANSITIONS: Record<AccountStatus, readonly AccountStatus[]> = {
-  pending_verification: ["active", "suspended", "request_deletion" as never],
+  pending_verification: ["active", "suspended", "deletion_requested"],
   active: ["temporarily_restricted", "suspended", "recovery_pending", "closed", "deletion_requested"],
   temporarily_restricted: ["active", "suspended", "recovery_pending", "closed"],
   suspended: ["active", "closed", "deletion_requested"],
@@ -80,12 +80,17 @@ export function isSessionDescriptorValid(
   session: SessionDescriptor
 ): boolean {
   if (!session.id || !session.principalId) return false;
-  if (Date.parse(session.expiresAt) <= Date.parse(session.createdAt)) return false;
+  const createdAt = Date.parse(session.createdAt);
+  const expiresAt = Date.parse(session.expiresAt);
+  const lastSeenAt = Date.parse(session.lastSeenAt);
+  if (![createdAt, expiresAt, lastSeenAt].every(Number.isFinite)) return false;
+  if (expiresAt <= createdAt || lastSeenAt < createdAt || lastSeenAt > expiresAt) return false;
   if (principalType === "service" && session.authenticationMethods.some(
     (method) => method === "password" || method === "passkey" || method === "mfa"
   )) return false;
-  if (session.revokedAt && Date.parse(session.revokedAt) < Date.parse(session.createdAt)) {
-    return false;
+  if (session.revokedAt) {
+    const revokedAt = Date.parse(session.revokedAt);
+    if (!Number.isFinite(revokedAt) || revokedAt < createdAt) return false;
   }
   return true;
 }
