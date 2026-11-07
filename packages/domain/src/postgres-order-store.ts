@@ -107,8 +107,8 @@ export class PostgresOrderStore {
           subtotal_minor: string | number; metadata: Record<string, unknown>;
         }>(
           `SELECT id, merchant_id, branch_id, status, subtotal_minor, metadata
-           FROM merchant_suborders WHERE tenant_id = $1 AND order_id = $2 ORDER BY id`,
-          [input.tenantId, row.id]
+           FROM merchant_suborders WHERE order_id = $1 ORDER BY id`,
+          [row.id]
         );
         const requestedSuborders = [...input.suborders].sort((a, b) => a.id.localeCompare(b.id));
         const sameSuborders = persistedSuborders.rows.length === requestedSuborders.length &&
@@ -142,8 +142,12 @@ export class PostgresOrderStore {
         const inserted = await client.query(
           `INSERT INTO merchant_suborders
            (id, tenant_id, order_id, merchant_id, branch_id, status, subtotal_minor, metadata)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)`,
-          [item.id, input.tenantId, input.id, item.merchantId, item.branchId,
+           SELECT $1, m.tenant_id, $2, m.id, b.id, $5, $6, $7::jsonb
+           FROM merchants m
+           JOIN merchant_branches b ON b.merchant_id = m.id
+           WHERE m.id = $3 AND b.id = $4 AND m.status = 'active' AND b.status = 'active'
+           RETURNING id`,
+          [item.id, input.id, item.merchantId, item.branchId,
             item.status, item.subtotalMinor, JSON.stringify(item.metadata ?? {})]
         );
         if (inserted.rowCount !== 1) throw new Error("Merchant branch is unavailable for order creation");
