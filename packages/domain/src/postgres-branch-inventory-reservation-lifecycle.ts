@@ -18,8 +18,9 @@ export class PostgresBranchInventoryReservationLifecycle {
     tenantId: string;
     reservationId: string;
     nowUtc: string;
+    reason: string;
   }): Promise<InventoryReservationFinalizeResult> {
-    return this.finalize({ ...input, nextStatus: "released" });
+    return this.finalize({ ...input, nextStatus: "released", finalizationReason: input.reason });
   }
 
   expire(input: {
@@ -27,15 +28,21 @@ export class PostgresBranchInventoryReservationLifecycle {
     reservationId: string;
     nowUtc: string;
   }): Promise<InventoryReservationFinalizeResult> {
-    return this.finalize({ ...input, nextStatus: "expired" });
+    return this.finalize({ ...input, nextStatus: "expired", finalizationReason: "reservation_expired" });
   }
 
   consume(input: {
     tenantId: string;
     reservationId: string;
     nowUtc: string;
+    handoverVerified: boolean;
+    handoverReference: string;
   }): Promise<InventoryReservationFinalizeResult> {
-    return this.finalize({ ...input, nextStatus: "consumed" });
+    return this.finalize({
+      tenantId: input.tenantId, reservationId: input.reservationId, nowUtc: input.nowUtc,
+      nextStatus: "consumed", handoverVerified: input.handoverVerified,
+      handoverReference: input.handoverReference
+    });
   }
 
   private async finalize(input: {
@@ -43,10 +50,22 @@ export class PostgresBranchInventoryReservationLifecycle {
     reservationId: string;
     nowUtc: string;
     nextStatus: InventoryReservationFinalState;
+    finalizationReason?: string;
+    handoverVerified?: boolean;
+    handoverReference?: string;
   }): Promise<InventoryReservationFinalizeResult> {
     const now = Date.parse(input.nowUtc);
     if (!input.tenantId.trim() || !input.reservationId.trim() || !Number.isFinite(now)) {
       throw new Error("inventory_reservation_finalize_invalid_input");
+    }
+    if (input.nextStatus === "released" &&
+        (!input.finalizationReason?.trim() || input.finalizationReason.length > 120)) {
+      throw new Error("inventory_reservation_release_reason_required");
+    }
+    if (input.nextStatus === "consumed" &&
+        (input.handoverVerified !== true || !input.handoverReference?.trim() ||
+          input.handoverReference.length > 240)) {
+      throw new Error("inventory_reservation_handover_proof_required");
     }
     const nowUtc = new Date(now).toISOString();
     const client = await this.pool.connect();
@@ -131,8 +150,9 @@ export class PostgresBranchInventoryReservationLifecycle {
       }
 
       await client.query(
-        "UPDATE inventory_reservations SET status = $3, updated_at = $4 WHERE tenant_id = $1 AND id = $2 AND status = 'reserved'",
-        [input.tenantId, input.reservationId, input.nextStatus, nowUtc]
+        "UPDATE inventory_reservations SET status = $3, updated_at = $4, finalization_reason = $5, handover_reference = $6 WHERE tenant_id = $1 AND id = $2 AND status = 'reserved'",
+        [input.tenantId, input.reservationId, input.nextStatus, nowUtc,
+          input.finalizationReason ?? null, input.handoverReference ?? null]
       );
       await client.query("COMMIT");
       return { outcome: "updated", status: input.nextStatus };
