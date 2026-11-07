@@ -38,7 +38,7 @@ Last updated: 2026-11-08
 - [ ] Production transaction adapter and payment-to-order reconciliation/compensation workflow.
 - [ ] Payment provider capture/void/refund integration.
 - [x] Branch-level inventory ledger, customer order item lines, merchant/branch-scoped reservation records, and PostgreSQL transaction adapter for atomic platform-side stock allocation; integration tests cover idempotency, exact order-line matching, and concurrent final-unit contention.
-- [x] Idempotent reservation lifecycle operations for release, expiry, and consumption; release restores allocation, consumption decrements stock, and expiry is rejected before its deadline.
+- [x] Idempotent reservation lifecycle operations for release, expiry, and consumption; release requires a reason, consumption requires verified handover proof, release/expiry restore allocation, and consumption decrements stock.
 - [x] Durable provider-confirmed payment evidence can be recorded idempotently before branch inventory reservation. Payment capture itself remains external.
 - [ ] Live slot capacity aggregation across branches, shoppers and couriers.
 
@@ -76,7 +76,9 @@ A checkbox is marked complete only when code is present and automated checks or 
 
 ## Reservation lifecycle progress (development branch)
 - [x] Added idempotent release, expiry, and consume transitions protected by reservation-row locks and stock-row locks.
-- [x] Release/expiry return reserved quantity to available stock; consume decrements both available and reserved quantities exactly once.
+- [x] Release/expiry return reserved quantity to available stock; consume decrements both available and reserved quantities exactly once and records the handover reference.
 - [x] Expiry cannot run before the configured expiry instant; terminal replays do not adjust stock twice.
 - [x] Payment-provider capture evidence can be recorded before inventory reservation and replayed idempotently; no payment provider charge/capture call is performed by this adapter.
 - [ ] Wire the checkout saga to call payment evidence persistence, then inventory reservation, then task enqueue in that exact order.
+
+- [x] Reservation finalization schema enforces a release reason or verified handover reference for consumed stock; SQL acceptance tests cover invalid final states.
