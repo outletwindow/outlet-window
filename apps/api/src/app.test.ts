@@ -234,4 +234,4 @@ describe("Outlet Window API foundation", () => {
       await protectedApp.close();
     }
   });
-
+});
