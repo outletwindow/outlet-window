@@ -25,7 +25,7 @@ ALTER TABLE merchants
   ADD CONSTRAINT merchants_tenant_id_id_key UNIQUE (tenant_id, id);
 
 CREATE OR REPLACE FUNCTION ensure_merchant_tenant()
-RETURNS trigger LANGUAGE plpgsql AS $
+RETURNS trigger LANGUAGE plpgsql AS $function$
 BEGIN
   IF NEW.tenant_id IS NULL OR length(trim(NEW.tenant_id)) = 0 THEN
     NEW.tenant_id := NEW.id;
@@ -36,7 +36,7 @@ BEGIN
   ON CONFLICT (id) DO NOTHING;
   RETURN NEW;
 END;
-$;
+$function$;
 
 CREATE TRIGGER merchants_ensure_tenant_before_insert
 BEFORE INSERT ON merchants
