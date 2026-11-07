@@ -168,3 +168,14 @@ Emergency access must:
 This document defines the intended authorization model. It does not claim that identity providers, permission services or approval workflows are already implemented.
 
 Implementation requires architecture review, security testing and controlled rollout.
+
+## API enforcement reference implementation
+The API now includes a protected merchant-branch access-check route. It resolves the actor only through an injected server-side `resolveActor` function and delegates the decision to the shared domain `authorize` policy:
+- No resolved actor returns HTTP 401.
+- Inactive actors return HTTP 403.
+- A merchant/branch scope mismatch returns HTTP 403.
+- Only a matching explicit grant returns HTTP 200.
+
+The client cannot supply its own role or grants through request headers or body. The default application configuration has no actor resolver, so the protected route denies access by default.
+
+This route is a reference enforcement seam, not a complete authentication integration. The production resolver must validate a persisted session/token, load current account status and time-valid role assignments from trusted storage, and attach the actor server-side. Business data routes must use the same guard before reading or mutating records; database queries must independently include tenant and branch predicates. The access-check route itself returns no business data.
