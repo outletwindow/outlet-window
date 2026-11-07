@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Pool } from "pg";
 import { PostgresBranchInventoryReservationAdapter } from "../../../packages/domain/src/postgres-branch-inventory-reservation.js";
+import { PostgresBranchInventoryReservationLifecycle } from "../../../packages/domain/src/postgres-branch-inventory-reservation-lifecycle.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const integration = describe.skipIf(!databaseUrl);
@@ -11,6 +12,7 @@ integration("PostgreSQL branch inventory reservations", () => {
   if (!configuredPool) throw new Error("Pool must exist when DATABASE_URL is configured");
   const pool: Pool = configuredPool;
   const adapter = new PostgresBranchInventoryReservationAdapter(pool);
+  const lifecycle = new PostgresBranchInventoryReservationLifecycle(pool);
   const suffix = randomUUID();
   const merchantId = "inventory-merchant-" + suffix;
   const branchId = "inventory-branch-" + suffix;
@@ -116,6 +118,64 @@ integration("PostgreSQL branch inventory reservations", () => {
       [merchantId, branchId, variantId]
     );
     expect(stock.rows[0]?.reserved_quantity).toBe(1);
+  });
+
+  it("releases an allocation once and restores available stock", async () => {
+    const request = await createPaidOrder(1);
+    const reservation = await adapter.reserveExactVariants(request);
+    if (reservation.outcome !== "reserved") throw new Error("expected reservation");
+    const released = await lifecycle.release({
+      tenantId, reservationId: reservation.reservationReference,
+      nowUtc: new Date().toISOString()
+    });
+    expect(released).toEqual({ outcome: "updated", status: "released" });
+    await expect(lifecycle.release({
+      tenantId, reservationId: reservation.reservationReference,
+      nowUtc: new Date().toISOString()
+    })).resolves.toEqual({ outcome: "already_finalized", status: "released" });
+    const stock = await pool.query<{ available_quantity: number; reserved_quantity: number }>(
+      "SELECT available_quantity, reserved_quantity FROM branch_inventory WHERE merchant_id=$1 AND branch_id=$2 AND product_variant_id=$3",
+      [merchantId, branchId, variantId]
+    );
+    expect(stock.rows[0]).toEqual({ available_quantity: 1, reserved_quantity: 0 });
+  });
+
+  it("consumes a reservation exactly once when the item is handed over", async () => {
+    const request = await createPaidOrder(1);
+    const reservation = await adapter.reserveExactVariants(request);
+    if (reservation.outcome !== "reserved") throw new Error("expected reservation");
+    const consumed = await lifecycle.consume({
+      tenantId, reservationId: reservation.reservationReference,
+      nowUtc: new Date().toISOString()
+    });
+    expect(consumed).toEqual({ outcome: "updated", status: "consumed" });
+    await expect(lifecycle.consume({
+      tenantId, reservationId: reservation.reservationReference,
+      nowUtc: new Date().toISOString()
+    })).resolves.toEqual({ outcome: "already_finalized", status: "consumed" });
+    const stock = await pool.query<{ available_quantity: number; reserved_quantity: number }>(
+      "SELECT available_quantity, reserved_quantity FROM branch_inventory WHERE merchant_id=$1 AND branch_id=$2 AND product_variant_id=$3",
+      [merchantId, branchId, variantId]
+    );
+    expect(stock.rows[0]).toEqual({ available_quantity: 0, reserved_quantity: 0 });
+  });
+
+  it("expires only when the reservation deadline has passed", async () => {
+    const request = await createPaidOrder(1);
+    const reservation = await adapter.reserveExactVariants({
+      ...request,
+      requestedAtUtc: "2026-11-08T00:00:00.000Z",
+      expiresAtUtc: "2026-11-08T00:01:00.000Z"
+    });
+    if (reservation.outcome !== "reserved") throw new Error("expected reservation");
+    await expect(lifecycle.expire({
+      tenantId, reservationId: reservation.reservationReference,
+      nowUtc: "2026-11-08T00:00:30.000Z"
+    })).rejects.toThrow("inventory_reservation_not_expired");
+    await expect(lifecycle.expire({
+      tenantId, reservationId: reservation.reservationReference,
+      nowUtc: "2026-11-08T00:02:00.000Z"
+    })).resolves.toEqual({ outcome: "updated", status: "expired" });
   });
 
   it("rejects a request that does not match the persisted order line", async () => {
