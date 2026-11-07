@@ -12,7 +12,6 @@ type OutboxRow = {
   payload: ScheduledTaskOutboxRecord["payload"];
 };
 const iso = (value: Date | string) => new Date(value).toISOString();
-const optionalIso = (value: Date | string | null) => value === null ? undefined : iso(value);
 
 function fromRow(row: OutboxRow): ScheduledTaskOutboxRecord {
   return {
@@ -82,8 +81,8 @@ export class PostgresScheduledTaskOutboxStore implements ScheduledTaskOutboxStor
          WHERE (status = 'pending' AND available_at <= $1)
             OR (status = 'leased' AND lease_expires_at <= $1)
          ORDER BY COALESCE(lease_expires_at, available_at), created_at, id
-         FOR UPDATE SKIP LOCKED
          LIMIT $2
+         FOR UPDATE SKIP LOCKED
        )
        UPDATE scheduled_task_outbox task
        SET status = 'leased', attempt_count = task.attempt_count + 1,
