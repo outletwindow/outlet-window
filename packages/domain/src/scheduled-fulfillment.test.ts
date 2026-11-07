@@ -32,7 +32,7 @@ describe("scheduled fulfillment planning", () => {
       now,
       estimate: { preparationMinutes: 30, bufferMinutes: 5, travelMinutes: 0 }
     });
-    expect(plan?.preparationReleaseAtUtc).toBe("2026-11-07T09:00:00.000Z");
+    expect(plan?.preparationReleaseAtUtc).toBe("2026-11-07T09:00:00.000Z");\n    expect(plan?.courierDispatchAtUtc).toBeUndefined();
   });
 
   it("rejects schedules without timezone, in the past, or beyond the horizon", () => {
