@@ -122,6 +122,46 @@ describe("Outlet Window API foundation", () => {
       await protectedApp.close();
     }
   });
+  it("checks branch authorization before reading merchant data", async () => {
+    let repositoryCalls = 0;
+    const reader = {
+      async findBranchSummary(input: { merchantId: string; branchId: string }) {
+        repositoryCalls += 1;
+        return {
+          merchantId: input.merchantId,
+          branchId: input.branchId,
+          displayName: "Branch One",
+          status: "active" as const
+        };
+      }
+    };
+    const protectedApp = buildApp({
+      resolveActor: async () => merchantActor,
+      merchantBranches: reader
+    });
+    await protectedApp.ready();
+    try {
+      const denied = await protectedApp.inject({
+        method: "GET",
+        url: "/api/v1/merchants/merchant-1/branches/branch-2/summary"
+      });
+      expect(denied.statusCode).toBe(403);
+      expect(repositoryCalls).toBe(0);
+
+      const allowed = await protectedApp.inject({
+        method: "GET",
+        url: "/api/v1/merchants/merchant-1/branches/branch-1/summary"
+      });
+      expect(allowed.statusCode).toBe(200);
+      expect(allowed.json().branch).toMatchObject({
+        merchantId: "merchant-1", branchId: "branch-1", displayName: "Branch One"
+      });
+      expect(repositoryCalls).toBe(1);
+    } finally {
+      await protectedApp.close();
+    }
+  });
+
   it("requires merchant-scoped create permission before branch creation", async () => {
     let writes = 0;
     const protectedApp = buildApp({
