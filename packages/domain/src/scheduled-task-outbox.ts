@@ -7,6 +7,8 @@ export interface ScheduledTaskOutboxRecord {
   idempotencyKey: string;
   orderId: string;
   taskType: ScheduledFulfillmentTaskEnvelope["taskType"];
+  /** Persist the complete, non-sensitive task envelope so workers can resume after restarts. */
+  payload: ScheduledFulfillmentTaskEnvelope;
   executeAtUtc: string;
   status: OutboxTaskStatus;
   attemptCount: number;
@@ -40,12 +42,14 @@ export interface ScheduledTaskOutboxStore {
     id: string;
     leaseToken: string;
     availableAtUtc: string;
+    nowUtc: string;
     errorCode: string;
   }): Promise<boolean>;
   /** Must update only when the current leaseToken matches. */
   deadLetter(input: {
     id: string;
     leaseToken: string;
+    nowUtc: string;
     errorCode: string;
   }): Promise<boolean>;
 }
@@ -72,6 +76,7 @@ export function createScheduledTaskOutboxRecord(
     idempotencyKey: input.task.idempotencyKey,
     orderId: input.task.orderId,
     taskType: input.task.taskType,
+    payload: input.task,
     executeAtUtc: new Date(executeAt).toISOString(),
     status: "pending",
     attemptCount: 0,
