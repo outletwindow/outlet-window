@@ -56,7 +56,7 @@ describe("HTTP fulfillment provider adapter", () => {
   it("rejects insecure endpoints and missing credentials before dispatch", () => {
     expect(() => createHttpFulfillmentProvider({
       endpoint: "http://provider.example/dispatch", bearerToken: "token", providerName: "TEST"
-    })).toThrow("TEST_must_be_https_without_credentials_or_fragment");
+    })).toThrow("TEST_endpoint_must_be_https_without_credentials_or_fragment");
     expect(() => createHttpFulfillmentProvider({
       endpoint: "https://provider.example/dispatch", bearerToken: "", providerName: "TEST"
     })).toThrow("TEST_token_required");
