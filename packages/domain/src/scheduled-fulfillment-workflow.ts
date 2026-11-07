@@ -63,7 +63,7 @@ export function getScheduledCheckoutNextAction(
 export interface ScheduledFulfillmentTaskEnvelope {
   idempotencyKey: string;
   orderId: string;
-  taskType: "merchant_reservation" | "preparation" | "courier_dispatch" | "shopper_collection";
+  taskType: "merchant_reservation" | "merchant_preparation" | "courier_dispatch" | "shopper_collection";
   executeAtUtc: string;
   plan: ScheduledOrderPlan;
 }
@@ -76,4 +76,47 @@ export function scheduledFulfillmentIdempotencyKey(
 ): string | null {
   if (!orderId.trim() || !Number.isSafeInteger(version) || version < 1) return null;
   return `scheduled-fulfillment:${orderId}:${action}:v${version}`;
+}
+
+/** Build the durable task schedule after payment and stock reservation have succeeded. */
+export function buildScheduledFulfillmentTasks(
+  plan: ScheduledOrderPlan,
+  version: number
+): readonly ScheduledFulfillmentTaskEnvelope[] {
+  const tasks: ScheduledFulfillmentTaskEnvelope[] = [{
+    idempotencyKey: scheduledFulfillmentIdempotencyKey(plan.orderId, "merchant_reservation", version)!,
+    orderId: plan.orderId,
+    taskType: "merchant_reservation",
+    executeAtUtc: plan.inventoryReservationDueAt,
+    plan
+  }];
+
+  if (plan.fulfillmentType === "personal_shopper_pickup") {
+    tasks.push({
+      idempotencyKey: scheduledFulfillmentIdempotencyKey(plan.orderId, "shopper_collection", version)!,
+      orderId: plan.orderId,
+      taskType: "shopper_collection",
+      executeAtUtc: plan.preparationReleaseAtUtc,
+      plan
+    });
+  } else {
+    tasks.push({
+      idempotencyKey: scheduledFulfillmentIdempotencyKey(plan.orderId, "merchant_preparation", version)!,
+      orderId: plan.orderId,
+      taskType: "merchant_preparation",
+      executeAtUtc: plan.preparationReleaseAtUtc,
+      plan
+    });
+  }
+
+  if (plan.courierDispatchAtUtc) {
+    tasks.push({
+      idempotencyKey: scheduledFulfillmentIdempotencyKey(plan.orderId, "courier_dispatch", version)!,
+      orderId: plan.orderId,
+      taskType: "courier_dispatch",
+      executeAtUtc: plan.courierDispatchAtUtc,
+      plan
+    });
+  }
+  return tasks;
 }
