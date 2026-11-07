@@ -18,14 +18,11 @@ integration("PostgreSQL branch inventory reservations", () => {
   const sku = "SKU-" + suffix;
   const tenantId = merchantId;
   const orderIds: string[] = [];
-  const suborderIds: string[] = [];
-  const reservationKeys: string[] = [];
 
   async function createPaidOrder(quantity: number) {
     const id = "inventory-order-" + randomUUID();
     const suborderId = "inventory-suborder-" + randomUUID();
     orderIds.push(id);
-    suborderIds.push(suborderId);
     await pool.query(
       `INSERT INTO customer_orders
        (id,tenant_id,customer_id,idempotency_key,status,currency,total_minor)
@@ -51,7 +48,6 @@ integration("PostgreSQL branch inventory reservations", () => {
       ["item-" + id, tenantId, id, suborderId, branchId, variantId, sku, quantity]
     );
     const idempotencyKey = "inventory-reservation:" + id + ":v1";
-    reservationKeys.push(idempotencyKey);
     return {
       tenantId, orderId: id, suborderId, merchantId, branchId, idempotencyKey,
       requestedAtUtc: new Date().toISOString(),
