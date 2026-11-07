@@ -1,6 +1,14 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
-import { authorize, type Actor, type AuthorizationRequest } from "../../../packages/domain/src/authorization.js";
-import { resolveActorFromBearerToken, type ActorResolutionDependencies } from "../../../packages/domain/src/actor-resolution.js";
+import {
+  authorize,
+  type Actor,
+  type AuthorizationDecision,
+  type AuthorizationRequest
+} from "../../../packages/domain/src/authorization.js";
+import {
+  resolveActorFromBearerToken,
+  type ActorResolutionDependencies
+} from "../../../packages/domain/src/actor-resolution.js";
 
 export interface MerchantBranchReader {
   findBranchSummary(input: { merchantId: string; branchId: string }): Promise<{
@@ -20,6 +28,52 @@ export interface AppOptions {
   actorResolution?: ActorResolutionDependencies;
   /** Repository adapter must apply merchantId and branchId predicates in its database query. */
   merchantBranches?: MerchantBranchReader;
+}
+
+type AuthorizationResult =
+  | { actor: Actor; decision: AuthorizationDecision & { allowed: true } }
+  | { actor: null; decision: AuthorizationDecision & { allowed: false }; statusCode: 401 | 403 };
+
+async function authorizeRequest(
+  request: FastifyRequest,
+  options: AppOptions,
+  authorizationRequest: AuthorizationRequest
+): Promise<AuthorizationResult> {
+  let actor: Actor | null = null;
+  if (options.actorResolution) {
+    const header = request.headers.authorization;
+    const resolved = await resolveActorFromBearerToken({
+      authorizationHeader: Array.isArray(header) ? header[0] : header,
+      dependencies: options.actorResolution
+    });
+    actor = resolved.actor;
+  } else {
+    actor = await options.resolveActor?.(request) ?? null;
+  }
+
+  if (!actor) {
+    return {
+      actor: null,
+      decision: { allowed: false, reason: "missing_identity" },
+      statusCode: 401
+    };
+  }
+
+  const decision = authorize(actor, authorizationRequest);
+  if (!decision.allowed) {
+    return { actor: null, decision, statusCode: 403 };
+  }
+  return { actor, decision };
+}
+
+function sendAuthorizationFailure(
+  reply: Parameters<Parameters<FastifyInstance["get"]>[1]>[1],
+  result: Extract<AuthorizationResult, { actor: null }>
+) {
+  return reply.code(result.statusCode).send({
+    error: result.statusCode === 401 ? "unauthenticated" : "forbidden",
+    ...(result.statusCode === 403 ? { reason: result.decision.reason } : {})
+  });
 }
 
 export function buildApp(options: AppOptions = {}): FastifyInstance {
@@ -53,62 +107,36 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     status: "foundation"
   }));
 
-  // Protected reference route: the actor must come from a verified server-side session.
   app.get<{
     Params: { merchantId: string; branchId: string };
   }>("/api/v1/merchants/:merchantId/branches/:branchId/access-check", async (request, reply) => {
-    let actor: Actor | null = null;
-    if (options.actorResolution) {
-      const authorizationHeader = request.headers.authorization;
-      const resolved = await resolveActorFromBearerToken({
-        authorizationHeader: Array.isArray(authorizationHeader) ? authorizationHeader[0] : authorizationHeader,
-        dependencies: options.actorResolution
-      });
-      actor = resolved.actor;
-    } else {
-      actor = await options.resolveActor?.(request) ?? null;
-    }
-    if (!actor) return reply.code(401).send({ error: "unauthenticated" });
-
-    const authorizationRequest: AuthorizationRequest = {
+    const result = await authorizeRequest(request, options, {
       resource: "merchant.branch",
       action: "read",
       scope: {
         merchantId: request.params.merchantId,
         branchId: request.params.branchId
       }
-    };
-    const decision = authorize(actor, authorizationRequest);
-    if (!decision.allowed) {
-      return reply.code(403).send({ error: "forbidden", reason: decision.reason });
-    }
+    });
+    if (!result.actor) return sendAuthorizationFailure(reply, result);
     return reply.code(200).send({ access: "granted" });
   });
 
-
-  // Example business-data route. Authorization is checked before repository access.
+  // Authentication and authorization always precede adapter availability checks and data access.
   app.get<{
     Params: { merchantId: string; branchId: string };
   }>("/api/v1/merchants/:merchantId/branches/:branchId/summary", async (request, reply) => {
-    if (!options.merchantBranches) return reply.code(503).send({ error: "service_unavailable" });
-    let actor: Actor | null = null;
-    if (options.actorResolution) {
-      const header = request.headers.authorization;
-      const resolved = await resolveActorFromBearerToken({
-        authorizationHeader: Array.isArray(header) ? header[0] : header,
-        dependencies: options.actorResolution
-      });
-      actor = resolved.actor;
-    } else {
-      actor = await options.resolveActor?.(request) ?? null;
-    }
-    if (!actor) return reply.code(401).send({ error: "unauthenticated" });
-    const decision = authorize(actor, {
+    const result = await authorizeRequest(request, options, {
       resource: "merchant.branch",
       action: "read",
-      scope: { merchantId: request.params.merchantId, branchId: request.params.branchId }
+      scope: {
+        merchantId: request.params.merchantId,
+        branchId: request.params.branchId
+      }
     });
-    if (!decision.allowed) return reply.code(403).send({ error: "forbidden", reason: decision.reason });
+    if (!result.actor) return sendAuthorizationFailure(reply, result);
+    if (!options.merchantBranches) return reply.code(503).send({ error: "service_unavailable" });
+
     const branch = await options.merchantBranches.findBranchSummary({
       merchantId: request.params.merchantId,
       branchId: request.params.branchId
