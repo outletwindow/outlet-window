@@ -97,6 +97,23 @@ describe("scheduled task worker", () => {
     expect(calls).toContain("dead:INVALID_TASK_PAYLOAD");
   });
 
+  it("dead-letters a task with an incomplete merchant branch target", async () => {
+    const { store, calls } = createStore(createRecord({
+      payload: {
+        ...task,
+        target: {
+          merchantTenantId: "merchant-tenant",
+          suborderId: "suborder-1",
+          merchantId: "merchant-1",
+          branchId: ""
+        }
+      }
+    }));
+    const result = await runScheduledTaskBatch({ ...base, store });
+    expect(result.deadLettered).toBe(1);
+    expect(calls).toContain("dead:INVALID_TASK_PAYLOAD");
+  });
+
   it("does not publish when the lease is already expired", async () => {
     const { store } = createStore(createRecord({ leaseExpiresAtUtc: "2026-11-08T09:59:59.000Z" }));
     let publishCalls = 0;
