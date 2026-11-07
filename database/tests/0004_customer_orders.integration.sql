@@ -1,4 +1,4 @@
-\\set ON_ERROR_STOP on
+\set ON_ERROR_STOP on
 BEGIN;
 INSERT INTO merchants (id,legal_name,display_name,country_code,status)
 VALUES ('order-ci-merchant','Outlet Test LLC','Outlet Test','SA','active');
