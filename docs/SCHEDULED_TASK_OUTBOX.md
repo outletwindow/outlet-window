@@ -51,7 +51,9 @@ A production adapter is not accepted until tests prove:
 ## Current status
 Implemented in the domain package: outbox record contract, store port, creation validation, bounded retry-time calculation, lease validation, and unit tests.
 
-Not implemented: database schema/migrations, unique constraints, transactional adapter, queue broker, worker runtime, dead-letter operations UI, monitoring, and production reconciliation. Database and infrastructure vendor choices remain pending owner approval.
+Implementation added on the development branch (pending CI acceptance): PostgreSQL migration `0006_scheduled_task_outbox.sql` creates the durable outbox, payment-capture confirmation record, and idempotent internal task inbox. `PostgresScheduledTaskOutboxStore` implements unique-key enqueue, `FOR UPDATE SKIP LOCKED` claims, lease expiry recovery, compare-and-swap acknowledgement/retry/dead-letter updates, and tenant-scoped reads. `PostgresScheduledOrderTransactionRunner` commits the payment-capture confirmation and initial outbox tasks in one database transaction. The scheduled worker process (`pnpm worker:scheduled`) delivers due outbox envelopes into the durable inbox with the same idempotency key.
+
+Important boundary: the worker currently guarantees durable, idempotent handoff into the inbox. It does not itself reserve merchant inventory, prepare goods, allocate couriers, collect products, charge, or refund. Those task consumers, alert delivery, operator review UI, authorized remediation, and production deployment/managed database provisioning remain unimplemented. The order remains `awaiting_payment` until the inventory reservation consumer records its outcome; payment capture is recorded separately.
 
 ## Atomic order confirmation boundary
 The domain package also exposes an application port for committing an already-paid scheduled order and its initial outbox tasks:
