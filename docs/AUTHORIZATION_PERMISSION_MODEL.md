@@ -179,3 +179,16 @@ The API now includes a protected merchant-branch access-check route. It resolves
 The client cannot supply its own role or grants through request headers or body. The default application configuration has no actor resolver, so the protected route denies access by default.
 
 This route is a reference enforcement seam, not a complete authentication integration. The production resolver must validate a persisted session/token, load current account status and time-valid role assignments from trusted storage, and attach the actor server-side. Business data routes must use the same guard before reading or mutating records; database queries must independently include tenant and branch predicates. The access-check route itself returns no business data.
+
+## Persisted-session actor resolution and protected branch data
+The domain package now provides an actor-resolution service that:
+1. Accepts only the documented bearer token format `<sessionId>.<opaqueSecret>`.
+2. Uses an injected cryptographic adapter to digest the secret; raw secrets are not used as lookup keys.
+3. Loads the stored session by opaque session ID and compares the digest.
+4. Loads the principal and requires an active account.
+5. Validates session ownership, revocation, absolute expiry and idle expiry.
+6. Loads current role assignments, validates their scope and time window, then maps them through an injected role-to-grant policy.
+
+The API can use this resolver through trusted infrastructure adapters. A merchant branch summary route demonstrates the required order: authenticate, authorize the exact merchant/branch scope, then call the branch repository. A denied request must not call the repository. The repository adapter is contractually required to include both merchant and branch predicates in its data query.
+
+The role-to-grant policy and cryptographic digest adapter remain injected; no implicit broad role permissions are granted. Multiple distinct roles currently fail closed because the Actor contract represents one role. Production storage, token issuance, cryptographic implementation, concrete role policy, and business repository are not supplied by this reference implementation.
