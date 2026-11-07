@@ -8,3 +8,4 @@ export * from "./scheduled-task-outbox.js";
 export * from "./scheduled-order-commit.js";
 export * from "./scheduled-task-reconciliation.js";
 export * from "./identity-store.js";
+export * from "./session-security.js";
