@@ -32,7 +32,7 @@ Last updated: 2026-11-07
 - [x] Centralized API authentication/authorization guard shared by protected routes; authentication and scope authorization run before repository availability checks or business-data access. Tests cover unauthenticated requests, scope denial without repository calls, and authorized branch reads.
 - [x] Initial PostgreSQL merchant/branch registry migration and tenant-scoped read adapter; API branch summary route uses the PostgreSQL reader by default.
 - [x] Authorized merchant-scoped branch creation and update APIs with PostgreSQL writer; validates payloads, rejects cross-merchant writes, does not overwrite duplicates, refuses writes for inactive merchants, and limits create/update grants to merchant owners/admins. Branch update supports safe activation/deactivation and address preservation when omitted. CI coverage added; merchant onboarding and full branch management remain pending.
-- [ ] Durable scheduled task queue adapter, transactional outbox persistence, and worker execution.
+- [ ] Durable scheduled task queue adapter, transactional outbox persistence, and worker execution (implementation added on development branch; awaiting CI acceptance; current worker hands off to the durable inbox, while business task consumers remain pending).
 - [ ] Scheduled-task reconciliation reader, recurring worker, alert delivery and authorized remediation workflow.
 - [ ] Production transaction adapter and payment-to-order reconciliation/compensation workflow.
 - [ ] Payment provider capture/void/refund integration.
@@ -40,7 +40,7 @@ Last updated: 2026-11-07
 - [ ] Live slot capacity aggregation across branches, shoppers and couriers.
 
 ## Not yet implemented
-The customer, merchant, shopper, courier, admin, owner, payment, inventory, dispatch, AI operations, Telegram, and external integration applications are not yet operational. Customer delivery photo uploads, media storage, customer UI, API persistence and courier/pickup integration are not yet operational. Scheduled order booking UI, live slot capacity, payment execution, immediate merchant stock reservations, durable task queue workers, customer alternative selection and rescheduling are not yet operational.
+The customer, merchant, shopper, courier, admin, owner, payment, inventory, dispatch, AI operations, Telegram, and external integration applications are not yet operational. The scheduled outbox-to-inbox worker is implemented on the development branch but does not yet execute merchant reservation, preparation, shopper collection, or courier dispatch consumers. Customer delivery photo uploads, media storage, customer UI, API persistence and courier/pickup integration are not yet operational. Scheduled order booking UI, live slot capacity, payment execution, immediate merchant stock reservations, durable task queue workers, customer alternative selection and rescheduling are not yet operational.
 
 ## Acceptance rule
 A checkbox is marked complete only when code is present and automated checks or documented acceptance evidence verify it. A design document or interface alone is not proof of an operational feature.
