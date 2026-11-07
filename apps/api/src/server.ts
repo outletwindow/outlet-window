@@ -36,7 +36,7 @@ function grantsForAssignments(assignments: readonly RoleAssignment[]): readonly 
     .filter(assignment => branchReaderRoles.has(assignment.role))
     .map(assignment => ({
       resource: "merchant.branch",
-      actions: ["read"] as const,
+      actions: ["read", "create"] as const,
       scope: assignment.scope
     }));
 }
