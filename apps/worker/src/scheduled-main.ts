@@ -79,7 +79,11 @@ process.on("SIGTERM", () => void shutdown("SIGTERM"));
 
 try {
   await pool.query("SELECT 1");
-  await pool.query("SELECT version FROM schema_migrations WHERE version = $1", ["0006_scheduled_task_outbox"]);
+  const migration = await pool.query(
+    "SELECT version FROM schema_migrations WHERE version = $1",
+    ["0006_scheduled_task_outbox"]
+  );
+  if (migration.rowCount !== 1) throw new Error("scheduled_task_outbox_migration_required");
   process.stdout.write(JSON.stringify({ event: "scheduled_worker_started", pollMs, batchSize }) + "\n");
   await tick();
   interval = setInterval(() => void tick(), pollMs);
