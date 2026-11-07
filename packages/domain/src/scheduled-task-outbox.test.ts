@@ -64,7 +64,7 @@ describe("scheduled task outbox contracts", () => {
       taskType: task.taskType, executeAtUtc: task.executeAtUtc, status: "leased",
       attemptCount: 1, createdAtUtc: "2026-11-07T12:00:00.000Z",
       updatedAtUtc: "2026-11-07T12:00:00.000Z", availableAtUtc: "2026-11-07T12:00:00.000Z",
-      leaseToken: "lease-1", leaseExpiresAtUtc: "2026-11-07T12:01:00.000Z"
+      leaseToken: "lease-1", leaseExpiresAtUtc: "2026-11-07T12:01:00.000Z", payload: task
     };
     expect(isScheduledTaskLeaseValid({
       record, leaseToken: "lease-1", nowUtc: "2026-11-07T12:00:30.000Z"
