@@ -1,6 +1,8 @@
 import type { ScheduledTaskOutboxRecord, ScheduledTaskOutboxStore } from "./scheduled-task-outbox.js";
 import type { ScheduledOrderCommitTransaction, ScheduledOrderConfirmation, ScheduledOrderTransactionRunner } from "./scheduled-order-commit.js";
 import type { PostgresClient, PostgresPool } from "./postgres-iam-store.js";
+import type { ScheduledTaskPublisher } from "./scheduled-task-worker.js";
+import type { ScheduledFulfillmentTaskEnvelope } from "./scheduled-fulfillment-workflow.js";
 
 type OutboxRow = {
   id: string; idempotency_key: string; order_id: string;
@@ -192,5 +194,41 @@ export class PostgresScheduledOrderTransactionRunner implements ScheduledOrderTr
     } finally {
       client.release();
     }
+  }
+}
+
+
+/** Idempotent durable handoff target for the outbox worker; domain consumers process this inbox separately. */
+export class PostgresScheduledTaskInboxPublisher implements ScheduledTaskPublisher {
+  constructor(private readonly pool: PostgresPool) {}
+
+  async publish(task: ScheduledFulfillmentTaskEnvelope, idempotencyKey: string): Promise<void> {
+    if (!task.orderId.trim() || task.plan.orderId !== task.orderId ||
+        task.idempotencyKey !== idempotencyKey || !idempotencyKey.trim() ||
+        !Number.isFinite(Date.parse(task.executeAtUtc))) {
+      throw new Error("scheduled_inbox_invalid_payload");
+    }
+    const tenant = await this.pool.query<{ tenant_id: string }>(
+      "SELECT tenant_id FROM customer_orders WHERE id = $1",
+      [task.orderId]
+    );
+    const tenantId = tenant.rows[0]?.tenant_id;
+    if (!tenantId) throw new Error("scheduled_inbox_order_not_found");
+    const inserted = await this.pool.query<{ id: string }>(
+      `INSERT INTO scheduled_task_inbox
+        (id, tenant_id, order_id, idempotency_key, task_type, payload)
+       VALUES ($1,$2,$3,$1,$4,$5::jsonb)
+       ON CONFLICT (idempotency_key) DO NOTHING
+       RETURNING id`,
+      [idempotencyKey, tenantId, task.orderId, task.taskType, JSON.stringify(task)]
+    );
+    if (inserted.rowCount === 1) return;
+    const existing = await this.pool.query<{ order_id: string; task_type: string; same_payload: boolean }>(
+      "SELECT order_id, task_type, payload = $2::jsonb AS same_payload FROM scheduled_task_inbox WHERE idempotency_key = $1",
+      [idempotencyKey, JSON.stringify(task)]
+    );
+    const row = existing.rows[0];
+    if (row && row.order_id === task.orderId && row.task_type === task.taskType && row.same_payload) return;
+    throw new Error("scheduled_inbox_idempotency_conflict");
   }
 }
