@@ -5,6 +5,7 @@ import {
   type PostgresPool
 } from "../../../packages/domain/src/postgres-iam-store.js";
 import { buildApp, type AppOptions, type MerchantBranchReader } from "./app.js";
+import { PostgresMerchantBranchReader } from "../../../packages/domain/src/postgres-merchant-branch-reader.js";
 
 export interface PostgresApiOptions {
   pool: PostgresPool;
@@ -25,7 +26,7 @@ export function buildPostgresApp(options: PostgresApiOptions) {
   const appOptions: AppOptions = {
     ...(options.serviceName === undefined ? {} : { serviceName: options.serviceName }),
     ...(options.version === undefined ? {} : { version: options.version }),
-    ...(options.merchantBranches === undefined ? {} : { merchantBranches: options.merchantBranches }),
+    merchantBranches: options.merchantBranches ?? new PostgresMerchantBranchReader(options.pool),
     readinessCheck: async () => {
       await options.pool.query("SELECT 1");
       return true;
