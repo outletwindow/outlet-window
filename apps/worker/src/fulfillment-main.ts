@@ -3,9 +3,10 @@ import { Pool } from "pg";
 import {
   PostgresScheduledTaskInboxStore,
   createFulfillmentDispatchHandlers,
+  createHttpFulfillmentProvider,
   runScheduledTaskInboxBatch
 } from "../../../packages/domain/src/index.js";
-import { createHttpFulfillmentProvider } from "./http-fulfillment-provider.js";
+
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is required; fulfillment worker will not start");
