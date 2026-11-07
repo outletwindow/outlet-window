@@ -5,6 +5,7 @@ import {
   createScheduledTaskOutboxRecord,
   PostgresScheduledOrderTransactionRunner,
   PostgresScheduledTaskOutboxStore,
+  PostgresScheduledTaskInboxPublisher,
   commitScheduledOrderAndTasks,
   type ScheduledFulfillmentTaskEnvelope
 } from "../../../packages/domain/src/index.js";
@@ -17,6 +18,7 @@ integration("PostgreSQL scheduled task outbox", () => {
   if (!pool) throw new Error("Pool must exist when DATABASE_URL is configured");
   const store = new PostgresScheduledTaskOutboxStore(pool);
   const transactionRunner = new PostgresScheduledOrderTransactionRunner(pool);
+  const inboxPublisher = new PostgresScheduledTaskInboxPublisher(pool);
   let orderId = "";
   let customerId = "";
 
@@ -53,6 +55,7 @@ integration("PostgreSQL scheduled task outbox", () => {
   }
 
   async function cleanup() {
+    await pool.query("DELETE FROM scheduled_task_inbox WHERE order_id = $1", [orderId]);
     await pool.query("DELETE FROM scheduled_task_outbox WHERE order_id = $1", [orderId]);
     await pool.query("DELETE FROM scheduled_order_confirmations WHERE order_id = $1", [orderId]);
     await pool.query("DELETE FROM customer_orders WHERE id = $1", [orderId]);
@@ -130,6 +133,21 @@ integration("PostgreSQL scheduled task outbox", () => {
     expect(records).toHaveLength(1);
     expect(records[0]?.payload.idempotencyKey).toBe(scheduledTask.idempotencyKey);
     await cleanup();
+  });
+
+  it("publishes to the durable inbox idempotently", async () => {
+    const scheduledTask = task();
+    await inboxPublisher.publish(scheduledTask, scheduledTask.idempotencyKey);
+    await inboxPublisher.publish(scheduledTask, scheduledTask.idempotencyKey);
+    const inbox = await pool.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM scheduled_task_inbox WHERE order_id = $1",
+      [orderId]
+    );
+    expect(inbox.rows[0]?.count).toBe("1");
+    await expect(inboxPublisher.publish(
+      { ...scheduledTask, executeAtUtc: "2026-11-08T10:30:00.000Z" },
+      scheduledTask.idempotencyKey
+    )).rejects.toThrow("scheduled_inbox_idempotency_conflict");
   });
 
   it("enforces tenant scope when reading order tasks", async () => {
