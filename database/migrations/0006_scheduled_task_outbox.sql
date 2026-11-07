@@ -49,3 +49,26 @@ CREATE TABLE IF NOT EXISTS scheduled_order_confirmations (
   CHECK (confirmed_at >= payment_captured_at),
   UNIQUE (tenant_id, order_id)
 );
+
+-- Durable internal inbox makes the outbox handoff idempotent across worker crashes.
+CREATE TABLE IF NOT EXISTS scheduled_task_inbox (
+  id text PRIMARY KEY,
+  tenant_id text NOT NULL,
+  order_id text NOT NULL,
+  idempotency_key text NOT NULL UNIQUE CHECK (length(trim(idempotency_key)) BETWEEN 8 AND 240),
+  task_type text NOT NULL CHECK (task_type IN ('merchant_reservation','merchant_preparation','courier_dispatch','shopper_collection')),
+  payload jsonb NOT NULL CHECK (jsonb_typeof(payload) = 'object'),
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','processing','completed','dead_letter')),
+  attempt_count integer NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  processed_at timestamptz,
+  last_error_code text CHECK (last_error_code IS NULL OR last_error_code ~ '^[A-Za-z0-9_.:-]{1,80}$'),
+  FOREIGN KEY (tenant_id, order_id) REFERENCES customer_orders(tenant_id, id) ON DELETE RESTRICT,
+  CHECK ((status = 'completed') = (processed_at IS NOT NULL))
+);
+CREATE INDEX IF NOT EXISTS scheduled_task_inbox_pending_idx
+  ON scheduled_task_inbox (created_at, id)
+  WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS scheduled_task_inbox_tenant_order_idx
+  ON scheduled_task_inbox (tenant_id, order_id, created_at, id);
