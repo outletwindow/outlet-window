@@ -58,8 +58,8 @@ CREATE TABLE IF NOT EXISTS inventory_reservations (
   expires_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  FOREIGN KEY (tenant_id, suborder_id)
-    REFERENCES merchant_suborders(tenant_id, id) ON DELETE RESTRICT,
+  FOREIGN KEY (tenant_id, order_id, suborder_id)
+    REFERENCES merchant_suborders(tenant_id, order_id, id) ON DELETE RESTRICT,
   FOREIGN KEY (tenant_id, merchant_id)
     REFERENCES merchants(tenant_id, id) ON DELETE RESTRICT,
   FOREIGN KEY (merchant_id, branch_id)
