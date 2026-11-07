@@ -274,4 +274,47 @@ describe("Outlet Window API foundation", () => {
       await protectedApp.close();
     }
   });
+
+  it("persists authorization decisions using the verified actor and request scope", async () => {
+    const events: import("../../../packages/domain/src/audit.js").AuditEvent[] = [];
+    const protectedApp = buildApp({
+      resolveActor: async () => merchantActor,
+      auditEvents: { append: async event => { events.push(event); return "inserted"; } }
+    });
+    await protectedApp.ready();
+    try {
+      const allowed = await protectedApp.inject({ method: "GET", url: "/api/v1/merchants/merchant-1/branches/branch-1/access-check" });
+      expect(allowed.statusCode).toBe(200);
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        actor: { id: "principal-1", role: "merchant_owner", type: "merchant_user" },
+        tenantId: "merchant-1", merchantId: "merchant-1", branchId: "branch-1",
+        outcome: "success", source: "api"
+      });
+      expect(events[0]?.correlationId).toBe(allowed.headers["x-correlation-id"]);
+      const denied = await protectedApp.inject({ method: "GET", url: "/api/v1/merchants/merchant-1/branches/branch-2/access-check" });
+      expect(denied.statusCode).toBe(403);
+      expect(events).toHaveLength(2);
+      expect(events[1]?.outcome).toBe("denied");
+      expect(events[1]?.actor.id).toBe("principal-1");
+    } finally { await protectedApp.close(); }
+  });
+
+  it("does not execute a protected action when durable audit persistence fails", async () => {
+    let repositoryCalls = 0;
+    const protectedApp = buildApp({
+      resolveActor: async () => merchantActor,
+      auditEvents: { append: async () => { throw new Error("audit database unavailable"); } },
+      merchantBranches: { findBranchSummary: async () => {
+        repositoryCalls += 1;
+        return { merchantId: "merchant-1", branchId: "branch-1", displayName: "Branch", status: "active" as const };
+      } }
+    });
+    await protectedApp.ready();
+    try {
+      const response = await protectedApp.inject({ method: "GET", url: "/api/v1/merchants/merchant-1/branches/branch-1/summary" });
+      expect(response.statusCode).toBe(500);
+      expect(repositoryCalls).toBe(0);
+    } finally { await protectedApp.close(); }
+  });
 });
