@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  reconcileScheduledOrderTasks,
-  type ScheduledTaskReconciliationIssue
-} from "./scheduled-task-reconciliation.js";
+import { reconcileScheduledOrderTasks } from "./scheduled-task-reconciliation.js";
 import type { ScheduledFulfillmentTaskEnvelope } from "./scheduled-fulfillment-workflow.js";
 import type { ScheduledTaskOutboxRecord } from "./scheduled-task-outbox.js";
 
