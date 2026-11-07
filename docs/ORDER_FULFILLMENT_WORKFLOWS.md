@@ -132,6 +132,20 @@ Example: customer books delivery for 17:00, preparation estimate is 30 minutes, 
 
 The engine must not wait until the preparation cutoff to create the order or reserve stock. Only the operational preparation/dispatch task is delayed. If a booking is made inside the calculated preparation window, release the task immediately and show the customer the earliest realistic available slot.
 
+### Checkout orchestration and task queue
+
+The scheduled checkout saga uses the following guarded sequence:
+1. Validate the selected time slot and available capacity.
+2. Capture payment immediately after customer confirmation using a provider idempotency key.
+3. Create the order and request exact-variant branch reservation immediately.
+4. Only after a confirmed reservation, persist timed preparation and dispatch tasks in a durable queue.
+5. Release merchant preparation, personal shopper collection or courier dispatch at their calculated UTC instants.
+6. Persist each provider/task result and retry idempotently; never create duplicate charges, reservations or assignments.
+
+If payment fails, do not confirm the order or request stock reservation. If stock reservation fails after payment capture, hold fulfillment and show eligible alternatives. If the customer declines or no alternative exists, process a linked full/partial refund according to the payment provider and applicable law. Do not silently substitute or automatically change the customer's selected product.
+
+A payment provider may require authorization/capture rather than immediate capture for a specific payment method. The customer-facing payment disclosure must state the actual behavior; never describe an authorization hold as a completed charge.
+
 ### Out-of-stock and alternatives
 
 If the exact item cannot be reserved:
