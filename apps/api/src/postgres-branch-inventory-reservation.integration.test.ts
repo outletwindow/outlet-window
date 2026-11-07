@@ -46,11 +46,13 @@ integration("PostgreSQL branch inventory reservations", () => {
       ["item-" + id, tenantId, id, suborderId, branchId, variantId, sku, quantity]
     );
     const capturedAtUtc = new Date().toISOString();
-    await paymentRecorder.recordPaymentCapture({
+    const paymentCapture = {
       orderId: id, tenantId: "platform", paymentReference: "payment-" + id,
       paymentCapturedAtUtc: capturedAtUtc, confirmedAtUtc: capturedAtUtc,
       fulfillmentVersion: 1
-    });
+    };
+    await expect(paymentRecorder.recordPaymentCapture(paymentCapture)).resolves.toBe("inserted");
+    await expect(paymentRecorder.recordPaymentCapture(paymentCapture)).resolves.toBe("already_exists");
     const idempotencyKey = "inventory-reservation:" + id + ":v1";
     return {
       tenantId, orderId: id, suborderId, merchantId, branchId, idempotencyKey,
