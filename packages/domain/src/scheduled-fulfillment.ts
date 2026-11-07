@@ -107,11 +107,11 @@ export function createScheduledOrderPlan(input: {
   if (scheduledAt <= nowAt || scheduledAt - nowAt > horizon) return null;
   if (input.fulfillmentType !== "home_delivery" && input.estimate.travelMinutes !== 0) return null;
 
-  const releaseAt = scheduledAt -
-    (input.estimate.preparationMinutes + input.estimate.bufferMinutes) * 60_000;
   const dispatchAt = input.fulfillmentType === "home_delivery"
     ? scheduledAt - input.estimate.travelMinutes * 60_000
-    : releaseAt;
+    : scheduledAt;
+  const releaseAt = dispatchAt -
+    (input.estimate.preparationMinutes + input.estimate.bufferMinutes) * 60_000;
 
   return {
     orderId: input.orderId,
