@@ -9,7 +9,7 @@ export interface CreateMerchantBranchInput {
 }
 
 export type CreateMerchantBranchResult = "created" | "already_exists" | "merchant_not_found" | "merchant_inactive";
-export type UpdateMerchantBranchResult = "updated" | "not_found" | "merchant_inactive";
+export type UpdateMerchantBranchResult = "updated" | "not_found" | "merchant_not_found" | "merchant_inactive";
 
 export interface MerchantBranchWriter {
   createBranch(input: CreateMerchantBranchInput): Promise<CreateMerchantBranchResult>;
@@ -72,6 +72,6 @@ export class PostgresMerchantBranchWriter implements MerchantBranchWriter {
     const merchant = await this.database.query<{ status: string }>(
       "SELECT status FROM merchants WHERE id = $1", [input.merchantId]
     );
-    return merchant.rows[0]?.status === "active" ? "not_found" : "merchant_inactive";
+    if (!merchant.rowCount) return "merchant_not_found";\n    return merchant.rows[0]?.status === "active" ? "not_found" : "merchant_inactive";
   }
 }
