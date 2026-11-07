@@ -7,10 +7,12 @@ export interface InventoryReservationLine {
 export interface InventoryReservationRequest {
   tenantId: string;
   orderId: string;
+  suborderId: string;
   merchantId: string;
   branchId: string;
   idempotencyKey: string;
   requestedAtUtc: string;
+  expiresAtUtc?: string;
   lines: readonly InventoryReservationLine[];
 }
 
@@ -35,12 +37,16 @@ function validTimestamp(value: string): boolean {
 
 function validateRequest(request: InventoryReservationRequest): void {
   for (const [field, value] of Object.entries({
-    tenantId: request.tenantId, orderId: request.orderId, merchantId: request.merchantId,
+    tenantId: request.tenantId, orderId: request.orderId, suborderId: request.suborderId, merchantId: request.merchantId,
     branchId: request.branchId, idempotencyKey: request.idempotencyKey
   })) {
     if (!value.trim()) throw new Error("inventory_reservation_" + field + "_required");
   }
-  if (!validTimestamp(request.requestedAtUtc)) throw new Error("inventory_reservation_invalid_timestamp");
+  if (!validTimestamp(request.requestedAtUtc) ||
+      (request.expiresAtUtc !== undefined && (!validTimestamp(request.expiresAtUtc) ||
+        Date.parse(request.expiresAtUtc) <= Date.parse(request.requestedAtUtc)))) {
+    throw new Error("inventory_reservation_invalid_timestamp");
+  }
   if (!Array.isArray(request.lines) || request.lines.length === 0) {
     throw new Error("inventory_reservation_lines_required");
   }
