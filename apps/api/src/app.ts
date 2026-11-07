@@ -37,7 +37,8 @@ export interface AuditEventWriter { append(event: AuditEvent): Promise<"inserted
 export interface OrderTransitionWriter {
   transitionSuborder(input: { tenantId: string; orderId: string; suborderId: string; nextStatus: OrderStatus; context: OrderTransitionContext; auditEvent: AuditEvent }): Promise<
     | { outcome: "updated"; transition: { ok: true; order: { status: OrderStatus; version: number }; previousStatus: OrderStatus }; parentStatus: OrderStatus }
-    | { outcome: "not_found" }\n    | { outcome: "conflict" }
+    | { outcome: "not_found" }
+    | { outcome: "conflict" }
     | { outcome: "rejected"; reason: string }
   >;
 }
