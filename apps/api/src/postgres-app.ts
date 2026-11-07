@@ -1,5 +1,4 @@
-import type { FastifyRequest } from "fastify";
-import type { Actor, PermissionGrant } from "../../../packages/domain/src/authorization.js";
+import type { PermissionGrant } from "../../../packages/domain/src/authorization.js";
 import type { RoleAssignment } from "../../../packages/domain/src/identity.js";
 import {
   PostgresIamStore,
