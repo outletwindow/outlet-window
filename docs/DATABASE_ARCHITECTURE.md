@@ -3,11 +3,12 @@
 ## 1. Purpose
 Define the logical database architecture for a global, multi-merchant commerce and logistics platform. The initial implementation is planned for Jubail, Saudi Arabia, with a design that supports future countries and cities.
 
-## 2. Database Technology
-- Primary relational database: PostgreSQL.
-- ORM candidate: Prisma.
-- Redis may be used for caching, queues, and short-lived operational data.
-- Object storage for product images, invoices, and delivery evidence.
+## 2. Database Technology — Proposal, Not Yet Approved
+- Proposed primary relational database: PostgreSQL.
+- Proposed ORM candidate: Prisma.
+- Redis is an optional candidate for caching, queues, and short-lived operational data.
+- Object storage is required for product images, invoices, and delivery evidence; provider selection is pending.
+- These are architecture proposals only. Final database, ORM, cache, and cloud-provider choices remain pending an explicit owner decision.
 - Database migrations must be version-controlled and reviewed.
 
 ## 3. Core Design Principles
