@@ -38,7 +38,8 @@ export function buildPostgresApp(options: PostgresApiOptions) {
         "0001_identity_access_sessions",
         "0002_merchants_branches",
         "0003_audit_events",
-        "0004_customer_orders"
+        "0004_customer_orders",
+        "0005_marketplace_order_tenancy"
       ];
       const result = await options.pool.query<{ version: string }>(
         "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",
