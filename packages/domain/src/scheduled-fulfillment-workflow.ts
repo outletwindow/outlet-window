@@ -46,9 +46,7 @@ export function getScheduledCheckoutNextAction(
     if (snapshot.alternatives.length > 0 && snapshot.alternativeChoice === "awaiting_customer") {
       return "await_customer_choice";
     }
-    if (snapshot.alternativeChoice === "accepted") {
-      return "manual_review";
-    }
+    if (snapshot.alternativeChoice === "accepted") return "manual_review";
     if (snapshot.alternativeChoice === "declined" ||
         (snapshot.alternatives.length === 0 && snapshot.alternativeChoice === "not_required")) {
       return "process_refund";
@@ -78,18 +76,16 @@ export function scheduledFulfillmentIdempotencyKey(
   return `scheduled-fulfillment:${orderId}:${action}:v${version}`;
 }
 
-/** Build the durable task schedule after payment and stock reservation have succeeded. */
+/**
+ * Build timed fulfillment tasks only after the checkout saga has persisted a confirmed
+ * exact-variant inventory reservation. The immediate reservation is a checkout action,
+ * not a delayed preparation/dispatch task.
+ */
 export function buildScheduledFulfillmentTasks(
   plan: ScheduledOrderPlan,
   version: number
 ): readonly ScheduledFulfillmentTaskEnvelope[] {
-  const tasks: ScheduledFulfillmentTaskEnvelope[] = [{
-    idempotencyKey: scheduledFulfillmentIdempotencyKey(plan.orderId, "merchant_reservation", version)!,
-    orderId: plan.orderId,
-    taskType: "merchant_reservation",
-    executeAtUtc: plan.inventoryReservationDueAt,
-    plan
-  }];
+  const tasks: ScheduledFulfillmentTaskEnvelope[] = [];
 
   if (plan.fulfillmentType === "personal_shopper_pickup") {
     tasks.push({
