@@ -50,7 +50,7 @@ export class PostgresOrderTransitionStore {
         `SELECT s.id, s.order_id, s.tenant_id, s.status, s.version,
                 s.merchant_id, s.branch_id
          FROM merchant_suborders s
-         JOIN customer_orders o ON o.tenant_id = s.tenant_id AND o.id = s.order_id
+         JOIN customer_orders o ON o.id = s.order_id
          WHERE s.tenant_id = $1 AND s.order_id = $2 AND s.id = $3
          FOR UPDATE OF o, s`,
         [input.tenantId, input.orderId, input.suborderId]
@@ -91,15 +91,15 @@ export class PostgresOrderTransitionStore {
       }
 
       const statuses = await client.query<StatusRow>(
-        "SELECT status FROM merchant_suborders WHERE tenant_id = $1 AND order_id = $2 ORDER BY id",
-        [input.tenantId, input.orderId]
+        "SELECT status FROM merchant_suborders WHERE order_id = $1 ORDER BY id",
+        [input.orderId]
       );
       const parentStatus = aggregateParentOrderStatus(statuses.rows.map(row => row.status));
       const parentChanged = await client.query(
         `UPDATE customer_orders
          SET status = $3, version = version + 1, updated_at = $4
-         WHERE tenant_id = $1 AND id = $2`,
-        [input.tenantId, input.orderId, parentStatus, transition.order.updatedAt]
+         WHERE id = $1`,
+        [input.orderId, parentStatus, transition.order.updatedAt]
       );
       if (parentChanged.rowCount !== 1) {
         await client.query("ROLLBACK");
