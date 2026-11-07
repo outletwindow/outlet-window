@@ -2,6 +2,15 @@ import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { authorize, type Actor, type AuthorizationRequest } from "../../../packages/domain/src/authorization.js";
 import { resolveActorFromBearerToken, type ActorResolutionDependencies } from "../../../packages/domain/src/actor-resolution.js";
 
+export interface MerchantBranchReader {
+  findBranchSummary(input: { merchantId: string; branchId: string }): Promise<{
+    merchantId: string;
+    branchId: string;
+    displayName: string;
+    status: "active" | "inactive";
+  } | null>;
+}
+
 export interface AppOptions {
   serviceName?: string;
   version?: string;
@@ -9,6 +18,8 @@ export interface AppOptions {
   resolveActor?: (request: FastifyRequest) => Promise<Actor | null>;
   /** Optional trusted persistence/crypto adapters for resolving real bearer sessions. */
   actorResolution?: ActorResolutionDependencies;
+  /** Repository adapter must apply merchantId and branchId predicates in its database query. */
+  merchantBranches?: MerchantBranchReader;
 }
 
 export function buildApp(options: AppOptions = {}): FastifyInstance {
@@ -72,6 +83,38 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       return reply.code(403).send({ error: "forbidden", reason: decision.reason });
     }
     return reply.code(200).send({ access: "granted" });
+  });
+
+
+  // Example business-data route. Authorization is checked before repository access.
+  app.get<{
+    Params: { merchantId: string; branchId: string };
+  }>("/api/v1/merchants/:merchantId/branches/:branchId/summary", async (request, reply) => {
+    if (!options.merchantBranches) return reply.code(503).send({ error: "service_unavailable" });
+    let actor: Actor | null = null;
+    if (options.actorResolution) {
+      const header = request.headers.authorization;
+      const resolved = await resolveActorFromBearerToken({
+        authorizationHeader: Array.isArray(header) ? header[0] : header,
+        dependencies: options.actorResolution
+      });
+      actor = resolved.actor;
+    } else {
+      actor = await options.resolveActor?.(request) ?? null;
+    }
+    if (!actor) return reply.code(401).send({ error: "unauthenticated" });
+    const decision = authorize(actor, {
+      resource: "merchant.branch",
+      action: "read",
+      scope: { merchantId: request.params.merchantId, branchId: request.params.branchId }
+    });
+    if (!decision.allowed) return reply.code(403).send({ error: "forbidden", reason: decision.reason });
+    const branch = await options.merchantBranches.findBranchSummary({
+      merchantId: request.params.merchantId,
+      branchId: request.params.branchId
+    });
+    if (!branch) return reply.code(404).send({ error: "not_found" });
+    return reply.code(200).send({ branch });
   });
 
   return app;
