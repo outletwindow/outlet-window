@@ -12,3 +12,5 @@ export * from "./session-security.js";
 export * from "./actor-resolution.js";
 export * from "./postgres-iam-store.js";
 export * from "./postgres-migrations.js";
+
+export * from "./postgres-merchant-branch-reader.js";
