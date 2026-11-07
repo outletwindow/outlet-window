@@ -1,6 +1,6 @@
 # Outlet Window - Implementation Status
 
-Last updated: 2026-11-07
+Last updated: 2026-11-08
 
 ## Engineering foundation
 - [x] pnpm workspace and TypeScript configuration.
@@ -33,11 +33,11 @@ Last updated: 2026-11-07
 - [x] Initial PostgreSQL merchant/branch registry migration and tenant-scoped read adapter; API branch summary route uses the PostgreSQL reader by default.
 - [x] Authorized merchant-scoped branch creation and update APIs with PostgreSQL writer; validates payloads, rejects cross-merchant writes, does not overwrite duplicates, refuses writes for inactive merchants, and limits create/update grants to merchant owners/admins. Branch update supports safe activation/deactivation and address preservation when omitted. CI coverage added; merchant onboarding and full branch management remain pending.
 - [x] PostgreSQL scheduled task outbox persistence, atomic order/payment-capture confirmation handoff, lease-based worker claims, bounded retry/dead-letter handling, and idempotent durable inbox dispatch (CI typecheck, tests, PostgreSQL integration checks, and build passed on `0c037ce`).
-- [ ] Scheduled task inbox consumers for merchant reservation/preparation, shopper collection, and courier dispatch; operational alert delivery and authorized remediation.
+- [ ] Scheduled task inbox consumers for merchant preparation, shopper collection, and courier dispatch; operational alert delivery and authorized remediation.
 - [ ] Scheduled-task reconciliation reader, recurring worker, alert delivery and authorized remediation workflow.
 - [ ] Production transaction adapter and payment-to-order reconciliation/compensation workflow.
 - [ ] Payment provider capture/void/refund integration.
-- [ ] Merchant inventory reservation API and reservation expiry/reconciliation.
+- [x] Branch-level inventory ledger, customer order item lines, merchant/branch-scoped reservation records, and PostgreSQL transaction adapter for atomic platform-side stock allocation; integration tests cover idempotency, exact order-line matching, and concurrent final-unit contention. External POS/ERP hard-reservation acknowledgement and expiry/reconciliation remain pending.
 - [ ] Live slot capacity aggregation across branches, shoppers and couriers.
 
 ## Not yet implemented
@@ -62,3 +62,4 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] CI acceptance for TypeScript adapter tests covering tenant-bound session reads and concurrent one-time session rotation (run 42404896175 passed typecheck, tests, and build).
 - [x] Document the encrypted backup and isolated restore procedure and production acceptance checklist.
 - [ ] Configure provider-managed encrypted backups, retention, monitoring, and perform a restore drill in the selected cloud account.
+\n\n## Branch inventory and reservation progress (development branch)\n- [x] Added versioned schema for customer order item lines, branch inventory quantities and freshness/source metadata, reservation headers, and reservation lines.\n- [x] Added a PostgreSQL transaction adapter that locks branch stock rows, validates exact merchant suborder lines, reserves all lines or none, and safely returns unavailable variants when stock is missing/insufficient.\n- [x] Added idempotency replay/conflict handling and integration tests for simultaneous requests competing for the final unit.\n- [ ] Wire checkout to call this adapter after confirmed payment capture; no customer API route or merchant connector is claimed live.\n- [ ] Implement stock sync, reservation expiry/release/consume, reconciliation, and merchant external hard-reservation acknowledgements.\n
