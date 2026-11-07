@@ -257,3 +257,15 @@ This document defines the logical database design only. The production schema, m
 
 Project: Outlet Window
 Phase: Phase 0 - Database Architecture
+
+## 23. Identity persistence and access-control adapter boundary
+The domain package defines database-agnostic ports for:
+- Creating an identity without duplicating a principal identifier.
+- Updating account status with an expected-current-status condition to prevent lost updates.
+- Assigning a role with an explicit scope and validity window.
+- Revoking a session only for the owning principal.
+- Reading an identity, time-valid role assignments, and a session by principal/session pair.
+
+Validation rules require human identities to have a valid email or E.164-style phone number; service principals may omit human contact details. Role scopes must be explicit. Branch scope requires a merchant scope; city scope requires a country; platform-wide scope must be explicitly platform-only. Role validity windows use a half-open interval: validFrom is inclusive and validUntil is exclusive.
+
+These are contracts and validation helpers, not authentication. Password hashing, passkeys, MFA, identity-provider integration, session token issuance, database constraints, persistent adapters, and API middleware remain unimplemented. Raw passwords, bearer tokens, OTPs, and recovery secrets must never be stored in these identity records.
