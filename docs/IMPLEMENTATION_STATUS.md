@@ -18,6 +18,7 @@ Last updated: 2026-11-07
 - [x] Scheduled fulfillment plan: timezone-aware time calculations and capacity validation.
 - [x] Scheduled checkout saga decisions: payment-before-reservation sequence, customer alternative/refund outcomes, idempotency keys and timed task envelopes.
 - [x] Scheduled task outbox domain contract: idempotent enqueue port, lease-token validation, bounded retry scheduling and tests (adapter not yet implemented).
+- [x] Atomic scheduled-order commit port: validates order/task consistency and coordinates order persistence plus outbox enqueue in one transaction boundary, with rollback/idempotency tests (database adapter not yet implemented).
 
 ## In progress
 - [ ] Persistent identity, user, role, and permission storage.
@@ -26,6 +27,7 @@ Last updated: 2026-11-07
 - [ ] Audit event persistence and protected access.
 - [ ] API-level authentication and authorization integration.
 - [ ] Durable scheduled task queue adapter, transactional outbox persistence, and worker execution.
+- [ ] Production transaction adapter and payment-to-order reconciliation/compensation workflow.
 - [ ] Payment provider capture/void/refund integration.
 - [ ] Merchant inventory reservation API and reservation expiry/reconciliation.
 - [ ] Live slot capacity aggregation across branches, shoppers and couriers.
