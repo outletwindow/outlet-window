@@ -33,6 +33,13 @@ export interface MerchantBranchWriter {
 }
 
 export interface AuditEventWriter { append(event: AuditEvent): Promise<"inserted" | "already_exists">; }
+export interface OrderTransitionWriter {
+  transitionSuborder(input: { tenantId: string; orderId: string; suborderId: string; nextStatus: OrderStatus; context: OrderTransitionContext; auditEvent: AuditEvent }): Promise<
+    | { outcome: "updated"; transition: { ok: true; order: { status: OrderStatus; version: number }; previousStatus: OrderStatus }; parentStatus: OrderStatus }
+    | { outcome: "not_found" | "conflict" }
+    | { outcome: "rejected"; reason: string }
+  >;
+}
 
 export interface AppOptions {
   serviceName?: string;
@@ -48,6 +55,7 @@ export interface AppOptions {
   readinessCheck?: () => Promise<boolean>;
   /** Durable audit writer. Protected operations are not executed if their audit write fails. */
   auditEvents?: AuditEventWriter;
+  orderTransitions?: OrderTransitionWriter;
 }
 
 type AuthorizationResult =
