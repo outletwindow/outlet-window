@@ -70,5 +70,6 @@ export function isRoleAssignmentActiveAt(assignment: RoleAssignment, atUtc: stri
   const from = Date.parse(assignment.validFrom);
   const until = assignment.validUntil === undefined ? Number.POSITIVE_INFINITY : Date.parse(assignment.validUntil);
   return assignment.active && Number.isFinite(at) && Number.isFinite(from) &&
-    Number.isFinite(until) && from <= at && at < until;
+    (assignment.validUntil === undefined || Number.isFinite(until)) &&
+    from <= at && at < until;
 }
