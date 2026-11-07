@@ -26,7 +26,7 @@ export interface MerchantBranchWriter {
     displayName: string;
     cityCode: string;
     address?: Readonly<Record<string, unknown>>;
-  }): Promise<"created" | "already_exists" | "merchant_not_found">;
+  }): Promise<"created" | "already_exists" | "merchant_not_found" | "merchant_inactive">;
 }
 
 export interface AppOptions {
@@ -201,6 +201,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       ...(body.address === undefined ? {} : { address: body.address })
     });
     if (created === "merchant_not_found") return reply.code(404).send({ error: "merchant_not_found" });
+    if (created === "merchant_inactive") return reply.code(409).send({ error: "merchant_inactive" });
     if (created === "already_exists") return reply.code(409).send({ error: "branch_already_exists" });
     return reply.code(201).send({
       branch: {
