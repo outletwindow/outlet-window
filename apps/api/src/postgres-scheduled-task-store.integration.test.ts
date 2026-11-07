@@ -128,7 +128,7 @@ integration("PostgreSQL scheduled task outbox", () => {
     const order = await pool.query<{ status: string }>(
       "SELECT status FROM customer_orders WHERE id = $1", [orderId]
     );
-    expect(order.rows[0]?.status).toBe("confirmed");
+    expect(order.rows[0]?.status).toBe("awaiting_payment");
     const records = await store.listByOrder({ tenantId: "platform", orderId });
     expect(records).toHaveLength(1);
     expect(records[0]?.payload.idempotencyKey).toBe(scheduledTask.idempotencyKey);
