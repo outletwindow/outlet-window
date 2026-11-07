@@ -1,7 +1,5 @@
 import { createHash } from "node:crypto";
 import { Pool } from "pg";
-import type { RoleAssignment } from "../../../packages/domain/src/identity.js";
-import type { PermissionGrant } from "../../../packages/domain/src/authorization.js";
 import { buildPostgresApp } from "./postgres-app.js";
 import { buildApp } from "./app.js";
 import { grantsForAssignments } from "./permissions.js";
