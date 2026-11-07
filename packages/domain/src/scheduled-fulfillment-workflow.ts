@@ -58,22 +58,34 @@ export function getScheduledCheckoutNextAction(
   return "manual_review";
 }
 
+export interface ScheduledFulfillmentTarget {
+  merchantTenantId: string;
+  suborderId: string;
+  merchantId: string;
+  branchId: string;
+}
+
 export interface ScheduledFulfillmentTaskEnvelope {
   idempotencyKey: string;
   orderId: string;
   taskType: "merchant_reservation" | "merchant_preparation" | "courier_dispatch" | "shopper_collection";
   executeAtUtc: string;
   plan: ScheduledOrderPlan;
+  /** Merchant branch target for multi-merchant orders; absent only for legacy order-level tasks. */
+  target?: ScheduledFulfillmentTarget;
 }
 
 /** Build a stable provider/task idempotency key for a specific order action and version. */
 export function scheduledFulfillmentIdempotencyKey(
   orderId: string,
   action: ScheduledFulfillmentTaskEnvelope["taskType"],
-  version: number
+  version: number,
+  suborderId?: string
 ): string | null {
-  if (!orderId.trim() || !Number.isSafeInteger(version) || version < 1) return null;
-  return `scheduled-fulfillment:${orderId}:${action}:v${version}`;
+  if (!orderId.trim() || !Number.isSafeInteger(version) || version < 1 ||
+      (suborderId !== undefined && !suborderId.trim())) return null;
+  const target = suborderId === undefined ? "" : `:suborder:${suborderId}`;
+  return `scheduled-fulfillment:${orderId}${target}:${action}:v${version}`;
 }
 
 /**
@@ -83,35 +95,39 @@ export function scheduledFulfillmentIdempotencyKey(
  */
 export function buildScheduledFulfillmentTasks(
   plan: ScheduledOrderPlan,
-  version: number
+  version: number,
+  target?: ScheduledFulfillmentTarget
 ): readonly ScheduledFulfillmentTaskEnvelope[] {
   const tasks: ScheduledFulfillmentTaskEnvelope[] = [];
 
   if (plan.fulfillmentType === "personal_shopper_pickup") {
     tasks.push({
-      idempotencyKey: scheduledFulfillmentIdempotencyKey(plan.orderId, "shopper_collection", version)!,
+      idempotencyKey: scheduledFulfillmentIdempotencyKey(plan.orderId, "shopper_collection", version, target?.suborderId)!,
       orderId: plan.orderId,
       taskType: "shopper_collection",
       executeAtUtc: plan.preparationReleaseAtUtc,
-      plan
+      plan,
+      ...(target === undefined ? {} : { target })
     });
   } else {
     tasks.push({
-      idempotencyKey: scheduledFulfillmentIdempotencyKey(plan.orderId, "merchant_preparation", version)!,
+      idempotencyKey: scheduledFulfillmentIdempotencyKey(plan.orderId, "merchant_preparation", version, target?.suborderId)!,
       orderId: plan.orderId,
       taskType: "merchant_preparation",
       executeAtUtc: plan.preparationReleaseAtUtc,
-      plan
+      plan,
+      ...(target === undefined ? {} : { target })
     });
   }
 
   if (plan.courierDispatchAtUtc) {
     tasks.push({
-      idempotencyKey: scheduledFulfillmentIdempotencyKey(plan.orderId, "courier_dispatch", version)!,
+      idempotencyKey: scheduledFulfillmentIdempotencyKey(plan.orderId, "courier_dispatch", version, target?.suborderId)!,
       orderId: plan.orderId,
       taskType: "courier_dispatch",
       executeAtUtc: plan.courierDispatchAtUtc,
-      plan
+      plan,
+      ...(target === undefined ? {} : { target })
     });
   }
   return tasks;
