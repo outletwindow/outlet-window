@@ -215,9 +215,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     });
   });
 
-  return app;
-}
-  app.patch<{
+app.patch<{
     Params: { merchantId: string; branchId: string };
     Body: {
       displayName: string;
@@ -258,4 +256,5 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     } });
   });
 
-
+  return app;
+}
