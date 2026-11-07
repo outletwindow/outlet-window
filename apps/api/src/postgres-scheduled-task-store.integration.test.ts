@@ -14,8 +14,9 @@ const databaseUrl = process.env.DATABASE_URL;
 const integration = describe.skipIf(!databaseUrl);
 
 integration("PostgreSQL scheduled task outbox", () => {
-  const pool = databaseUrl ? new Pool({ connectionString: databaseUrl, max: 6 }) : null;
-  if (!pool) throw new Error("Pool must exist when DATABASE_URL is configured");
+  const configuredPool = databaseUrl ? new Pool({ connectionString: databaseUrl, max: 6 }) : null;
+  if (!configuredPool) throw new Error("Pool must exist when DATABASE_URL is configured");
+  const pool: Pool = configuredPool;
   const store = new PostgresScheduledTaskOutboxStore(pool);
   const transactionRunner = new PostgresScheduledOrderTransactionRunner(pool);
   const inboxPublisher = new PostgresScheduledTaskInboxPublisher(pool);
