@@ -1,4 +1,6 @@
 import type { PostgresPool } from "./postgres-iam-store.js";
+import type { AuditEvent } from "./audit.js";
+import { PostgresAuditEventStore } from "./postgres-audit-event-store.js";
 import {
   aggregateParentOrderStatus,
   transitionOrder,
@@ -32,7 +34,15 @@ export class PostgresOrderTransitionStore {
     suborderId: string;
     nextStatus: OrderStatus;
     context: OrderTransitionContext;
+    auditEvent: AuditEvent;
   }): Promise<PersistedOrderTransitionResult> {
+    if (input.auditEvent.tenantId !== input.tenantId ||
+        input.auditEvent.actor.id !== input.context.actorId ||
+        input.auditEvent.resourceId !== input.suborderId ||
+        input.auditEvent.action !== "order.suborder.transition" ||
+        input.auditEvent.outcome !== "success") {
+      throw new Error("Order transition audit event does not match the operation");
+    }
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -85,12 +95,18 @@ export class PostgresOrderTransitionStore {
         [input.tenantId, input.orderId]
       );
       const parentStatus = aggregateParentOrderStatus(statuses.rows.map(row => row.status));
-      await client.query(
+      const parentChanged = await client.query(
         `UPDATE customer_orders
          SET status = $3, version = version + 1, updated_at = $4
          WHERE tenant_id = $1 AND id = $2`,
         [input.tenantId, input.orderId, parentStatus, transition.order.updatedAt]
       );
+      if (parentChanged.rowCount !== 1) {
+        await client.query("ROLLBACK");
+        return { outcome: "conflict" };
+      }
+      // The audit record shares the business transaction: neither can commit alone.
+      await new PostgresAuditEventStore(client).append(input.auditEvent);
       await client.query("COMMIT");
       return { outcome: "updated", transition, parentStatus };
     } catch (error) {
