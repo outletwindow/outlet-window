@@ -4,7 +4,7 @@
 
 Reviewed the development branch `work/outlet-window-build`, API composition and route code, PostgreSQL adapters and migrations, authorization/session domain code, CI workflow, tests, and implementation status.
 
-Latest verified CI run: [42409837951](https://github.com/outletwindow/outlet-window/actions/runs/42409837951). PostgreSQL migrations and SQL constraints, TypeScript typecheck, automated tests, and build all passed.
+Latest verified CI run: [42414601213](https://github.com/outletwindow/outlet-window/actions/runs/42409837951). PostgreSQL migrations and SQL constraints, TypeScript typecheck, automated tests, and build all passed.
 
 This is a source/repository audit. It is not a live production, penetration, provider integration, or deployed-environment test.
 
@@ -15,6 +15,10 @@ This is a source/repository audit. It is not a live production, penetration, pro
 - Production startup refuses to run without `DATABASE_URL`; readiness checks required migrations and graceful shutdown closes the API and pool.
 - Deny-by-default authorization and server-side actor resolution from bearer sessions.
 - PostgreSQL merchant/branch registry with tenant-scoped branch reads and merchant-scoped branch create/update operations.
+- PostgreSQL customer-order and merchant-suborder persistence with transactional creation, idempotency-key locking, canonical metadata comparison, active merchant/branch validation, and rollback if any suborder cannot be created.
+- Marketplace tenancy migration: a platform/customer parent order can contain suborders isolated under separate merchant tenants; merchant tenant rows are provisioned by a database trigger and suborders are constrained to their merchant tenant and branch.
+- Protected merchant order-transition API with server-resolved actor identity, scoped merchant/branch/order authorization, optimistic version checks, parent status aggregation across merchant tenants, and audit insertion in the same PostgreSQL transaction.
+- Explicit role-to-permission mapping: merchant owners/admins and branch managers can update scoped orders; merchant employees are read-only. Automated tests cover the role grants.
 - Branch creation rejects duplicates and inactive merchants; branch update is constrained by merchant and branch IDs.
 - Domain contracts and tests for audit events, delivery instructions, scheduled fulfillment, order commit coordination, outbox behavior, and reconciliation.
 
@@ -23,11 +27,11 @@ This is a source/repository audit. It is not a live production, penetration, pro
 1. **Dependency reproducibility — P1.** No `pnpm-lock.yaml` is present on this branch, while CI installs with `pnpm install --no-frozen-lockfile`. Dependency resolution is therefore not locked to a reviewed dependency graph. Generate and commit a lockfile, then use frozen installs in CI.
 2. **CI security coverage — P1.** The workflow runs migration checks, typecheck, tests, and build, but does not currently run dependency vulnerability scanning, secret scanning, or a dedicated static security analysis step. These checks should be added before release.
 3. **Authentication lifecycle — P0.** Password/passkey enrollment, MFA enrollment and recovery, secure credential lifecycle, and production session/token issuance are not implemented. The current code validates and resolves persisted sessions; it is not a complete customer sign-in system.
-4. **API surface — P0/P1.** The current operational API is limited to health/readiness, foundation, access-check, branch summary, branch create, and branch update. Customer, catalog, inventory, cart, order, payment, shopper, courier, dispatch, admin, and owner APIs are not yet operational.
-5. **Commerce and inventory — P1.** Product catalog, variants, branch stock synchronization/reservations, search, cart, multi-merchant checkout, pricing, and order persistence remain outstanding.
+4. **API surface — P0/P1.** Health/readiness, foundation, access-check, branch summary/create/update, and one protected merchant suborder-transition route are implemented. Customer checkout/order-creation API, order read/list APIs, catalog, inventory, cart, payment, shopper, courier, dispatch, admin, and owner APIs are not yet operational.
+5. **Commerce and inventory — P1.** The order persistence foundation now supports a platform parent order with merchant-tenant suborders and has PostgreSQL integration tests for a multi-merchant order, idempotent retries, conflict detection, and rollback on unavailable branches. The customer-facing checkout API, product catalog, variants, live branch stock synchronization/reservations, search, cart, pricing/tax/delivery calculation, payment authorization, and inventory reservation workflow remain outstanding. The current API route is not a full checkout implementation.
 6. **Fulfillment — P1.** Shopper/courier onboarding, dispatch, routing, live location, capacity, pickup/handover proof, and delivery execution remain outstanding.
 7. **Money movement — P0 before payments.** Payment provider integrations, signed webhook verification, ledger posting, refunds, settlement, payouts, and reconciliation adapters are outstanding. Do not process real payments until these controls are implemented and independently tested.
-8. **Durable operations — P1.** Scheduled workflow domain contracts exist, but production outbox persistence, workers, retries, and monitoring remain outstanding. Audit events are not yet durably persisted and protected.
+8. **Durable operations — P1.** Authorization audit events and order-transition audit events are persisted; order status changes and their audit records commit or roll back together. Scheduled workflow domain contracts exist, but production outbox persistence, workers, retries, monitoring, and complete audit coverage for every API/error path remain outstanding.
 9. **AI and Telegram — P2.** Agent governance and task orchestration documents are not executable integrations; AI operations and Telegram command integration are not operational.
 10. **Production infrastructure — release blocker.** No managed PostgreSQL, provider-managed backups, restore drill, production secrets, deployment, monitoring, or incident response acceptance has been demonstrated.
 
