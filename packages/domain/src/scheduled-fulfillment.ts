@@ -109,8 +109,8 @@ export function createScheduledOrderPlan(input: {
 
   const dispatchAt = input.fulfillmentType === "home_delivery"
     ? scheduledAt - input.estimate.travelMinutes * 60_000
-    : scheduledAt;
-  const releaseAt = dispatchAt -
+    : undefined;
+  const releaseAt = (dispatchAt ?? scheduledAt) -
     (input.estimate.preparationMinutes + input.estimate.bufferMinutes) * 60_000;
 
   return {
