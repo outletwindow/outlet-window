@@ -16,7 +16,7 @@ Last updated: 2026-11-08
 - [x] Identity lifecycle and session descriptor validation.
 - [x] Customer delivery instruction contract: optional contact, doorbell and handover preferences; up to eight photo references; validation and tests.
 - [x] Scheduled fulfillment plan: timezone-aware time calculations and capacity validation.
-- [x] Scheduled checkout saga decisions: payment-before-reservation sequence, customer alternative/refund outcomes, idempotency keys and timed task envelopes.
+- [x] Scheduled checkout saga decisions and multi-merchant orchestrator: persist provider-confirmed payment evidence, reserve each exact merchant suborder, then enqueue branch-targeted timed tasks; failures block task enqueue and return prior reservation references for explicit compensation/customer choice.
 - [x] Scheduled task outbox domain contract and PostgreSQL adapter: idempotent enqueue, lease-token validation, bounded retry scheduling and integration tests.
 - [x] Atomic scheduled-order commit port and PostgreSQL transaction adapter: validates payment-capture evidence and coordinates order confirmation plus outbox enqueue in one transaction boundary, with rollback/idempotency tests.
 - [x] Scheduled-task reconciliation contract: detects missing, duplicate, unexpected, dead-letter, expired-lease and stale-pending records with tenant-scoped reader port and tests (reader/worker not yet implemented).
@@ -82,3 +82,11 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [ ] Wire the checkout saga to call payment evidence persistence, then inventory reservation, then task enqueue in that exact order.
 
 - [x] Reservation finalization schema enforces a release reason or verified handover reference for consumed stock; SQL acceptance tests cover invalid final states.
+
+
+## Multi-merchant scheduled checkout progress (development branch)
+- [x] Scheduled task envelopes can target an exact merchant tenant, suborder, merchant and branch; idempotency keys are scoped by suborder.
+- [x] Orchestrator persists provider-confirmed payment evidence first, reserves each branch suborder, and only after every reservation succeeds commits all timed preparation/dispatch tasks together.
+- [x] If any branch cannot reserve stock, no preparation/dispatch tasks are enqueued; any earlier successful reservation references are returned for explicit customer-choice/compensation handling.
+- [x] Outbox worker validates target shape and inbox publisher verifies the target belongs to the exact order/suborder/merchant/branch before durable inbox insertion.
+- [ ] Wire orchestrator to the authenticated checkout API and customer alternative/compensation workflow.
