@@ -24,18 +24,44 @@ export type CreateCustomerOrderResult =
   | { outcome: "already_exists"; orderId: string }
   | { outcome: "idempotency_conflict"; orderId: string };
 
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record).sort().map((key) =>
+    `${JSON.stringify(key)}:${canonicalJson(record[key])}`
+  ).join(",")}}`;
+}
+
+function requireIdentifier(value: string, field: string): void {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`${field} is required`);
+  }
+}
+
 export class PostgresOrderStore {
   constructor(private readonly pool: PostgresPool) {}
 
   async create(input: CreateCustomerOrderInput): Promise<CreateCustomerOrderResult> {
-    if (!input.suborders.length) throw new Error("An order requires at least one merchant suborder");
+    requireIdentifier(input.id, "Order ID");
+    requireIdentifier(input.tenantId, "Tenant ID");
+    requireIdentifier(input.customerId, "Customer ID");
+    requireIdentifier(input.idempotencyKey, "Idempotency key");
+    if (!Array.isArray(input.suborders) || !input.suborders.length) {
+      throw new Error("An order requires at least one merchant suborder");
+    }
     if (!/^[A-Z]{3}$/.test(input.currency)) throw new Error("Currency must be an ISO 4217 code");
     if (!Number.isSafeInteger(input.totalMinor) || input.totalMinor < 0) throw new Error("Invalid order total");
     const ids = new Set<string>();
     for (const item of input.suborders) {
+      requireIdentifier(item.id, "Suborder ID");
+      requireIdentifier(item.merchantId, "Merchant ID");
+      requireIdentifier(item.branchId, "Branch ID");
       if (ids.has(item.id)) throw new Error("Duplicate suborder ID");
       ids.add(item.id);
-      if (!Number.isSafeInteger(item.subtotalMinor) || item.subtotalMinor < 0) throw new Error("Invalid suborder subtotal");
+      if (!Number.isSafeInteger(item.subtotalMinor) || item.subtotalMinor < 0) {
+        throw new Error("Invalid suborder subtotal");
+      }
     }
 
     const client = await this.pool.connect();
@@ -45,16 +71,38 @@ export class PostgresOrderStore {
         "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
         [input.tenantId + ":" + input.customerId + ":" + input.idempotencyKey]
       );
-      const existing = await client.query<{ id: string; currency: string; total_minor: string | number; metadata: Record<string, unknown> }>(
+      const existing = await client.query<{
+        id: string; currency: string; total_minor: string | number; metadata: Record<string, unknown>;
+      }>(
         `SELECT id, currency, total_minor, metadata FROM customer_orders
          WHERE tenant_id = $1 AND customer_id = $2 AND idempotency_key = $3 FOR UPDATE`,
         [input.tenantId, input.customerId, input.idempotencyKey]
       );
       if (existing.rowCount) {
         const row = existing.rows[0]!;
+        const persistedSuborders = await client.query<{
+          id: string; merchant_id: string; branch_id: string; status: OrderStatus;
+          subtotal_minor: string | number; metadata: Record<string, unknown>;
+        }>(
+          `SELECT id, merchant_id, branch_id, status, subtotal_minor, metadata
+           FROM merchant_suborders WHERE tenant_id = $1 AND order_id = $2 ORDER BY id`,
+          [input.tenantId, row.id]
+        );
+        const requestedSuborders = [...input.suborders].sort((a, b) => a.id.localeCompare(b.id));
+        const sameSuborders = persistedSuborders.rows.length === requestedSuborders.length &&
+          persistedSuborders.rows.every((stored, index) => {
+            const requested = requestedSuborders[index]!;
+            return stored.id === requested.id &&
+              stored.merchant_id === requested.merchantId &&
+              stored.branch_id === requested.branchId &&
+              stored.status === requested.status &&
+              String(stored.subtotal_minor) === String(requested.subtotalMinor) &&
+              canonicalJson(stored.metadata ?? {}) === canonicalJson(requested.metadata ?? {});
+          });
         const same = row.currency === input.currency &&
-          Number(row.total_minor) === input.totalMinor &&
-          JSON.stringify(row.metadata) === JSON.stringify(input.metadata ?? {});
+          String(row.total_minor) === String(input.totalMinor) &&
+          canonicalJson(row.metadata ?? {}) === canonicalJson(input.metadata ?? {}) &&
+          sameSuborders;
         await client.query("COMMIT");
         return same
           ? { outcome: "already_exists", orderId: row.id }
