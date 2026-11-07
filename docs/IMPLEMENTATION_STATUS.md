@@ -25,7 +25,8 @@ Last updated: 2026-11-07
 - [ ] Authentication, password/passkey flows, MFA, and session revocation.
 - [ ] Database provider selection and versioned migrations.
 - [ ] Audit event persistence and protected access.
-- [ ] API-level authentication and authorization integration.
+- [ ] Production API authentication and authorization integration.
+- [x] API authorization reference route: server-side actor resolver seam, deny-by-default behavior, and merchant/branch isolation tests (production session resolver and business data routes not yet integrated).
 - [ ] Durable scheduled task queue adapter, transactional outbox persistence, and worker execution.
 - [ ] Production transaction adapter and payment-to-order reconciliation/compensation workflow.
 - [ ] Payment provider capture/void/refund integration.
