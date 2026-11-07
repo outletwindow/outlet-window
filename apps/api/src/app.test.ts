@@ -17,6 +17,7 @@ describe("Outlet Window API foundation", () => {
   it("exposes a health endpoint", async () => {
     const response = await app.inject({ method: "GET", url: "/health" });
     expect(response.statusCode).toBe(200);
+    expect(response.headers["x-correlation-id"]).toBeTruthy();
     expect(response.json()).toMatchObject({
       status: "ok",
       service: "test-api",
