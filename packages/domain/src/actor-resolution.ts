@@ -70,16 +70,18 @@ export async function resolveActorFromBearerToken(input: {
     assignment.principalId !== identity.id || !isRoleAssignmentValid(assignment) || !isRoleAssignmentActiveAt(assignment, nowUtc)
   )) return { actor: null, failure: "invalid_role_assignments" };
 
-  const grants = input.dependencies.grantsForAssignments(assignments);
   const roles = [...new Set(assignments.map(assignment => assignment.role))];
-  if (roles.length !== 1) {
-    // Actor model currently represents one role; do not silently collapse conflicting roles.
+  if (roles.length === 0) {
     return { actor: null, failure: "invalid_role_assignments" };
   }
+  // Each assignment is passed to the explicit policy mapper. Grants retain their
+  // own scope; combining roles never creates a broader implicit permission.
+  const grants = input.dependencies.grantsForAssignments(assignments);
   return {
     actor: {
       id: identity.id,
       role: roles[0]!,
+      roles,
       active: true,
       grants
     }
