@@ -37,11 +37,13 @@ Last updated: 2026-11-08
 - [ ] Scheduled-task reconciliation reader, recurring worker, alert delivery and authorized remediation workflow.
 - [ ] Production transaction adapter and payment-to-order reconciliation/compensation workflow.
 - [ ] Payment provider capture/void/refund integration.
-- [x] Branch-level inventory ledger, customer order item lines, merchant/branch-scoped reservation records, and PostgreSQL transaction adapter for atomic platform-side stock allocation; integration tests cover idempotency, exact order-line matching, and concurrent final-unit contention.\n- [x] Idempotent reservation lifecycle operations for release, expiry, and consumption; release restores allocation, consumption decrements stock, and expiry is rejected before its deadline.\n- [x] Durable provider-confirmed payment evidence can be recorded idempotently before branch inventory reservation. Payment capture itself remains external.
+- [x] Branch-level inventory ledger, customer order item lines, merchant/branch-scoped reservation records, and PostgreSQL transaction adapter for atomic platform-side stock allocation; integration tests cover idempotency, exact order-line matching, and concurrent final-unit contention.
+- [x] Idempotent reservation lifecycle operations for release, expiry, and consumption; release restores allocation, consumption decrements stock, and expiry is rejected before its deadline.
+- [x] Durable provider-confirmed payment evidence can be recorded idempotently before branch inventory reservation. Payment capture itself remains external.
 - [ ] Live slot capacity aggregation across branches, shoppers and couriers.
 
 ## Not yet implemented
-The customer, merchant, shopper, courier, admin, owner, payment, inventory synchronization, dispatch, AI operations, Telegram, and external integration applications are not yet operational. The scheduled outbox-to-inbox worker is implemented on the development branch but preparation, shopper collection, and courier dispatch inbox consumers are pending. A PostgreSQL branch inventory ledger and atomic platform-side reservation adapter exist, but checkout wiring and merchant POS/ERP hard-reservation acknowledgements remain pending. Customer delivery photo uploads, media storage, customer UI, API persistence and courier/pickup integration are not yet operational. Scheduled order booking UI, live slot capacity, payment execution, reservation expiry/release/consumption, reconciliation, customer alternative selection and rescheduling are not yet operational.
+The customer, merchant, shopper, courier, admin, owner, payment, inventory synchronization, dispatch, AI operations, Telegram, and external integration applications are not yet operational. The scheduled outbox-to-inbox worker is implemented on the development branch but preparation, shopper collection, and courier dispatch inbox consumers are pending. A PostgreSQL branch inventory ledger and atomic platform-side reservation adapter exist, but checkout wiring and merchant POS/ERP hard-reservation acknowledgements remain pending. Customer delivery photo uploads, media storage, customer UI, API persistence and courier/pickup integration are not yet operational. Scheduled order booking UI, live slot capacity, payment execution, scheduled expiry processing, stock reconciliation, customer alternative selection and rescheduling are not yet operational.
 
 ## Acceptance rule
 A checkbox is marked complete only when code is present and automated checks or documented acceptance evidence verify it. A design document or interface alone is not proof of an operational feature.
@@ -62,7 +64,15 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] CI acceptance for TypeScript adapter tests covering tenant-bound session reads and concurrent one-time session rotation (run 42404896175 passed typecheck, tests, and build).
 - [x] Document the encrypted backup and isolated restore procedure and production acceptance checklist.
 - [ ] Configure provider-managed encrypted backups, retention, monitoring, and perform a restore drill in the selected cloud account.
-\n\n## Branch inventory and reservation progress (development branch)\n- [x] Added versioned schema for customer order item lines, branch inventory quantities and freshness/source metadata, reservation headers, and reservation lines.\n- [x] Added a PostgreSQL transaction adapter that locks branch stock rows, validates exact merchant suborder lines, reserves all lines or none, and safely returns unavailable variants when stock is missing/insufficient.\n- [x] Added idempotency replay/conflict handling and integration tests for simultaneous requests competing for the final unit.\n- [ ] Wire checkout to call this adapter after confirmed payment capture; no customer API route or merchant connector is claimed live.\n- [ ] Implement stock sync, scheduled expiry worker, reconciliation, and merchant external hard-reservation acknowledgements.\n
+
+
+## Branch inventory and reservation progress (development branch)
+- [x] Added versioned schema for customer order item lines, branch inventory quantities and freshness/source metadata, reservation headers, and reservation lines.
+- [x] Added a PostgreSQL transaction adapter that locks branch stock rows, validates exact merchant suborder lines, reserves all lines or none, and safely returns unavailable variants when stock is missing/insufficient.
+- [x] Added idempotency replay/conflict handling and integration tests for simultaneous requests competing for the final unit.
+- [ ] Wire checkout to call this adapter after confirmed payment capture; no customer API route or merchant connector is claimed live.
+- [ ] Implement stock sync, scheduled expiry worker, reconciliation, and merchant external hard-reservation acknowledgements.
+
 
 ## Reservation lifecycle progress (development branch)
 - [x] Added idempotent release, expiry, and consume transitions protected by reservation-row locks and stock-row locks.
