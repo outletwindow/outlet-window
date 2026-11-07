@@ -26,6 +26,10 @@ export function buildPostgresApp(options: PostgresApiOptions) {
     ...(options.serviceName === undefined ? {} : { serviceName: options.serviceName }),
     ...(options.version === undefined ? {} : { version: options.version }),
     ...(options.merchantBranches === undefined ? {} : { merchantBranches: options.merchantBranches }),
+    readinessCheck: async () => {
+      await options.pool.query("SELECT 1");
+      return true;
+    },
     actorResolution: {
       sessions: iam,
       identities: iam,
