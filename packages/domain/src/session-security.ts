@@ -35,6 +35,8 @@ export interface SessionStoreTransaction {
 
 export interface SessionStoreReader {
   findStoredSession(input: { sessionId: string; principalId: string }): Promise<StoredSession | null>;
+  /** Lookup by opaque session id only; token digest comparison remains mandatory in the resolver. */
+  findStoredSessionById(input: { sessionId: string }): Promise<StoredSession | null>;
 }
 
 export interface SessionTransactionRunner {
