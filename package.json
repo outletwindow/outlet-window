@@ -1,0 +1,15 @@
+{
+  "name": "outlet-window",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Global commerce and logistics platform",
+  "packageManager": "pnpm@10.20.0",
+  "engines": { "node": ">=22.0.0", "pnpm": ">=10.0.0" },
+  "scripts": {
+    "dev:api": "pnpm --filter @outlet-window/api dev",
+    "build": "pnpm --recursive build",
+    "test": "pnpm --recursive test",
+    "typecheck": "pnpm --recursive typecheck",
+    "lint": "pnpm --recursive lint"
+  }
+}
