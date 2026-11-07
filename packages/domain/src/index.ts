@@ -21,3 +21,5 @@ export * from "./postgres-audit-event-store.js";
 export * from "./order-lifecycle.js";
 
 export * from "./postgres-order-store.js";
+
+export * from "./postgres-order-transition-store.js";
