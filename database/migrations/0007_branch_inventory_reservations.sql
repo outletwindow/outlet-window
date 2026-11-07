@@ -40,8 +40,7 @@ CREATE TABLE IF NOT EXISTS branch_inventory (
   updated_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (merchant_id, branch_id, product_variant_id),
   FOREIGN KEY (merchant_id, branch_id)
-    REFERENCES merchant_branches(merchant_id, id) ON DELETE RESTRICT,
-  CHECK (reserved_quantity <= available_quantity)
+    REFERENCES merchant_branches(merchant_id, id) ON DELETE RESTRICT
 );
 CREATE INDEX IF NOT EXISTS branch_inventory_freshness_idx
   ON branch_inventory (merchant_id, branch_id, last_synced_at DESC);
