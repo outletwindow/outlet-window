@@ -116,7 +116,13 @@ export async function runScheduledTaskBatch(input: {
 
 /** Type guard useful to adapters that inspect a claimed record before publishing. */
 export function isScheduledTaskPayload(record: ScheduledTaskOutboxRecord): boolean {
-  return record.payload.orderId === record.orderId &&
+  const target = record.payload.target;
+  const targetValid = target === undefined || Boolean(
+    target.merchantTenantId.trim() && target.suborderId.trim() &&
+    target.merchantId.trim() && target.branchId.trim()
+  );
+  return targetValid &&
+    record.payload.orderId === record.orderId &&
     record.payload.idempotencyKey === record.idempotencyKey &&
     record.payload.taskType === record.taskType &&
     record.payload.executeAtUtc === record.executeAtUtc &&
