@@ -84,3 +84,7 @@ The reader port requires tenant and order scope. A production adapter must enfor
 Implemented contract and unit tests: `packages/domain/src/scheduled-task-reconciliation.ts` and `scheduled-task-reconciliation.test.ts`.
 
 Not implemented: persisted task reader, scheduled reconciliation worker, alert delivery, operator review UI, or automated remediation.
+
+
+## Inventory reservation ordering
+Provider-confirmed payment evidence is now persistable before inventory allocation. The branch inventory adapter requires this evidence and reserves the exact persisted merchant suborder lines atomically. The application checkout orchestrator must call these stages in order: persist verified payment capture evidence, reserve branch inventory, then enqueue timed preparation/dispatch tasks. The current repository adapters provide these boundaries but are not yet composed into a live checkout API route.
