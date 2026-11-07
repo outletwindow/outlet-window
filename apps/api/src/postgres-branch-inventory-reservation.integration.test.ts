@@ -84,6 +84,7 @@ integration("PostgreSQL branch inventory reservations", () => {
   });
 
   async function cleanup() {
+    await pool.query("DELETE FROM scheduled_task_inbox WHERE order_id = ANY($1::text[])", [orderIds]);
     await pool.query("DELETE FROM inventory_reservation_lines WHERE reservation_id IN (SELECT id FROM inventory_reservations WHERE merchant_id = $1)", [merchantId]);
     await pool.query("DELETE FROM inventory_reservations WHERE merchant_id = $1", [merchantId]);
     await pool.query("DELETE FROM customer_order_items WHERE merchant_id = $1", [merchantId]);
