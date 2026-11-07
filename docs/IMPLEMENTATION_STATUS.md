@@ -34,7 +34,9 @@ Last updated: 2026-11-08
 - [x] Authorized merchant-scoped branch creation and update APIs with PostgreSQL writer; validates payloads, rejects cross-merchant writes, does not overwrite duplicates, refuses writes for inactive merchants, and limits create/update grants to merchant owners/admins. Branch update supports safe activation/deactivation and address preservation when omitted. CI coverage added; merchant onboarding and full branch management remain pending.
 - [x] PostgreSQL scheduled task outbox persistence, atomic order/payment-capture confirmation handoff, lease-based worker claims, bounded retry/dead-letter handling, and idempotent durable inbox dispatch (CI typecheck, tests, PostgreSQL integration checks, and build passed on `0c037ce`).
 - [x] Durable scheduled task inbox lease store and generic at-least-once consumer worker: SKIP LOCKED claims, expired lease recovery, idempotency-key handler contract, bounded retry, dead-letter, and lease-CAS completion.
-- [ ] Concrete merchant preparation, shopper collection, and courier dispatch handlers/connectors; operational alert delivery and authorized remediation.
+- [x] Concrete provider-dispatch handler boundary for merchant preparation, shopper collection, and courier dispatch; validates merchant/branch target, requires provider idempotency and durable acceptance reference, and classifies transient/permanent failures.
+- [x] Separate PostgreSQL inbox fulfillment worker process with lease recovery, bounded retry/dead-letter, graceful shutdown, HTTPS-only bearer-authenticated provider adapter, redirect blocking, and required connector configuration checks.
+- [ ] Configure and validate real merchant, shopper, and courier provider endpoints/tokens in each deployment environment; run provider sandbox contract tests and operational alert delivery.
 - [ ] Scheduled-task reconciliation reader, recurring worker, alert delivery and authorized remediation workflow.
 - [ ] Production transaction adapter and payment-to-order reconciliation/compensation workflow.
 - [ ] Payment provider capture/void/refund integration.
@@ -44,7 +46,7 @@ Last updated: 2026-11-08
 - [ ] Live slot capacity aggregation across branches, shoppers and couriers.
 
 ## Not yet implemented
-The customer, merchant, shopper, courier, admin, owner, payment, inventory synchronization, dispatch, AI operations, Telegram, and external integration applications are not yet operational. The scheduled outbox-to-inbox worker is implemented on the development branch but preparation, shopper collection, and courier dispatch inbox consumers are pending. A PostgreSQL branch inventory ledger and atomic platform-side reservation adapter exist, but checkout wiring and merchant POS/ERP hard-reservation acknowledgements remain pending. Customer delivery photo uploads, media storage, customer UI, API persistence and courier/pickup integration are not yet operational. Scheduled order booking UI, live slot capacity, payment execution, scheduled expiry processing, stock reconciliation, customer alternative selection and rescheduling are not yet operational.
+The customer, merchant, shopper, courier, admin, owner, payment, inventory synchronization, dispatch, AI operations, Telegram, and external integration applications are not yet operational. The scheduled outbox-to-inbox worker and a separate configurable inbox fulfillment worker are implemented on the development branch. The latter requires all three HTTPS provider endpoints and credentials at startup; no real merchant, shopper, or courier provider has yet been configured or verified. A PostgreSQL branch inventory ledger and atomic platform-side reservation adapter exist, but checkout wiring and merchant POS/ERP hard-reservation acknowledgements remain pending. Customer delivery photo uploads, media storage, customer UI, API persistence and courier/pickup integration are not yet operational. Scheduled order booking UI, live slot capacity, payment execution, scheduled expiry processing, stock reconciliation, customer alternative selection and rescheduling are not yet operational.
 
 ## Acceptance rule
 A checkbox is marked complete only when code is present and automated checks or documented acceptance evidence verify it. A design document or interface alone is not proof of an operational feature.
@@ -99,3 +101,12 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Generic inbox worker validates task payload and merchant target, dispatches to injected idempotent handlers, retries transient errors with bounded backoff, and dead-letters permanent or unhandled tasks.
 - [x] PostgreSQL integration tests cover concurrent claims, expired lease recovery, stale worker rejection, retry, dead-letter, and SQL lease constraints; CI run 42416928208 passed.
 - [ ] Supply real merchant, shopper, and courier provider handlers and wire them into a separately configured inbox worker process. No external fulfillment integration is claimed live.
+
+
+## Fulfillment dispatch worker (development branch)
+- [x] Added a separate `worker:fulfillment` process that consumes durable inbox records using the PostgreSQL lease store; it is not mixed with the outbox publisher.
+- [x] Added provider adapter contracts for merchant preparation, shopper collection, and courier dispatch. Each request includes tenant, suborder, merchant, branch and stable idempotency identity.
+- [x] Provider adapter requires HTTPS and bearer credentials, blocks redirects, applies a bounded request timeout, and classifies retryable network/HTTP failures separately from permanent client rejections.
+- [x] Worker refuses startup unless all three provider endpoints and tokens are configured, preventing unhandled tasks from being claimed and dead-lettered.
+- [ ] Real provider endpoints, credentials, sandbox contract acceptance, monitoring/alert delivery, and production deployment remain external prerequisites. No real fulfillment action is claimed live.
+- [ ] Provider contract currently expects POST JSON and a successful JSON response containing `status: "accepted"` plus a non-empty `providerReference`; align each connector with its provider's signed/verified contract before production use.
