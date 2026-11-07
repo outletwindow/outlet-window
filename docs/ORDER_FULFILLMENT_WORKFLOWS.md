@@ -439,3 +439,4 @@ No AI agent or workflow may silently change one source to match another.
 - Every workflow has testable state transitions.
 
 End of document.
+\n\n## Implementation boundary — inventory reservation (development branch)\nThe repository now contains a PostgreSQL branch inventory ledger, exact customer order item lines, and an atomic platform-side reservation adapter. The adapter requires the paid-order confirmation evidence and exact merchant suborder, then locks and allocates every requested variant in one transaction. Missing or insufficient stock returns an unavailable result; it does not silently substitute. The adapter is not yet wired into checkout, and an internal platform reservation is not represented as an external POS/ERP acknowledgement.\n
