@@ -66,3 +66,19 @@ Payment capture is deliberately outside this transaction boundary: the approved 
 Implemented contract and unit tests: `packages/domain/src/scheduled-order-commit.ts` and `scheduled-order-commit.test.ts`.
 
 Not implemented: database transaction adapter, persistence schema, payment adapter, reconciliation worker, and production API route.
+
+## Scheduled-order reconciliation
+A read-only reconciliation contract compares the expected task envelopes for an order with persisted outbox records:
+- Missing expected task: critical issue.
+- Duplicate idempotency key: high-severity issue.
+- Unexpected record for the order: high-severity issue.
+- Dead-letter task: critical issue.
+- Expired or malformed worker lease: high-severity issue.
+- Pending task older than the configured threshold: warning.
+- Cross-order records are rejected rather than silently mixed.
+
+The reader port requires tenant and order scope. A production adapter must enforce tenant/merchant/branch authorization in the query itself, not rely on caller-supplied filters alone. Reconciliation is read-only: it reports issues and must not automatically charge, refund, reserve inventory, or replay tasks. Remediation requires a separately authorized workflow with audit records.
+
+Implemented contract and unit tests: `packages/domain/src/scheduled-task-reconciliation.ts` and `scheduled-task-reconciliation.test.ts`.
+
+Not implemented: persisted task reader, scheduled reconciliation worker, alert delivery, operator review UI, or automated remediation.
