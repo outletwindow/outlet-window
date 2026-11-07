@@ -52,3 +52,17 @@ A production adapter is not accepted until tests prove:
 Implemented in the domain package: outbox record contract, store port, creation validation, bounded retry-time calculation, lease validation, and unit tests.
 
 Not implemented: database schema/migrations, unique constraints, transactional adapter, queue broker, worker runtime, dead-letter operations UI, monitoring, and production reconciliation. Database and infrastructure vendor choices remain pending owner approval.
+
+## Atomic order confirmation boundary
+The domain package also exposes an application port for committing an already-paid scheduled order and its initial outbox tasks:
+- Validate order/tenant/payment reference, payment-capture timestamp, confirmation timestamp, and fulfillment version before opening a transaction.
+- Reject empty task sets, tasks belonging to another order, and duplicate idempotency keys.
+- Persist the confirmed order and enqueue every task through the same transaction callback.
+- Treat an existing idempotency key as a safe replay, not as a second task.
+- Propagate adapter errors so the transaction runner can roll back the complete unit of work.
+
+Payment capture is deliberately outside this transaction boundary: the approved payment adapter must confirm the provider's actual capture result first. A production checkout saga still needs durable handling for the interval between provider capture and database commit, including provider idempotency, reconciliation, and compensation/refund policy. The domain port does not claim to solve that external distributed transaction.
+
+Implemented contract and unit tests: `packages/domain/src/scheduled-order-commit.ts` and `scheduled-order-commit.test.ts`.
+
+Not implemented: database transaction adapter, persistence schema, payment adapter, reconciliation worker, and production API route.
