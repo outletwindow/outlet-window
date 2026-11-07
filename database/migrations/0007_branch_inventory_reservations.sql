@@ -15,8 +15,8 @@ CREATE TABLE IF NOT EXISTS customer_order_items (
   unit_price_minor bigint NOT NULL CHECK (unit_price_minor >= 0),
   currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
   created_at timestamptz NOT NULL DEFAULT now(),
-  FOREIGN KEY (tenant_id, suborder_id)
-    REFERENCES merchant_suborders(tenant_id, id) ON DELETE RESTRICT,
+  FOREIGN KEY (tenant_id, order_id, suborder_id)
+    REFERENCES merchant_suborders(tenant_id, order_id, id) ON DELETE RESTRICT,
   FOREIGN KEY (tenant_id, merchant_id)
     REFERENCES merchants(tenant_id, id) ON DELETE RESTRICT,
   FOREIGN KEY (merchant_id, branch_id)
