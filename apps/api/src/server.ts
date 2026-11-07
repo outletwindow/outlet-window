@@ -4,6 +4,7 @@ import type { RoleAssignment } from "../../../packages/domain/src/identity.js";
 import type { PermissionGrant } from "../../../packages/domain/src/authorization.js";
 import { buildPostgresApp } from "./postgres-app.js";
 import { buildApp } from "./app.js";
+import { grantsForAssignments } from "./permissions.js";
 
 const port = Number.parseInt(process.env.PORT ?? "3000", 10);
 const host = process.env.HOST ?? "0.0.0.0";
@@ -25,22 +26,6 @@ const pool = databaseUrl ? new Pool({
   ...(production ? { ssl: { rejectUnauthorized: true } } : {})
 }) : null;
 
-export function grantsForAssignments(assignments: readonly RoleAssignment[]): readonly PermissionGrant[] {
-  const readRoles = new Set([
-    "merchant_owner", "merchant_admin", "branch_manager", "merchant_employee"
-  ]);
-  const manageRoles = new Set(["merchant_owner", "merchant_admin"]);
-  const orderManageRoles = new Set(["merchant_owner", "merchant_admin", "branch_manager"]);
-  return assignments.flatMap((assignment): PermissionGrant[] => {
-    if (manageRoles.has(assignment.role)) return [
-      { resource: "merchant.branch", actions: ["read", "create", "update"] as const, scope: assignment.scope }
-    ];
-    if (readRoles.has(assignment.role)) return [
-      { resource: "merchant.branch", actions: ["read"] as const, scope: assignment.scope }
-    ];
-    return [];
-  });
-}
 
 const app = pool
   ? buildPostgresApp({
