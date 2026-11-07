@@ -56,6 +56,12 @@ Each product variant must support:
 - Reconcile reservations with merchant inventory.
 - Treat external merchant stock changes as possible conflicts.
 
+## 6A. Scheduled Order Reservation
+
+For scheduled orders, the order and payment confirmation happen at checkout; the inventory reservation request is sent to the selected branch immediately, not at the later preparation time. Where the merchant integration supports hard reservations, reserve the exact variant and quantity atomically and record reservation expiry. The merchant may receive an early reservation notification while the picking/preparation task remains queued until the calculated release time.
+
+If a hard reservation is not supported, mark availability as unguaranteed and revalidate before preparation. A reservation failure must trigger an exception and customer alternatives, not a false confirmation. Suggested alternatives may include another authorized branch, another variant or a similar product, with price and time differences shown for customer approval.
+
 ## 7. Inventory Synchronization
 - Support webhooks where available.
 - Support scheduled polling.
