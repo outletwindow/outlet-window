@@ -56,6 +56,8 @@ CREATE TABLE IF NOT EXISTS inventory_reservations (
   status text NOT NULL CHECK (status IN ('reserved','released','expired','consumed')),
   requested_at timestamptz NOT NULL,
   expires_at timestamptz,
+  finalization_reason text,
+  handover_reference text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   FOREIGN KEY (tenant_id, order_id, suborder_id)
@@ -65,7 +67,13 @@ CREATE TABLE IF NOT EXISTS inventory_reservations (
   FOREIGN KEY (merchant_id, branch_id)
     REFERENCES merchant_branches(merchant_id, id) ON DELETE RESTRICT,
   UNIQUE (tenant_id, id),
-  CHECK (expires_at IS NULL OR expires_at > requested_at)
+  CHECK (expires_at IS NULL OR expires_at > requested_at),
+  CHECK (
+    (status = 'reserved' AND finalization_reason IS NULL AND handover_reference IS NULL)
+    OR (status = 'released' AND finalization_reason IS NOT NULL AND handover_reference IS NULL)
+    OR (status = 'expired' AND finalization_reason = 'reservation_expired' AND handover_reference IS NULL)
+    OR (status = 'consumed' AND handover_reference IS NOT NULL)
+  )
 );
 CREATE INDEX IF NOT EXISTS inventory_reservations_order_idx
   ON inventory_reservations (tenant_id, order_id, status, created_at DESC);
