@@ -152,6 +152,12 @@ export class PostgresScheduledOrderTransactionRunner implements ScheduledOrderTr
       await client.query("BEGIN");
       const transaction: ScheduledOrderCommitTransaction = {
         saveConfirmedOrder: async (order: ScheduledOrderConfirmation) => {
+          // Lock the parent order first so concurrent idempotent confirmations serialize.
+          const orderRow = await client.query<{ status: string }>(
+            "SELECT status FROM customer_orders WHERE tenant_id = $1 AND id = $2 FOR UPDATE",
+            [order.tenantId, order.orderId]
+          );
+          if (!orderRow.rowCount) throw new Error("scheduled_order_not_found");
           const existing = await client.query<{
             payment_reference: string; payment_captured_at: Date | string;
             confirmed_at: Date | string; fulfillment_version: number;
@@ -169,10 +175,6 @@ export class PostgresScheduledOrderTransactionRunner implements ScheduledOrderTr
             }
             return;
           }
-          const orderRow = await client.query<{ status: string }>(
-            "SELECT status FROM customer_orders WHERE tenant_id = $1 AND id = $2 FOR UPDATE",
-            [order.tenantId, order.orderId]
-          );
           if (orderRow.rows[0]?.status !== "awaiting_payment") {
             throw new Error("scheduled_order_not_awaiting_payment");
           }
