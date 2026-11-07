@@ -30,6 +30,7 @@ function grantsForAssignments(assignments: readonly RoleAssignment[]): readonly 
     "merchant_owner", "merchant_admin", "branch_manager", "merchant_employee"
   ]);
   const manageRoles = new Set(["merchant_owner", "merchant_admin"]);
+  const orderManageRoles = new Set(["merchant_owner", "merchant_admin", "branch_manager"]);
   return assignments.flatMap((assignment): PermissionGrant[] => {
     if (manageRoles.has(assignment.role)) return [
       { resource: "merchant.branch", actions: ["read", "create", "update"] as const, scope: assignment.scope }
