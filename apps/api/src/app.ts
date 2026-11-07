@@ -1,4 +1,6 @@
+import { randomUUID } from "node:crypto";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
+import { createAuditEvent, type AuditEvent } from "../../../packages/domain/src/audit.js";
 import {
   authorize,
   type Actor,
@@ -30,6 +32,8 @@ export interface MerchantBranchWriter {
   updateBranch(input: { merchantId: string; branchId: string; displayName: string; cityCode: string; address?: Readonly<Record<string, unknown>>; status: "active" | "inactive" }): Promise<"updated" | "not_found" | "merchant_not_found" | "merchant_inactive">;
 }
 
+export interface AuditEventWriter { append(event: AuditEvent): Promise<"inserted" | "already_exists">; }
+
 export interface AppOptions {
   serviceName?: string;
   version?: string;
@@ -42,6 +46,8 @@ export interface AppOptions {
   merchantBranchWriter?: MerchantBranchWriter;
   /** Optional dependency check used by readiness; failures keep the instance out of service. */
   readinessCheck?: () => Promise<boolean>;
+  /** Durable audit writer. Protected operations are not executed if their audit write fails. */
+  auditEvents?: AuditEventWriter;
 }
 
 type AuthorizationResult =
@@ -74,6 +80,29 @@ async function authorizeRequest(
   }
 
   const decision = authorize(actor, authorizationRequest);
+  if (options.auditEvents) {
+    const merchantId = authorizationRequest.scope.merchantId;
+    await options.auditEvents.append(createAuditEvent({
+      id: randomUUID(),
+      type: decision.allowed ? `authorization.${authorizationRequest.action}.granted` : `authorization.${authorizationRequest.action}.denied`,
+      category: "access_control",
+      occurredAt: new Date().toISOString(),
+      actor: { id: actor.id, type: actor.role === "merchant_owner" || actor.role === "merchant_admin" ||
+        actor.role === "branch_manager" || actor.role === "merchant_employee" ? "merchant_user" :
+        actor.role === "customer" ? "customer" : actor.role === "shopper" ? "shopper" :
+        actor.role === "courier" ? "courier" : actor.role === "ai_agent" ? "ai_agent" : "platform_user",
+        role: actor.role },
+      action: `${authorizationRequest.resource}:${authorizationRequest.action}`,
+      outcome: decision.allowed ? "success" : "denied",
+      resourceType: authorizationRequest.resource,
+      ...(authorizationRequest.scope.branchId ? { resourceId: authorizationRequest.scope.branchId, branchId: authorizationRequest.scope.branchId } : {}),
+      ...(merchantId ? { tenantId: merchantId, merchantId } : {}),
+      correlationId: request.id,
+      source: "api",
+      severity: decision.allowed ? "info" : "warning",
+      metadata: { authorizationReason: decision.reason }
+    }));
+  }
   if (!decision.allowed) {
     return { actor: null, decision, statusCode: 403 };
   }
