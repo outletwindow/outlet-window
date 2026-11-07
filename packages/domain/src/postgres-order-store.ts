@@ -25,7 +25,11 @@ export type CreateCustomerOrderResult =
   | { outcome: "idempotency_conflict"; orderId: string };
 
 function canonicalJson(value: unknown, ancestors = new Set<object>()): string {
-  if (value === null || typeof value === "string" || typeof value === "boolean") return JSON.stringify(value);
+  if (value === null || typeof value === "string" || typeof value === "boolean") {
+    const encoded = JSON.stringify(value);
+    if (encoded === undefined) throw new Error("Metadata must contain JSON values");
+    return encoded;
+  }
   if (typeof value === "number") {
     if (!Number.isFinite(value)) throw new Error("Metadata numbers must be finite");
     return JSON.stringify(value);
@@ -34,7 +38,8 @@ function canonicalJson(value: unknown, ancestors = new Set<object>()): string {
   if (ancestors.has(value)) throw new Error("Metadata cannot contain circular references");
   ancestors.add(value);
   try {
-    if (Array.isArray(value)) return "[" + value.map(item => canonicalJson(item, ancestors)).join(",") + "]";
+    if (Array.isArray(value)) return "[" + Array.from(value, item => canonicalJson(item, ancestors)).join(",") + "]";
+    if (Object.getOwnPropertySymbols(value).length > 0) throw new Error("Metadata cannot contain symbol keys");
     const prototype = Object.getPrototypeOf(value);
     if (prototype !== Object.prototype && prototype !== null) throw new Error("Metadata must contain plain JSON objects");
     const record = value as Record<string, unknown>;
