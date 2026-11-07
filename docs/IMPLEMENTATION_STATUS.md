@@ -27,7 +27,7 @@ Last updated: 2026-11-07
 - [ ] Audit event persistence and protected access.
 - [ ] Production API authentication and authorization integration across all customer, merchant, shopper, courier, admin and owner data routes.
 - [x] API authorization reference route: server-side actor resolver seam, deny-by-default behavior, and merchant/branch isolation tests.
-- [x] Persisted-session actor resolution contract: bearer parsing, digest comparison, active identity/session checks, scoped role validation and injected role-to-grant mapping (concrete crypto and persistence adapters not yet implemented).
+- [x] Persisted-session actor resolution contract: bearer parsing, digest comparison, active identity/session checks, scoped role validation, multiple active roles with independently scoped grants, and injected role-to-grant mapping (concrete crypto and persistence adapters not yet implemented).
 - [x] Centralized API authentication/authorization guard shared by protected routes; authentication and scope authorization run before repository availability checks or business-data access. Tests cover unauthenticated requests, scope denial without repository calls, and authorized branch reads (production repository adapter not yet implemented).
 - [ ] Durable scheduled task queue adapter, transactional outbox persistence, and worker execution.
 - [ ] Production transaction adapter and payment-to-order reconciliation/compensation workflow.
