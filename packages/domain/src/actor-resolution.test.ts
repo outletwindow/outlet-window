@@ -24,6 +24,7 @@ const assignment: RoleAssignment = {
 };
 function dependencies(options: { stored?: StoredSession | null; identityStatus?: "active" | "suspended"; assignments?: RoleAssignment[] } = {}) {
   const sessions: SessionStoreReader = {
+    async findStoredSession() { return null; },
     async findStoredSessionById() { return options.stored === undefined ? session : options.stored; }
   };
   const identities: IdentityReader = {
