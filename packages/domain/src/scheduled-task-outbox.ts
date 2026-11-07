@@ -76,7 +76,7 @@ export function createScheduledTaskOutboxRecord(
     idempotencyKey: input.task.idempotencyKey,
     orderId: input.task.orderId,
     taskType: input.task.taskType,
-    payload: input.task,
+    payload: { ...input.task, executeAtUtc: new Date(executeAt).toISOString() },
     executeAtUtc: new Date(executeAt).toISOString(),
     status: "pending",
     attemptCount: 0,
