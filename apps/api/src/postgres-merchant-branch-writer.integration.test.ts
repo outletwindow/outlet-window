@@ -64,6 +64,6 @@ integration("PostgresMerchantBranchWriter", () => {
     await expect(writer.updateBranch({
       merchantId: "other-merchant", branchId, displayName: "Wrong Tenant",
       cityCode: "JUB", status: "active"
-    })).resolves.toBe("not_found");
+    })).resolves.toBe("merchant_not_found");
   });
 
