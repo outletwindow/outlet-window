@@ -106,7 +106,9 @@ export class PostgresIamStore implements IdentityReader, SessionStoreReader,
     return result.rows[0] ? sessionFromRow(result.rows[0]) : null;
   }
 
-  async run<T>(work: (transaction: IdentityStoreTransaction & SessionStoreTransaction) => Promise<T>): Promise<T> {
+  run<T>(work: (transaction: IdentityStoreTransaction) => Promise<T>): Promise<T>;
+  run<T>(work: (transaction: SessionStoreTransaction) => Promise<T>): Promise<T>;
+  async run<T>(work: (transaction: any) => Promise<T>): Promise<T> {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
