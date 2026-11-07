@@ -25,4 +25,5 @@ export * from "./postgres-order-store.js";
 
 export * from "./postgres-order-transition-store.js";
 export * from "./postgres-scheduled-task-store.js";
+export * from "./postgres-branch-inventory-reservation.js";
 export * from "./scheduled-task-worker.js";
