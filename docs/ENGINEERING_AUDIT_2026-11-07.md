@@ -33,7 +33,7 @@ This is a source/repository audit. It is not a live production, penetration, pro
 
 ## Repository integration status
 
-The comparison of `main` and `work/outlet-window-build` reports a diverged history: the development branch is 190 commits ahead and 4 commits behind `main`. Review/reconcile those 4 base-branch commits before attempting a merge. No merge was performed during this audit.
+The comparison of `main` and `work/outlet-window-build` reports a diverged history: the development branch is 194 commits ahead and 4 commits behind `main`. The four commits unique to `main` were inspected. Their missing branch-summary authorization-before-read test and scheduled-task reconciliation documentation/status were restored into the development branch; the actor-resolution tests and expanded branch API tests were checked against the newer development versions. The branch remains four commits behind in Git history, so perform a final merge-base/conflict review before any merge. No merge was performed during this audit.
 
 ## Priority sequence
 
