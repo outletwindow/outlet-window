@@ -26,7 +26,8 @@ export interface MerchantBranchWriter {
     displayName: string;
     cityCode: string;
     address?: Readonly<Record<string, unknown>>;
-  }): Promise<"created" | "already_exists" | "merchant_not_found" | "merchant_inactive">;\n  updateBranch(input: { merchantId: string; branchId: string; displayName: string; cityCode: string; address?: Readonly<Record<string, unknown>>; status: "active" | "inactive" }): Promise<"updated" | "not_found" | "merchant_not_found" | "merchant_inactive">;
+  }): Promise<"created" | "already_exists" | "merchant_not_found" | "merchant_inactive">;
+  updateBranch(input: { merchantId: string; branchId: string; displayName: string; cityCode: string; address?: Readonly<Record<string, unknown>>; status: "active" | "inactive" }): Promise<"updated" | "not_found" | "merchant_not_found" | "merchant_inactive">;
 }
 
 export interface AppOptions {
@@ -248,7 +249,8 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       status: body.status,
       ...(body.address === undefined ? {} : { address: body.address })
     });
-    if (updated === "merchant_not_found") return reply.code(404).send({ error: "merchant_not_found" });\n    if (updated === "merchant_inactive") return reply.code(409).send({ error: "merchant_inactive" });
+    if (updated === "merchant_not_found") return reply.code(404).send({ error: "merchant_not_found" });
+    if (updated === "merchant_inactive") return reply.code(409).send({ error: "merchant_inactive" });
     if (updated === "not_found") return reply.code(404).send({ error: "branch_not_found" });
     return reply.code(200).send({ branch: {
       merchantId: request.params.merchantId, branchId: request.params.branchId,
