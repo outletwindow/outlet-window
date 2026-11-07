@@ -68,11 +68,12 @@ async function authorizeRequest(
 
 function sendAuthorizationFailure(
   reply: FastifyReply,
-  result: Extract<AuthorizationResult, { actor: null }>
+  statusCode: 401 | 403,
+  reason?: string
 ) {
-  return reply.code(result.statusCode).send({
-    error: result.statusCode === 401 ? "unauthenticated" : "forbidden",
-    ...(result.statusCode === 403 ? { reason: result.decision.reason } : {})
+  return reply.code(statusCode).send({
+    error: statusCode === 401 ? "unauthenticated" : "forbidden",
+    ...(statusCode === 403 && reason ? { reason } : {})
   });
 }
 
@@ -118,7 +119,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
         branchId: request.params.branchId
       }
     });
-    if (!result.actor) return sendAuthorizationFailure(reply, result);
+    if (!result.actor) return sendAuthorizationFailure(reply, result.statusCode, result.decision.reason);
     return reply.code(200).send({ access: "granted" });
   });
 
