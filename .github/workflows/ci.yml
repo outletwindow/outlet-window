@@ -42,10 +42,10 @@ jobs:
         run: pnpm install --no-frozen-lockfile
       - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install --yes postgresql-client
-      - name: Apply IAM migration to real PostgreSQL
+      - name: Apply versioned IAM migration through application runner
         env:
-          PGPASSWORD: ci_only_password
-        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/migrations/0001_identity_access_sessions.sql
+          DATABASE_URL: postgres://outlet_window:ci_only_password@127.0.0.1:5432/outlet_window_test
+        run: pnpm --filter @outlet-window/api db:migrate
       - name: Verify IAM schema constraints and tenant-scoped records
         env:
           PGPASSWORD: ci_only_password
