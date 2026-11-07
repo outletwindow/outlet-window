@@ -49,5 +49,5 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Versioned migration runner with PostgreSQL advisory lock, per-migration transaction, duplicate detection, and rollback on failure.
 - [x] Automated migration-runner tests for ordering, repeatability, malformed versions, lock release, and rollback.
 - [ ] Provision a real PostgreSQL instance and run the migration against it.
-- [ ] Add real-database integration/concurrency tests and connect the runtime server to managed database configuration.
+- [x] Add CI integration checks against a real ephemeral PostgreSQL 16 service for migration execution, identity/role/session persistence, principal isolation, and foreign-key enforcement. Full adapter concurrency tests and runtime server wiring to managed database configuration remain pending.
 - [ ] Configure encrypted backups, retention, monitoring, and perform a restore drill.
