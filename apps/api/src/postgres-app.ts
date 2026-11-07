@@ -28,8 +28,17 @@ export function buildPostgresApp(options: PostgresApiOptions) {
     ...(options.version === undefined ? {} : { version: options.version }),
     merchantBranches: options.merchantBranches ?? new PostgresMerchantBranchReader(options.pool),
     readinessCheck: async () => {
-      await options.pool.query("SELECT 1");
-      return true;
+      const requiredMigrations = [
+        "0001_identity_access_sessions",
+        "0002_merchants_branches"
+      ];
+      const result = await options.pool.query<{ version: string }>(
+        "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",
+        [requiredMigrations]
+      );
+      return requiredMigrations.every(version =>
+        result.rows.some(row => row.version === version)
+      );
     },
     actorResolution: {
       sessions: iam,
