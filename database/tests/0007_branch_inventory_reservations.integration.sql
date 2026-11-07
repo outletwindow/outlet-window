@@ -62,6 +62,17 @@ BEGIN
     INSERT INTO inventory_reservations
       (id,tenant_id,order_id,suborder_id,merchant_id,branch_id,idempotency_key,
        status,requested_at)
+    VALUES ('ci-inventory-consumed-no-proof','ci-inventory-merchant','ci-inventory-order',
+      'ci-inventory-suborder','ci-inventory-merchant','ci-inventory-branch',
+      'ci-inventory-consumed-no-proof-v1','consumed',now());
+    RAISE EXCEPTION 'consumed reservation without handover proof unexpectedly accepted';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO inventory_reservations
+      (id,tenant_id,order_id,suborder_id,merchant_id,branch_id,idempotency_key,
+       status,requested_at)
     VALUES ('ci-inventory-duplicate-idem','ci-inventory-merchant','ci-inventory-order',
       'ci-inventory-suborder','ci-inventory-merchant','ci-inventory-branch',
       'ci-inventory-reservation-v1','reserved',now());
