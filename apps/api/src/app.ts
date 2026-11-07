@@ -19,6 +19,16 @@ export interface MerchantBranchReader {
   } | null>;
 }
 
+export interface MerchantBranchWriter {
+  createBranch(input: {
+    merchantId: string;
+    branchId: string;
+    displayName: string;
+    cityCode: string;
+    address?: Readonly<Record<string, unknown>>;
+  }): Promise<"created" | "already_exists" | "merchant_not_found">;
+}
+
 export interface AppOptions {
   serviceName?: string;
   version?: string;
@@ -28,6 +38,7 @@ export interface AppOptions {
   actorResolution?: ActorResolutionDependencies;
   /** Repository adapter must apply merchantId and branchId predicates in its database query. */
   merchantBranches?: MerchantBranchReader;
+  merchantBranchWriter?: MerchantBranchWriter;
   /** Optional dependency check used by readiness; failures keep the instance out of service. */
   readinessCheck?: () => Promise<boolean>;
 }
@@ -154,6 +165,52 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     });
     if (!branch) return reply.code(404).send({ error: "not_found" });
     return reply.code(200).send({ branch });
+  });
+
+  app.post<{
+    Params: { merchantId: string };
+    Body: {
+      branchId: string;
+      displayName: string;
+      cityCode: string;
+      address?: Record<string, unknown>;
+    };
+  }>("/api/v1/merchants/:merchantId/branches", async (request, reply) => {
+    const result = await authorizeRequest(request, options, {
+      resource: "merchant.branch",
+      action: "create",
+      scope: { merchantId: request.params.merchantId }
+    });
+    if (!result.actor) return sendAuthorizationFailure(reply, result.statusCode, result.decision.reason);
+    if (!options.merchantBranchWriter) return reply.code(503).send({ error: "service_unavailable" });
+
+    const body = request.body;
+    if (!body || typeof body.branchId !== "string" || !/^[a-zA-Z0-9_-]{2,80}$/.test(body.branchId) ||
+        typeof body.displayName !== "string" || body.displayName.trim().length < 2 ||
+        body.displayName.trim().length > 120 ||
+        typeof body.cityCode !== "string" || !/^[A-Z0-9_-]{2,12}$/.test(body.cityCode) ||
+        (body.address !== undefined && (typeof body.address !== "object" || body.address === null || Array.isArray(body.address)))) {
+      return reply.code(400).send({ error: "invalid_request" });
+    }
+
+    const created = await options.merchantBranchWriter.createBranch({
+      merchantId: request.params.merchantId,
+      branchId: body.branchId,
+      displayName: body.displayName.trim(),
+      cityCode: body.cityCode,
+      ...(body.address === undefined ? {} : { address: body.address })
+    });
+    if (created === "merchant_not_found") return reply.code(404).send({ error: "merchant_not_found" });
+    if (created === "already_exists") return reply.code(409).send({ error: "branch_already_exists" });
+    return reply.code(201).send({
+      branch: {
+        merchantId: request.params.merchantId,
+        branchId: body.branchId,
+        displayName: body.displayName.trim(),
+        cityCode: body.cityCode,
+        status: "active"
+      }
+    });
   });
 
   return app;
