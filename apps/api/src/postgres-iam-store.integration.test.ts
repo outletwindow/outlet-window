@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Pool } from "pg";
 import { PostgresIamStore } from "../../../packages/domain/src/postgres-iam-store.js";
+import type { SessionStoreTransaction } from "../../../packages/domain/src/session-security.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const integration = describe.skipIf(!databaseUrl);
@@ -36,7 +37,7 @@ integration("PostgresIamStore against PostgreSQL", () => {
       "INSERT INTO identities (id, principal_type, status, primary_email, created_at, updated_at) VALUES ($1,'human','active',$2,$3,$3),($4,'human','active',$5,$3,$3)",
       [principalId, `${principalId}@example.test`, now, otherPrincipalId, `${otherPrincipalId}@example.test`]
     );
-    const inserted = await store.run(async tx => tx.insertSession(replacement(oldSessionId, "digest-original")));
+    const inserted = await store.run(async tx => (tx as unknown as SessionStoreTransaction).insertSession(replacement(oldSessionId, "digest-original")) );
     expect(inserted).toBe("inserted");
   });
 
@@ -55,7 +56,7 @@ integration("PostgresIamStore against PostgreSQL", () => {
   it("allows exactly one concurrent rotation of the same active session", async () => {
     const nextA = replacement(`session-${randomUUID()}`, "digest-next-a", oldSessionId);
     const nextB = replacement(`session-${randomUUID()}`, "digest-next-b", oldSessionId);
-    const rotate = (next: typeof nextA) => store.run(tx => tx.rotateSession({
+    const rotate = (next: typeof nextA) => store.run(tx => (tx as unknown as SessionStoreTransaction).rotateSession({
       oldSessionId, principalId, expectedTokenDigest: "digest-original",
       replacement: next, rotatedAt: now.toISOString()
     }));
