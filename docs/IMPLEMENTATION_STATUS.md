@@ -33,7 +33,8 @@ Last updated: 2026-11-08
 - [x] Initial PostgreSQL merchant/branch registry migration and tenant-scoped read adapter; API branch summary route uses the PostgreSQL reader by default.
 - [x] Authorized merchant-scoped branch creation and update APIs with PostgreSQL writer; validates payloads, rejects cross-merchant writes, does not overwrite duplicates, refuses writes for inactive merchants, and limits create/update grants to merchant owners/admins. Branch update supports safe activation/deactivation and address preservation when omitted. CI coverage added; merchant onboarding and full branch management remain pending.
 - [x] PostgreSQL scheduled task outbox persistence, atomic order/payment-capture confirmation handoff, lease-based worker claims, bounded retry/dead-letter handling, and idempotent durable inbox dispatch (CI typecheck, tests, PostgreSQL integration checks, and build passed on `0c037ce`).
-- [x] Durable scheduled task inbox lease store and generic at-least-once consumer worker: SKIP LOCKED claims, expired lease recovery, idempotency-key handler contract, bounded retry, dead-letter, and lease-CAS completion.\n- [ ] Concrete merchant preparation, shopper collection, and courier dispatch handlers/connectors; operational alert delivery and authorized remediation.
+- [x] Durable scheduled task inbox lease store and generic at-least-once consumer worker: SKIP LOCKED claims, expired lease recovery, idempotency-key handler contract, bounded retry, dead-letter, and lease-CAS completion.
+- [ ] Concrete merchant preparation, shopper collection, and courier dispatch handlers/connectors; operational alert delivery and authorized remediation.
 - [ ] Scheduled-task reconciliation reader, recurring worker, alert delivery and authorized remediation workflow.
 - [ ] Production transaction adapter and payment-to-order reconciliation/compensation workflow.
 - [ ] Payment provider capture/void/refund integration.
