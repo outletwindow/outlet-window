@@ -39,6 +39,30 @@ describe("Outlet Window API foundation", () => {
     expect(response.json().status).toBe("ready");
   });
 
+  it("reports not ready when a required database dependency is unavailable", async () => {
+    const unavailableApp = buildApp({ readinessCheck: async () => false });
+    await unavailableApp.ready();
+    try {
+      const response = await unavailableApp.inject({ method: "GET", url: "/ready" });
+      expect(response.statusCode).toBe(503);
+      expect(response.json()).toEqual({ status: "not_ready", checks: { process: "ok", database: "unavailable" } });
+    } finally {
+      await unavailableApp.close();
+    }
+  });
+
+  it("reports not ready when the database health check throws", async () => {
+    const unavailableApp = buildApp({ readinessCheck: async () => { throw new Error("db down"); } });
+    await unavailableApp.ready();
+    try {
+      const response = await unavailableApp.inject({ method: "GET", url: "/ready" });
+      expect(response.statusCode).toBe(503);
+      expect(response.json().status).toBe("not_ready");
+    } finally {
+      await unavailableApp.close();
+    }
+  });
+
   it("exposes the versioned API foundation", async () => {
     const response = await app.inject({ method: "GET", url: "/api/v1" });
     expect(response.statusCode).toBe(200);
