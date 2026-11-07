@@ -169,12 +169,13 @@ export class PostgresScheduledOrderTransactionRunner implements ScheduledOrderTr
             }
             return;
           }
-          const updated = await client.query(
-            `UPDATE customer_orders SET status = 'confirmed', version = version + 1, updated_at = $3
-             WHERE tenant_id = $1 AND id = $2 AND status IN ('pending_validation','awaiting_payment')`,
-            [order.tenantId, order.orderId, order.confirmedAtUtc]
+          const orderRow = await client.query<{ status: string }>(
+            "SELECT status FROM customer_orders WHERE tenant_id = $1 AND id = $2 FOR UPDATE",
+            [order.tenantId, order.orderId]
           );
-          if (updated.rowCount !== 1) throw new Error("scheduled_order_not_awaiting_payment");
+          if (orderRow.rows[0]?.status !== "awaiting_payment") {
+            throw new Error("scheduled_order_not_awaiting_payment");
+          }
           await client.query(
             `INSERT INTO scheduled_order_confirmations
               (order_id, tenant_id, payment_reference, payment_captured_at, confirmed_at, fulfillment_version)
