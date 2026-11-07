@@ -1,0 +1,21 @@
+{
+  "name": "@outlet-window/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "tsc --noEmit -p tsconfig.json",
+    "start:scheduled": "tsx src/scheduled-main.ts"
+  },
+  "dependencies": {
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "@types/node": "22.18.10",
+    "@types/pg": "^8.15.5",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3"
+  }
+}
