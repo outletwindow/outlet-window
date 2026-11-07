@@ -26,7 +26,7 @@ function record(overrides: Partial<ScheduledTaskOutboxRecord> = {}): ScheduledTa
     taskType: task.taskType, executeAtUtc: task.executeAtUtc, status: "pending",
     attemptCount: 0, createdAtUtc: "2026-11-07T09:00:00.000Z",
     updatedAtUtc: "2026-11-07T09:00:00.000Z",
-    availableAtUtc: "2026-11-07T09:00:00.000Z", ...overrides
+    availableAtUtc: "2026-11-07T09:00:00.000Z", payload: task, ...overrides
   };
 }
 
