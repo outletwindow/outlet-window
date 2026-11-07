@@ -115,5 +115,6 @@ export function isScheduledTaskPayload(record: ScheduledTaskOutboxRecord): boole
   return record.payload.orderId === record.orderId &&
     record.payload.idempotencyKey === record.idempotencyKey &&
     record.payload.taskType === record.taskType &&
-    record.payload.executeAtUtc === record.executeAtUtc;
+    record.payload.executeAtUtc === record.executeAtUtc &&
+    record.payload.plan.orderId === record.orderId;
 }
