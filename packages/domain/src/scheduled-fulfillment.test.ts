@@ -19,7 +19,7 @@ describe("scheduled fulfillment planning", () => {
     expect(plan).not.toBeNull();
     expect(plan?.paymentDueAt).toBe("2026-11-07T09:00:00.000Z");
     expect(plan?.inventoryReservationDueAt).toBe("2026-11-07T09:00:00.000Z");
-    expect(plan?.preparationReleaseAtUtc).toBe("2026-11-07T13:30:00.000Z");
+    expect(plan?.preparationReleaseAtUtc).toBe("2026-11-07T13:10:00.000Z");
     expect(plan?.courierDispatchAtUtc).toBe("2026-11-07T13:40:00.000Z");
     expect(plan?.scheduledForUtc).toBe("2026-11-07T14:00:00.000Z");
   });
