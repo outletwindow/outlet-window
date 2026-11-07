@@ -7,7 +7,8 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "tsc --noEmit -p tsconfig.json",
-    "start:scheduled": "tsx src/scheduled-main.ts"
+    "start:scheduled": "tsx src/scheduled-main.ts",
+    "start:fulfillment": "tsx src/fulfillment-main.ts"
   },
   "dependencies": {
     "pg": "^8.16.3"
