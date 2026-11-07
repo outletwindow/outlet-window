@@ -21,9 +21,9 @@ Last updated: 2026-11-07
 - [x] Atomic scheduled-order commit port: validates order/task consistency and coordinates order persistence plus outbox enqueue in one transaction boundary, with rollback/idempotency tests (database adapter not yet implemented).
 
 ## In progress
-- [x] PostgreSQL IAM schema migration and database-agnostic persistence adapter for identities, scoped roles, and sessions; API composition root can resolve actors from the persistent store when a configured PostgreSQL pool and approved token-digest adapter are supplied. Live database provisioning, API runtime wiring, and real-PostgreSQL integration acceptance remain pending.
+- [x] PostgreSQL IAM schema migration, persistence adapter, API runtime wiring, and persisted-session actor resolution when DATABASE_URL is configured; ephemeral PostgreSQL CI acceptance passed. Managed production database provisioning remains pending.
 - [ ] Authentication, password/passkey flows, MFA, and session revocation.
-- [x] PostgreSQL selected as the initial relational database direction; versioned IAM migration and advisory-locked transactional migration runner added. Managed database provisioning and deployment remain pending.
+- [x] PostgreSQL selected; versioned IAM migration and advisory-locked transactional migration runner added and verified in CI. Managed database provisioning and deployment remain pending.
 - [ ] Audit event persistence and protected access.
 - [ ] Production API authentication and authorization integration across all customer, merchant, shopper, courier, admin and owner data routes.
 - [x] API authorization reference route: server-side actor resolver seam, deny-by-default behavior, and merchant/branch isolation tests.
@@ -52,6 +52,6 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Add CI integration checks against a real ephemeral PostgreSQL 16 service for migration execution, identity/role/session persistence, principal isolation, and foreign-key enforcement.
 - [x] Wire the API server to PostgreSQL when DATABASE_URL is configured; production startup refuses to run without it, readiness checks database connectivity, and graceful shutdown closes the pool.
 - [x] Add a CLI migration command using the advisory-locked versioned migration runner; migrations are explicit and are not silently applied by API startup.
-- [ ] Confirm CI acceptance for TypeScript adapter tests covering tenant-bound session reads and concurrent one-time session rotation.
+- [x] CI acceptance for TypeScript adapter tests covering tenant-bound session reads and concurrent one-time session rotation (run 42404896175 passed typecheck, tests, and build).
 - [x] Document the encrypted backup and isolated restore procedure and production acceptance checklist.
 - [ ] Configure provider-managed encrypted backups, retention, monitoring, and perform a restore drill in the selected cloud account.
