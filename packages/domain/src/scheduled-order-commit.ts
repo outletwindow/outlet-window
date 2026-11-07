@@ -20,6 +20,13 @@ export interface ScheduledOrderCommitTransaction {
   enqueueOutbox(record: ScheduledTaskOutboxRecord): Promise<"inserted" | "already_exists">;
 }
 
+export type ScheduledPaymentCaptureRecordResult = "inserted" | "already_exists";
+
+export interface ScheduledPaymentCaptureRecorder {
+  /** Persist provider-confirmed payment evidence before requesting branch inventory reservation. */
+  recordPaymentCapture(order: ScheduledOrderConfirmation): Promise<ScheduledPaymentCaptureRecordResult>;
+}
+
 export interface ScheduledOrderTransactionRunner {
   /** The adapter must commit all callback writes atomically or roll all of them back. */
   run<T>(work: (transaction: ScheduledOrderCommitTransaction) => Promise<T>): Promise<T>;
