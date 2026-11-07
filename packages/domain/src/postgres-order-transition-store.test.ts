@@ -76,7 +76,8 @@ describe("PostgresOrderTransitionStore", () => {
     const db = fakePool({ missing: true });
     const result = await new PostgresOrderTransitionStore(db.pool).transitionSuborder({
       tenantId: "tenant-other", orderId: "order-1", suborderId: "sub-1",
-      nextStatus: "awaiting_payment", context, auditEvent
+      nextStatus: "awaiting_payment", context,
+      auditEvent: { ...auditEvent, tenantId: "tenant-other" }
     });
     expect(result).toEqual({ outcome: "not_found" });
     expect(db.query.mock.calls[1]?.[1]).toEqual(["tenant-other", "order-1", "sub-1"]);
