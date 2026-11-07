@@ -7,6 +7,7 @@
   "engines": { "node": ">=22.0.0", "pnpm": ">=10.0.0" },
   "scripts": {
     "dev:api": "pnpm --filter @outlet-window/api dev",
+    "worker:scheduled": "pnpm --filter @outlet-window/worker start:scheduled",
     "build": "pnpm --recursive build",
     "test": "pnpm --recursive test",
     "typecheck": "pnpm --recursive typecheck",
