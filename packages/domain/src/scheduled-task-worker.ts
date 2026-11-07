@@ -65,6 +65,15 @@ export async function runScheduledTaskBatch(input: {
       result.leaseLost += 1;
       continue;
     }
+    if (!isScheduledTaskPayload(record)) {
+      const moved = await input.store.deadLetter({
+        id: record.id, leaseToken, nowUtc: new Date(now).toISOString(),
+        errorCode: "INVALID_TASK_PAYLOAD"
+      });
+      if (moved) result.deadLettered += 1;
+      else result.leaseLost += 1;
+      continue;
+    }
     try {
       await input.publisher.publish(record.payload, record.idempotencyKey);
       const acknowledged = await input.store.markPublished({
