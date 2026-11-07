@@ -9,6 +9,7 @@ export interface CreateMerchantBranchInput {
 }
 
 export type CreateMerchantBranchResult = "created" | "already_exists" | "merchant_not_found" | "merchant_inactive";
+export type UpdateMerchantBranchResult = "updated" | "not_found" | "merchant_inactive";
 
 export interface MerchantBranchWriter {
   createBranch(input: CreateMerchantBranchInput): Promise<CreateMerchantBranchResult>;
