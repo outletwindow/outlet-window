@@ -31,18 +31,30 @@ const context = {
   occurredAt: "2026-11-07T12:00:00.000Z", expectedVersion: 1
 };
 
+const auditEvent = {
+  id: "audit-1", schemaVersion: 1 as const, type: "order.suborder.transitioned",
+  category: "order_lifecycle", occurredAt: context.occurredAt,
+  actor: { id: context.actorId, type: "customer" as const, role: context.actorRole },
+  action: "order.suborder.transition", outcome: "success" as const,
+  resourceType: "merchant_suborder", resourceId: "sub-1", tenantId: "tenant-1",
+  merchantId: "merchant-1", branchId: "branch-1", correlationId: "request-1",
+  source: "api", severity: "info" as const,
+  metadata: { orderId: "order-1", previousStatus: "pending_validation", nextStatus: "awaiting_payment" }
+};
+
 describe("PostgresOrderTransitionStore", () => {
   it("updates the suborder and recomputes the parent in one transaction", async () => {
     const db = fakePool();
     const result = await new PostgresOrderTransitionStore(db.pool).transitionSuborder({
       tenantId: "tenant-1", orderId: "order-1", suborderId: "sub-1",
-      nextStatus: "awaiting_payment", context
+      nextStatus: "awaiting_payment", context, auditEvent
     });
     expect(result).toMatchObject({
       outcome: "updated", parentStatus: "awaiting_payment",
       transition: { ok: true, previousStatus: "pending_validation" }
     });
     expect(db.statements[0]).toBe("BEGIN");
+    expect(db.statements.at(-2)).toContain("INSERT INTO audit_events");
     expect(db.statements.at(-1)).toBe("COMMIT");
     expect(db.statements.some(sql => sql.includes("WHERE tenant_id = $1 AND order_id = $2 AND id = $3 AND version = $6"))).toBe(true);
     expect(db.statements.some(sql => sql.includes("SET status = $3, version = version + 1"))).toBe(true);
@@ -53,7 +65,7 @@ describe("PostgresOrderTransitionStore", () => {
     const db = fakePool({ version: 2 });
     const result = await new PostgresOrderTransitionStore(db.pool).transitionSuborder({
       tenantId: "tenant-1", orderId: "order-1", suborderId: "sub-1",
-      nextStatus: "awaiting_payment", context
+      nextStatus: "awaiting_payment", context, auditEvent
     });
     expect(result).toEqual({ outcome: "conflict" });
     expect(db.statements).toContain("ROLLBACK");
@@ -64,7 +76,7 @@ describe("PostgresOrderTransitionStore", () => {
     const db = fakePool({ missing: true });
     const result = await new PostgresOrderTransitionStore(db.pool).transitionSuborder({
       tenantId: "tenant-other", orderId: "order-1", suborderId: "sub-1",
-      nextStatus: "awaiting_payment", context
+      nextStatus: "awaiting_payment", context, auditEvent
     });
     expect(result).toEqual({ outcome: "not_found" });
     expect(db.query.mock.calls[1]?.[1]).toEqual(["tenant-other", "order-1", "sub-1"]);
@@ -74,7 +86,7 @@ describe("PostgresOrderTransitionStore", () => {
     const db = fakePool();
     const result = await new PostgresOrderTransitionStore(db.pool).transitionSuborder({
       tenantId: "tenant-1", orderId: "order-1", suborderId: "sub-1",
-      nextStatus: "delivered", context
+      nextStatus: "delivered", context, auditEvent
     });
     expect(result).toEqual({ outcome: "rejected", reason: "invalid_transition" });
     expect(db.statements).toContain("ROLLBACK");
