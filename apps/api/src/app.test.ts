@@ -127,7 +127,7 @@ describe("Outlet Window API foundation", () => {
     const protectedApp = buildApp({
       resolveActor: async () => merchantActor,
       merchantBranchWriter: {
-        createBranch: async () => { writes += 1; return "created"; }
+        createBranch: async () => { writes += 1; return "created"; },\n        updateBranch: async () => "updated"
       }
     });
     await protectedApp.ready();
@@ -174,7 +174,7 @@ describe("Outlet Window API foundation", () => {
     };
     const protectedApp = buildApp({
       resolveActor: async () => actorWithCreate,
-      merchantBranchWriter: { createBranch: async () => "created" }
+      merchantBranchWriter: { createBranch: async () => "created", updateBranch: async () => "updated" }
     });
     await protectedApp.ready();
     try {
@@ -191,3 +191,46 @@ describe("Outlet Window API foundation", () => {
   });
 
 });
+  it("requires branch-scoped update permission and validates update payloads", async () => {
+    let updates = 0;
+    const owner: Actor = {
+      ...merchantActor,
+      grants: [{ resource: "merchant.branch", actions: ["update"], scope: { merchantId: "merchant-1", branchId: "branch-1" } }]
+    };
+    const protectedApp = buildApp({
+      resolveActor: async () => owner,
+      merchantBranchWriter: {
+        createBranch: async () => "created",
+        updateBranch: async () => { updates += 1; return "updated"; }
+      }
+    });
+    await protectedApp.ready();
+    try {
+      const denied = await protectedApp.inject({
+        method: "PATCH",
+        url: "/api/v1/merchants/merchant-1/branches/branch-2",
+        payload: { displayName: "Changed", cityCode: "JUB", status: "active" }
+      });
+      expect(denied.statusCode).toBe(403);
+      expect(updates).toBe(0);
+
+      const allowed = await protectedApp.inject({
+        method: "PATCH",
+        url: "/api/v1/merchants/merchant-1/branches/branch-1",
+        payload: { displayName: "Jubail Updated", cityCode: "JUB", status: "inactive" }
+      });
+      expect(allowed.statusCode).toBe(200);
+      expect(updates).toBe(1);
+
+      const invalid = await protectedApp.inject({
+        method: "PATCH",
+        url: "/api/v1/merchants/merchant-1/branches/branch-1",
+        payload: { displayName: "x", cityCode: "JUB", status: "active" }
+      });
+      expect(invalid.statusCode).toBe(400);
+      expect(updates).toBe(1);
+    } finally {
+      await protectedApp.close();
+    }
+  });
+
