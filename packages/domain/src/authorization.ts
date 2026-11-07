@@ -49,7 +49,9 @@ export interface PermissionGrant {
 
 export interface Actor {
   id: string;
+  /** Primary role retained for compatibility; roles lists every active role assignment. */
   role: PlatformRole;
+  roles?: readonly PlatformRole[];
   active: boolean;
   grants: readonly PermissionGrant[];
 }
