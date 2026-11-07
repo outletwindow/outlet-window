@@ -127,7 +127,8 @@ describe("Outlet Window API foundation", () => {
     const protectedApp = buildApp({
       resolveActor: async () => merchantActor,
       merchantBranchWriter: {
-        createBranch: async () => { writes += 1; return "created"; },\n        updateBranch: async () => "updated"
+        createBranch: async () => { writes += 1; return "created"; },
+        updateBranch: async () => "updated"
       }
     });
     await protectedApp.ready();
@@ -147,7 +148,8 @@ describe("Outlet Window API foundation", () => {
       const createApp = buildApp({
         resolveActor: async () => actorWithCreate,
         merchantBranchWriter: {
-          createBranch: async () => { writes += 1; return "created"; }
+          createBranch: async () => { writes += 1; return "created"; },
+          updateBranch: async () => "updated"
         }
       });
       await createApp.ready();
@@ -190,7 +192,6 @@ describe("Outlet Window API foundation", () => {
     }
   });
 
-});
   it("requires branch-scoped update permission and validates update payloads", async () => {
     let updates = 0;
     const owner: Actor = {
