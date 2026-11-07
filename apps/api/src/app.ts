@@ -135,7 +135,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
         branchId: request.params.branchId
       }
     });
-    if (!result.actor) return sendAuthorizationFailure(reply, result);
+    if (!result.actor) return sendAuthorizationFailure(reply, result.statusCode, result.decision.reason);
     if (!options.merchantBranches) return reply.code(503).send({ error: "service_unavailable" });
 
     const branch = await options.merchantBranches.findBranchSummary({
