@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Pool } from "pg";
 import { PostgresBranchInventoryReservationAdapter } from "../../../packages/domain/src/postgres-branch-inventory-reservation.js";
+import { PostgresScheduledOrderTransactionRunner } from "../../../packages/domain/src/postgres-scheduled-task-store.js";
 import { PostgresBranchInventoryReservationLifecycle } from "../../../packages/domain/src/postgres-branch-inventory-reservation-lifecycle.js";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -12,6 +13,7 @@ integration("PostgreSQL branch inventory reservations", () => {
   if (!configuredPool) throw new Error("Pool must exist when DATABASE_URL is configured");
   const pool: Pool = configuredPool;
   const adapter = new PostgresBranchInventoryReservationAdapter(pool);
+  const paymentRecorder = new PostgresScheduledOrderTransactionRunner(pool);
   const lifecycle = new PostgresBranchInventoryReservationLifecycle(pool);
   const suffix = randomUUID();
   const merchantId = "inventory-merchant-" + suffix;
@@ -32,12 +34,6 @@ integration("PostgreSQL branch inventory reservations", () => {
       [id, "inventory-customer-" + id, "inventory-idem-" + id]
     );
     await pool.query(
-      `INSERT INTO scheduled_order_confirmations
-       (order_id,tenant_id,payment_reference,payment_captured_at,confirmed_at,fulfillment_version)
-       VALUES ($1,'platform',$2,now(),now(),1)`,
-      [id, "payment-" + id]
-    );
-    await pool.query(
       `INSERT INTO merchant_suborders
        (id,tenant_id,order_id,merchant_id,branch_id,status,subtotal_minor)
        VALUES ($1,$2,$3,$2,$4,'awaiting_payment',10000)`,
@@ -49,6 +45,12 @@ integration("PostgreSQL branch inventory reservations", () => {
        VALUES ($1,$2,$3,$4,$2,$5,$6,$7,$8,5000,'SAR')`,
       ["item-" + id, tenantId, id, suborderId, branchId, variantId, sku, quantity]
     );
+    const capturedAtUtc = new Date().toISOString();
+    await paymentRecorder.recordPaymentCapture({
+      orderId: id, tenantId: "platform", paymentReference: "payment-" + id,
+      paymentCapturedAtUtc: capturedAtUtc, confirmedAtUtc: capturedAtUtc,
+      fulfillmentVersion: 1
+    });
     const idempotencyKey = "inventory-reservation:" + id + ":v1";
     return {
       tenantId, orderId: id, suborderId, merchantId, branchId, idempotencyKey,
