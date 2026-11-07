@@ -135,7 +135,7 @@ integration("PostgreSQL branch inventory reservations", () => {
     expect(released).toEqual({ outcome: "updated", status: "released" });
     await expect(lifecycle.release({
       tenantId, reservationId: reservation.reservationReference,
-      nowUtc: new Date().toISOString()
+      nowUtc: new Date().toISOString(), reason: "customer_cancelled"
     })).resolves.toEqual({ outcome: "already_finalized", status: "released" });
     const stock = await pool.query<{ available_quantity: number; reserved_quantity: number }>(
       "SELECT available_quantity, reserved_quantity FROM branch_inventory WHERE merchant_id=$1 AND branch_id=$2 AND product_variant_id=$3",
