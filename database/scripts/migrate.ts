@@ -16,12 +16,18 @@ async function main(): Promise<void> {
   });
 
   try {
-    const sql = await readFile(resolve(process.cwd(), "../../database/migrations/0001_identity_access_sessions.sql"), "utf8");
+    const migrations = await Promise.all([
+      { version: "0001_identity_access_sessions", file: "0001_identity_access_sessions.sql" },
+      { version: "0002_merchants_branches", file: "0002_merchants_branches.sql" }
+    ].map(async migration => ({
+      version: migration.version,
+      sql: await readFile(resolve(process.cwd(), `../../database/migrations/${migration.file}`), "utf8")
+    })));
     const client = await pool.connect();
     try {
       const result = await applyPostgresMigrations(
         client as unknown as PostgresClient,
-        [{ version: "0001_identity_access_sessions", sql }]
+        migrations
       );
       process.stdout.write(JSON.stringify(result) + "\n");
     } finally {
