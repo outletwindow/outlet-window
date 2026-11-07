@@ -25,8 +25,10 @@ Last updated: 2026-11-07
 - [ ] Authentication, password/passkey flows, MFA, and session revocation.
 - [ ] Database provider selection and versioned migrations.
 - [ ] Audit event persistence and protected access.
-- [ ] Production API authentication and authorization integration.
-- [x] API authorization reference route: server-side actor resolver seam, deny-by-default behavior, and merchant/branch isolation tests (production session resolver and business data routes not yet integrated).
+- [ ] Production API authentication and authorization integration across all customer, merchant, shopper, courier, admin and owner data routes.
+- [x] API authorization reference route: server-side actor resolver seam, deny-by-default behavior, and merchant/branch isolation tests.
+- [x] Persisted-session actor resolution contract: bearer parsing, digest comparison, active identity/session checks, scoped role validation and injected role-to-grant mapping (concrete crypto and persistence adapters not yet implemented).
+- [x] Protected merchant branch summary route: authenticates and authorizes before repository access; tests prove denied requests do not query business data (production repository adapter not yet implemented).
 - [ ] Durable scheduled task queue adapter, transactional outbox persistence, and worker execution.
 - [ ] Production transaction adapter and payment-to-order reconciliation/compensation workflow.
 - [ ] Payment provider capture/void/refund integration.
