@@ -49,13 +49,12 @@ async function insertOutboxRecord(client: PostgresClient, record: ScheduledTaskO
   );
   if (inserted.rowCount === 1) return "inserted";
 
-  const existing = await client.query<{ id: string; order_id: string; task_type: string; payload: unknown }>(
-    "SELECT id, order_id, task_type, payload FROM scheduled_task_outbox WHERE idempotency_key = $1",
-    [record.idempotencyKey]
+  const existing = await client.query<{ order_id: string; task_type: string; same_payload: boolean }>(
+    "SELECT order_id, task_type, payload = $2::jsonb AS same_payload FROM scheduled_task_outbox WHERE idempotency_key = $1",
+    [record.idempotencyKey, JSON.stringify(record.payload)]
   );
   const row = existing.rows[0];
-  if (row && row.order_id === record.orderId && row.task_type === record.taskType &&
-      JSON.stringify(row.payload) === JSON.stringify(record.payload)) return "already_exists";
+  if (row && row.order_id === record.orderId && row.task_type === record.taskType && row.same_payload) return "already_exists";
   throw new Error("scheduled_outbox_idempotency_conflict");
 }
 
@@ -64,9 +63,9 @@ export class PostgresScheduledTaskOutboxStore implements ScheduledTaskOutboxStor
   constructor(private readonly pool: PostgresPool) {}
 
   async enqueue(record: ScheduledTaskOutboxRecord): Promise<"inserted" | "already_exists"> {
-    return insertOutboxRecord(await this.pool.connect().then(async client => {
-      try { return client; } catch (error) { client.release(); throw error; }
-    }), record).finally(() => undefined);
+    const client = await this.pool.connect();
+    try { return await insertOutboxRecord(client, record); }
+    finally { client.release(); }
   }
 
   async claimDue(input: {
