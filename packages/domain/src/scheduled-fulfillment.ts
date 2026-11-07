@@ -121,7 +121,7 @@ export function createScheduledOrderPlan(input: {
     paymentDueAt: new Date(nowAt).toISOString(),
     inventoryReservationDueAt: new Date(nowAt).toISOString(),
     preparationReleaseAtUtc: new Date(Math.max(nowAt, releaseAt)).toISOString(),
-    courierDispatchAtUtc: new Date(Math.max(nowAt, dispatchAt)).toISOString(),
+    ...(dispatchAt === undefined ? {} : { courierDispatchAtUtc: new Date(Math.max(nowAt, dispatchAt)).toISOString() }),
     estimate: input.estimate,
     createdAt: new Date(nowAt).toISOString()
   };
