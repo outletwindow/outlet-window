@@ -92,3 +92,7 @@ Provider-confirmed payment evidence is now persistable before inventory allocati
 
 ## Merchant-targeted task envelopes
 Timed tasks may carry a merchant target (`merchantTenantId`, `suborderId`, `merchantId`, `branchId`). Idempotency keys are scoped to the suborder, allowing a multi-merchant parent order to create independent preparation/dispatch work without key collisions. Before publishing a targeted envelope into the durable inbox, the PostgreSQL publisher verifies that the suborder belongs to the parent order and matches the exact merchant tenant and branch. The inbox row remains scoped to the platform parent order; merchant ownership is carried in the validated payload for the eventual consumer.
+
+
+## Durable inbox consumer processing
+Migration `0008_scheduled_task_inbox_leases` adds `available_at`, lease token and expiry fields. A PostgreSQL inbox store claims due rows with `FOR UPDATE SKIP LOCKED`, recovers expired processing leases, and uses lease-token compare-and-swap for completion, retry and dead-letter. The generic worker validates targeted envelopes and dispatches to injected idempotent handlers. Real merchant preparation, shopper collection and courier dispatch provider handlers remain to be supplied and configured; the generic worker alone does not perform those external actions.
