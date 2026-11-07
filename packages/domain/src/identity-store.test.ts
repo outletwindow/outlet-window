@@ -61,5 +61,7 @@ describe("identity persistence contracts", () => {
     expect(isRoleAssignmentActiveAt(assignment, "2026-11-07T09:00:00.000Z")).toBe(true);
     expect(isRoleAssignmentActiveAt(assignment, "2026-12-07T09:00:00.000Z")).toBe(false);
     expect(isRoleAssignmentActiveAt({ ...assignment, active: false }, "2026-11-08T09:00:00.000Z")).toBe(false);
+    const { validUntil: _validUntil, ...noExpiry } = assignment;
+    expect(isRoleAssignmentActiveAt(noExpiry, "2027-01-01T00:00:00.000Z")).toBe(true);
   });
 });
