@@ -26,7 +26,7 @@ export interface MerchantBranchWriter {
     displayName: string;
     cityCode: string;
     address?: Readonly<Record<string, unknown>>;
-  }): Promise<"created" | "already_exists" | "merchant_not_found" | "merchant_inactive">;
+  }): Promise<"created" | "already_exists" | "merchant_not_found" | "merchant_inactive">;\n  updateBranch(input: { merchantId: string; branchId: string; displayName: string; cityCode: string; address?: Readonly<Record<string, unknown>>; status: "active" | "inactive" }): Promise<"updated" | "not_found" | "merchant_inactive">;
 }
 
 export interface AppOptions {
@@ -216,3 +216,44 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
 
   return app;
 }
+  app.patch<{
+    Params: { merchantId: string; branchId: string };
+    Body: {
+      displayName: string;
+      cityCode: string;
+      address?: Record<string, unknown>;
+      status: "active" | "inactive";
+    };
+  }>("/api/v1/merchants/:merchantId/branches/:branchId", async (request, reply) => {
+    const result = await authorizeRequest(request, options, {
+      resource: "merchant.branch",
+      action: "update",
+      scope: { merchantId: request.params.merchantId, branchId: request.params.branchId }
+    });
+    if (!result.actor) return sendAuthorizationFailure(reply, result.statusCode, result.decision.reason);
+    if (!options.merchantBranchWriter) return reply.code(503).send({ error: "service_unavailable" });
+    const body = request.body;
+    if (!body || typeof body.displayName !== "string" || body.displayName.trim().length < 2 ||
+        body.displayName.trim().length > 120 ||
+        typeof body.cityCode !== "string" || !/^[A-Z0-9_-]{2,12}$/.test(body.cityCode) ||
+        !["active", "inactive"].includes(body.status) ||
+        (body.address !== undefined && (typeof body.address !== "object" || body.address === null || Array.isArray(body.address)))) {
+      return reply.code(400).send({ error: "invalid_request" });
+    }
+    const updated = await options.merchantBranchWriter.updateBranch({
+      merchantId: request.params.merchantId,
+      branchId: request.params.branchId,
+      displayName: body.displayName.trim(),
+      cityCode: body.cityCode,
+      status: body.status,
+      ...(body.address === undefined ? {} : { address: body.address })
+    });
+    if (updated === "merchant_inactive") return reply.code(409).send({ error: "merchant_inactive" });
+    if (updated === "not_found") return reply.code(404).send({ error: "branch_not_found" });
+    return reply.code(200).send({ branch: {
+      merchantId: request.params.merchantId, branchId: request.params.branchId,
+      displayName: body.displayName.trim(), cityCode: body.cityCode, status: body.status
+    } });
+  });
+
+
