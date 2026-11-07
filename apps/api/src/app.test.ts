@@ -1,0 +1,155 @@
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { FastifyInstance } from "fastify";
+import { buildApp } from "./app.js";
+import type { Actor } from "../../../packages/domain/src/authorization.js";
+
+const merchantActor: Actor = {
+  id: "principal-1",
+  role: "merchant_owner",
+  active: true,
+  grants: [{
+    resource: "merchant.branch",
+    actions: ["read"],
+    scope: { merchantId: "merchant-1", branchId: "branch-1" }
+  }]
+};
+
+describe("Outlet Window API foundation", () => {
+  let app: FastifyInstance;
+
+  beforeAll(async () => {
+    app = buildApp({ serviceName: "test-api", version: "test" });
+    await app.ready();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it("exposes a health endpoint", async () => {
+    const response = await app.inject({ method: "GET", url: "/health" });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["x-correlation-id"]).toBeTruthy();
+    expect(response.json()).toMatchObject({ status: "ok", service: "test-api", version: "test" });
+  });
+
+  it("exposes a readiness endpoint", async () => {
+    const response = await app.inject({ method: "GET", url: "/ready" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().status).toBe("ready");
+  });
+
+  it("exposes the versioned API foundation", async () => {
+    const response = await app.inject({ method: "GET", url: "/api/v1" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ name: "Outlet Window API", version: "v1" });
+  });
+
+  it("denies protected routes when no verified actor is resolved", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/merchants/merchant-1/branches/branch-1/access-check"
+    });
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({ error: "unauthenticated" });
+  });
+
+  it("allows a verified actor only for its assigned merchant branch", async () => {
+    const protectedApp = buildApp({ resolveActor: async () => merchantActor });
+    await protectedApp.ready();
+    try {
+      const allowed = await protectedApp.inject({
+        method: "GET",
+        url: "/api/v1/merchants/merchant-1/branches/branch-1/access-check"
+      });
+      expect(allowed.statusCode).toBe(200);
+      expect(allowed.json()).toEqual({ access: "granted" });
+
+      const denied = await protectedApp.inject({
+        method: "GET",
+        url: "/api/v1/merchants/merchant-1/branches/branch-2/access-check"
+      });
+      expect(denied.statusCode).toBe(403);
+      expect(denied.json()).toMatchObject({ error: "forbidden", reason: "scope_mismatch" });
+
+      const otherMerchant = await protectedApp.inject({
+        method: "GET",
+        url: "/api/v1/merchants/merchant-2/branches/branch-1/access-check"
+      });
+      expect(otherMerchant.statusCode).toBe(403);
+    } finally {
+      await protectedApp.close();
+    }
+  });
+
+  it("denies inactive actors even when they have a matching grant", async () => {
+    const protectedApp = buildApp({
+      resolveActor: async () => ({ ...merchantActor, active: false })
+    });
+    await protectedApp.ready();
+    try {
+      const response = await protectedApp.inject({
+        method: "GET",
+        url: "/api/v1/merchants/merchant-1/branches/branch-1/access-check"
+      });
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toMatchObject({ error: "forbidden", reason: "inactive_actor" });
+    } finally {
+      await protectedApp.close();
+    }
+  });
+  it("checks branch authorization before reading merchant data", async () => {
+    let repositoryCalls = 0;
+    const reader = {
+      async findBranchSummary(input: { merchantId: string; branchId: string }) {
+        repositoryCalls += 1;
+        return {
+          merchantId: input.merchantId,
+          branchId: input.branchId,
+          displayName: "Branch One",
+          status: "active" as const
+        };
+      }
+    };
+    const protectedApp = buildApp({
+      resolveActor: async () => merchantActor,
+      merchantBranches: reader
+    });
+    await protectedApp.ready();
+    try {
+      const denied = await protectedApp.inject({
+        method: "GET",
+        url: "/api/v1/merchants/merchant-1/branches/branch-2/summary"
+      });
+      expect(denied.statusCode).toBe(403);
+      expect(repositoryCalls).toBe(0);
+
+      const allowed = await protectedApp.inject({
+        method: "GET",
+        url: "/api/v1/merchants/merchant-1/branches/branch-1/summary"
+      });
+      expect(allowed.statusCode).toBe(200);
+      expect(allowed.json().branch).toMatchObject({
+        merchantId: "merchant-1", branchId: "branch-1", displayName: "Branch One"
+      });
+      expect(repositoryCalls).toBe(1);
+    } finally {
+      await protectedApp.close();
+    }
+  });
+
+  it("returns unavailable rather than exposing data without a repository adapter", async () => {
+    const protectedApp = buildApp({ resolveActor: async () => merchantActor });
+    await protectedApp.ready();
+    try {
+      const response = await protectedApp.inject({
+        method: "GET",
+        url: "/api/v1/merchants/merchant-1/branches/branch-1/summary"
+      });
+      expect(response.statusCode).toBe(503);
+    } finally {
+      await protectedApp.close();
+    }
+  });
+
+});
