@@ -443,3 +443,7 @@ End of document.
 
 ## Multi-merchant scheduled checkout orchestration (development branch)
 A domain orchestrator now persists payment-provider capture evidence, then reserves each merchant suborder's exact branch/SKU lines, and only after all reservations succeed atomically enqueues branch-targeted preparation and dispatch tasks. Each task carries merchant tenant, suborder, merchant and branch references; task idempotency keys include the suborder. If any reservation is unavailable or unguaranteed, timed tasks are not enqueued and earlier successful reservation references are returned for customer choice or explicit compensation. This orchestrator is not yet connected to a customer-facing checkout route.
+
+
+## Durable task consumer foundation
+A recoverable inbox consumer framework now supports due-task claiming, expired lease recovery, idempotent handler dispatch, bounded retry, dead-letter and stale-worker protection. Concrete merchant, shopper and courier connectors are still pending, so no real preparation, collection or courier assignment is yet performed by this worker framework.
