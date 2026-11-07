@@ -1,5 +1,5 @@
 import type { ScheduledTaskOutboxRecord, ScheduledTaskOutboxStore } from "./scheduled-task-outbox.js";
-import type { ScheduledOrderCommitTransaction, ScheduledOrderConfirmation, ScheduledOrderTransactionRunner } from "./scheduled-order-commit.js";
+import type { ScheduledOrderCommitTransaction, ScheduledOrderConfirmation, ScheduledOrderTransactionRunner, ScheduledPaymentCaptureRecorder, ScheduledPaymentCaptureRecordResult } from "./scheduled-order-commit.js";
 import type { PostgresClient, PostgresPool } from "./postgres-iam-store.js";
 import type { ScheduledTaskPublisher } from "./scheduled-task-worker.js";
 import type { ScheduledFulfillmentTaskEnvelope } from "./scheduled-fulfillment-workflow.js";
@@ -143,8 +143,66 @@ export class PostgresScheduledTaskOutboxStore implements ScheduledTaskOutboxStor
 }
 
 /** Persists the confirmed order and its outbox tasks on one PostgreSQL transaction/client. */
-export class PostgresScheduledOrderTransactionRunner implements ScheduledOrderTransactionRunner {
+export class PostgresScheduledOrderTransactionRunner implements ScheduledOrderTransactionRunner, ScheduledPaymentCaptureRecorder {
   constructor(private readonly pool: PostgresPool) {}
+
+  /**
+   * Persist payment-provider evidence before the inventory reservation request.
+   * No payment action is performed here; the caller must supply a verified provider result.
+   */
+  async recordPaymentCapture(order: ScheduledOrderConfirmation): Promise<ScheduledPaymentCaptureRecordResult> {
+    const capturedAt = Date.parse(order.paymentCapturedAtUtc);
+    const confirmedAt = Date.parse(order.confirmedAtUtc);
+    if (!order.orderId.trim() || !order.tenantId.trim() || !order.paymentReference.trim() ||
+        !Number.isFinite(capturedAt) || !Number.isFinite(confirmedAt) || confirmedAt < capturedAt ||
+        !Number.isSafeInteger(order.fulfillmentVersion) || order.fulfillmentVersion < 1) {
+      throw new Error("scheduled_payment_capture_invalid");
+    }
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const parent = await client.query<{ status: string }>(
+        "SELECT status FROM customer_orders WHERE tenant_id = $1 AND id = $2 FOR UPDATE",
+        [order.tenantId, order.orderId]
+      );
+      if (!parent.rowCount) throw new Error("scheduled_order_not_found");
+      const existing = await client.query<{
+        payment_reference: string; payment_captured_at: Date | string;
+        confirmed_at: Date | string; fulfillment_version: number;
+      }>(
+        "SELECT payment_reference, payment_captured_at, confirmed_at, fulfillment_version FROM scheduled_order_confirmations WHERE tenant_id = $1 AND order_id = $2 FOR UPDATE",
+        [order.tenantId, order.orderId]
+      );
+      if (existing.rowCount) {
+        const row = existing.rows[0]!;
+        if (row.payment_reference !== order.paymentReference ||
+            iso(row.payment_captured_at) !== iso(order.paymentCapturedAtUtc) ||
+            iso(row.confirmed_at) !== iso(order.confirmedAtUtc) ||
+            row.fulfillment_version !== order.fulfillmentVersion) {
+          throw new Error("scheduled_order_confirmation_conflict");
+        }
+        await client.query("COMMIT");
+        return "already_exists";
+      }
+      if (parent.rows[0]?.status !== "awaiting_payment") {
+        throw new Error("scheduled_order_not_awaiting_payment");
+      }
+      await client.query(
+        `INSERT INTO scheduled_order_confirmations
+         (order_id, tenant_id, payment_reference, payment_captured_at, confirmed_at, fulfillment_version)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [order.orderId, order.tenantId, order.paymentReference, order.paymentCapturedAtUtc,
+          order.confirmedAtUtc, order.fulfillmentVersion]
+      );
+      await client.query("COMMIT");
+      return "inserted";
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
 
   async run<T>(work: (transaction: ScheduledOrderCommitTransaction) => Promise<T>): Promise<T> {
     const client = await this.pool.connect();
