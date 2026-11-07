@@ -2,48 +2,52 @@
 
 ## Scope and evidence
 
-This audit inspected the development branch `work/outlet-window-build`, the API composition files, domain source tree, implementation status, and the latest GitHub Actions run.
+Reviewed the development branch `work/outlet-window-build`, API composition and route code, PostgreSQL adapters and migrations, authorization/session domain code, CI workflow, tests, and implementation status.
 
-Latest verified CI run: [42404896175](https://github.com/outletwindow/outlet-window/actions/runs/42404896175). The run passed the PostgreSQL migration command, SQL schema integration checks, TypeScript typecheck, test suite, and build.
+Latest verified CI run: [42409837951](https://github.com/outletwindow/outlet-window/actions/runs/42409837951). PostgreSQL migrations and SQL constraints, TypeScript typecheck, automated tests, and build all passed.
 
-This is a code and repository audit, not a live production or deployed-environment test.
+This is a source/repository audit. It is not a live production, penetration, provider integration, or deployed-environment test.
 
 ## Verified implemented foundations
 
-- Fastify API process with health, readiness, API foundation, and protected merchant-branch access/summary routes.
-- PostgreSQL IAM migration and persistence adapter for identities, scoped role assignments, sessions, rotation, and family revocation.
-- Production server selects PostgreSQL when `DATABASE_URL` is configured and refuses production startup without it.
-- Readiness checks database connectivity; graceful shutdown closes the API and pool.
-- Deny-by-default authorization and session actor resolution contracts.
+- Fastify API with health/readiness endpoints and a versioned API foundation route.
+- PostgreSQL IAM schema and persistence adapter for identities, scoped role assignments, sessions, token digest comparison, rotation, and family revocation.
+- Production startup refuses to run without `DATABASE_URL`; readiness checks required migrations and graceful shutdown closes the API and pool.
+- Deny-by-default authorization and server-side actor resolution from bearer sessions.
+- PostgreSQL merchant/branch registry with tenant-scoped branch reads and merchant-scoped branch create/update operations.
+- Branch creation rejects duplicates and inactive merchants; branch update is constrained by merchant and branch IDs.
 - Domain contracts and tests for audit events, delivery instructions, scheduled fulfillment, order commit coordination, outbox behavior, and reconciliation.
 
-## Critical gaps — not operational product features yet
+## Findings and engineering gaps
 
-1. **No complete customer/merchant/shopper/courier/admin/owner applications.** The API source currently exposes foundation endpoints and a limited merchant branch access/summary surface. The repository does not yet contain the full product applications.
-2. **Authentication enrollment is incomplete.** Password/passkey registration, MFA enrollment and recovery, secure credential lifecycle, and production token issuance are not complete.
-3. **Merchant data persistence is missing.** The merchant branch reader is an injected interface; a production branch repository and merchant/branch registry are not yet connected.
-4. **Commerce modules are not operational.** Product catalog, variants, branch stock synchronization/reservations, search, cart, multi-merchant checkout, pricing, and order persistence need implementation.
-5. **Fulfillment is not operational.** Shopper/courier onboarding, dispatch, routing, live location, capacity, pickup/handover proof, and delivery execution need implementation.
-6. **Money movement is not operational.** Payment provider integrations, signed webhooks, ledger posting, refunds, settlement, payout, and reconciliation adapters are outstanding.
-7. **Scheduled workflows lack durable runtime adapters.** The domain contracts exist, but production outbox persistence, workers, retries, and monitoring are outstanding.
-8. **Audit events are not yet durably persisted and protected.**
-9. **AI operations and Telegram command integration are not operational.** Agent governance and task orchestration documents are not executable integrations.
-10. **Production infrastructure is not provisioned.** No managed PostgreSQL, provider backups, restore drill, production secrets, deployment, monitoring, or incident response acceptance has been demonstrated.
+1. **Dependency reproducibility — P1.** No `pnpm-lock.yaml` is present on this branch, while CI installs with `pnpm install --no-frozen-lockfile`. Dependency resolution is therefore not locked to a reviewed dependency graph. Generate and commit a lockfile, then use frozen installs in CI.
+2. **CI security coverage — P1.** The workflow runs migration checks, typecheck, tests, and build, but does not currently run dependency vulnerability scanning, secret scanning, or a dedicated static security analysis step. These checks should be added before release.
+3. **Authentication lifecycle — P0.** Password/passkey enrollment, MFA enrollment and recovery, secure credential lifecycle, and production session/token issuance are not implemented. The current code validates and resolves persisted sessions; it is not a complete customer sign-in system.
+4. **API surface — P0/P1.** The current operational API is limited to health/readiness, foundation, access-check, branch summary, branch create, and branch update. Customer, catalog, inventory, cart, order, payment, shopper, courier, dispatch, admin, and owner APIs are not yet operational.
+5. **Commerce and inventory — P1.** Product catalog, variants, branch stock synchronization/reservations, search, cart, multi-merchant checkout, pricing, and order persistence remain outstanding.
+6. **Fulfillment — P1.** Shopper/courier onboarding, dispatch, routing, live location, capacity, pickup/handover proof, and delivery execution remain outstanding.
+7. **Money movement — P0 before payments.** Payment provider integrations, signed webhook verification, ledger posting, refunds, settlement, payouts, and reconciliation adapters are outstanding. Do not process real payments until these controls are implemented and independently tested.
+8. **Durable operations — P1.** Scheduled workflow domain contracts exist, but production outbox persistence, workers, retries, and monitoring remain outstanding. Audit events are not yet durably persisted and protected.
+9. **AI and Telegram — P2.** Agent governance and task orchestration documents are not executable integrations; AI operations and Telegram command integration are not operational.
+10. **Production infrastructure — release blocker.** No managed PostgreSQL, provider-managed backups, restore drill, production secrets, deployment, monitoring, or incident response acceptance has been demonstrated.
+
+## Repository integration status
+
+The comparison of `main` and `work/outlet-window-build` reports a diverged history: the development branch is 190 commits ahead and 4 commits behind `main`. Review/reconcile those 4 base-branch commits before attempting a merge. No merge was performed during this audit.
 
 ## Priority sequence
 
-- P0: Complete production authentication/credential lifecycle and persistent merchant/branch data access; add integration tests for tenant isolation and denial paths.
-- P1: Implement catalog and inventory adapter contracts with stock freshness, reservation expiry, and reconciliation.
-- P1: Implement cart, order lifecycle, pricing, and multi-store order splitting with transactional persistence.
-- P1: Implement payment webhook verification, ledger invariants, refunds, settlement, and idempotent reconciliation before real money movement.
+- P0: Complete production authentication/credential lifecycle; design and test payment controls before any real money movement.
+- P1: Add a committed dependency lockfile and frozen CI installs; add dependency/secret/security scanning.
+- P1: Complete persistent catalog, inventory, cart, order, and merchant workflows with tenant isolation and idempotency.
+- P1: Implement durable outbox workers, scheduled task execution, and protected audit persistence.
 - P2: Implement shopper/courier task lifecycle, dispatch, capacity, tracking, and custody proof.
-- P2: Implement durable outbox workers and scheduled fulfillment execution.
-- P3: Build the customer, merchant, shopper, courier, admin, and owner interfaces; then connect AI/Telegram with scoped approvals.
+- P2: Build customer, merchant, shopper, courier, admin, and owner interfaces; then connect AI/Telegram with scoped approvals.
 - Release gate: provision production infrastructure, secrets, backups, restore drills, observability, security review, and end-to-end pilot acceptance.
 
 ## Safety and release boundary
 
 - The default branch `main` was not modified.
 - No pull request was merged.
-- CI success verifies the current automated checks only; it does not certify the full Outlet Window product or production readiness.
-- No live payment, inventory provider, maps, courier network, Telegram bot, or managed database was exercised in this audit.
+- CI success verifies the automated checks listed above only; it does not certify the full Outlet Window product or production readiness.
+- No live payment, inventory provider, maps, courier network, Telegram bot, or managed database was exercised.
