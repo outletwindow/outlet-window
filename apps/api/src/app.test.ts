@@ -317,4 +317,37 @@ describe("Outlet Window API foundation", () => {
       expect(repositoryCalls).toBe(0);
     } finally { await protectedApp.close(); }
   });
+
+  it("authorizes scoped merchant order transitions and derives the actor from the session", async () => {
+    const operator: Actor = { ...merchantActor, grants: [{ resource: "merchant.order", actions: ["update"], scope: { merchantId: "merchant-1", branchId: "branch-1" } }] };
+    const calls: Array<{ tenantId: string; context: { actorId: string; actorRole: string; paymentAuthorized?: boolean }; auditEvent: { actor: { id: string }; tenantId?: string; branchId?: string } }> = [];
+    const protectedApp = buildApp({ resolveActor: async () => operator, orderTransitions: { transitionSuborder: async input => {
+      calls.push(input);
+      return { outcome: "updated", transition: { ok: true, previousStatus: "pending_validation", order: { status: "awaiting_payment", version: 2 } }, parentStatus: "awaiting_payment" };
+    } } });
+    await protectedApp.ready();
+    try {
+      const denied = await protectedApp.inject({ method: "POST", url: "/api/v1/merchants/merchant-1/branches/branch-2/orders/order-1/suborders/sub-1/transitions", payload: { nextStatus: "awaiting_payment", expectedVersion: 1 } });
+      expect(denied.statusCode).toBe(403);
+      expect(calls).toHaveLength(0);
+      const allowed = await protectedApp.inject({ method: "POST", url: "/api/v1/merchants/merchant-1/branches/branch-1/orders/order-1/suborders/sub-1/transitions", payload: { nextStatus: "awaiting_payment", expectedVersion: 1 } });
+      expect(allowed.statusCode).toBe(200);
+      expect(allowed.json()).toMatchObject({ suborder: { id: "sub-1", status: "awaiting_payment", version: 2 }, previousStatus: "pending_validation", parentStatus: "awaiting_payment" });
+      expect(calls[0]?.tenantId).toBe("merchant-1");
+      expect(calls[0]?.context).toMatchObject({ actorId: "principal-1", actorRole: "merchant_owner", paymentAuthorized: false });
+      expect(calls[0]?.auditEvent).toMatchObject({ actor: { id: "principal-1" }, tenantId: "merchant-1", branchId: "branch-1" });
+    } finally { await protectedApp.close(); }
+  });
+
+  it("rejects malformed order transition commands", async () => {
+    const operator: Actor = { ...merchantActor, grants: [{ resource: "merchant.order", actions: ["update"], scope: { merchantId: "merchant-1", branchId: "branch-1" } }] };
+    let writes = 0;
+    const protectedApp = buildApp({ resolveActor: async () => operator, orderTransitions: { transitionSuborder: async () => { writes += 1; return { outcome: "not_found" }; } } });
+    await protectedApp.ready();
+    try {
+      const response = await protectedApp.inject({ method: "POST", url: "/api/v1/merchants/merchant-1/branches/branch-1/orders/order-1/suborders/sub-1/transitions", payload: { nextStatus: "delivered", expectedVersion: 0, deliveryProofVerified: true } });
+      expect(response.statusCode).toBe(400);
+      expect(writes).toBe(0);
+    } finally { await protectedApp.close(); }
+  });
 });
