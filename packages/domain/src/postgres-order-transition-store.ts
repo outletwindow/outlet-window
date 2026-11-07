@@ -97,7 +97,7 @@ export class PostgresOrderTransitionStore {
       const parentStatus = aggregateParentOrderStatus(statuses.rows.map(row => row.status));
       const parentChanged = await client.query(
         `UPDATE customer_orders
-         SET status = $3, version = version + 1, updated_at = $4
+         SET status = $2, version = version + 1, updated_at = $3
          WHERE id = $1`,
         [input.orderId, parentStatus, transition.order.updatedAt]
       );
