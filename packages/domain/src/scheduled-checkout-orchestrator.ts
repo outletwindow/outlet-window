@@ -47,7 +47,10 @@ export type ScheduledCheckoutOrchestrationResult =
  */
 export async function orchestratePaidScheduledCheckout(input: {
   order: ScheduledOrderConfirmation;
+  /** Legacy shared plan; use planForSuborder when merchant branches have different timings. */
   plan: ScheduledOrderPlan;
+  /** Resolve a persisted, branch-specific schedule for each merchant suborder before payment evidence is recorded. */
+  planForSuborder?: (request: InventoryReservationRequest) => ScheduledOrderPlan;
   inventoryRequests: readonly InventoryReservationRequest[];
   paymentCaptureRecorder: ScheduledPaymentCaptureRecorder;
   inventoryPort: InventoryReservationPort;
@@ -61,6 +64,25 @@ export async function orchestratePaidScheduledCheckout(input: {
         !request.suborderId.trim() || !request.tenantId.trim() ||
         !request.merchantId.trim() || !request.branchId.trim()) ||
       new Set(inventoryRequests.map(request => request.suborderId)).size !== inventoryRequests.length) {
+    return { status: "rejected", reason: "invalid_checkout_input" };
+  }
+
+  // Resolve every merchant schedule before recording payment evidence. This prevents a
+  // late schedule-resolution failure after capture and avoids imposing one branch timing
+  // on every merchant in a multi-store order.
+  const plansBySuborder = new Map<string, ScheduledOrderPlan>();
+  try {
+    for (const request of inventoryRequests) {
+      const suborderPlan = input.planForSuborder?.(request) ?? plan;
+      if (suborderPlan.orderId !== order.orderId ||
+          !Number.isFinite(Date.parse(suborderPlan.preparationReleaseAtUtc)) ||
+          (suborderPlan.courierDispatchAtUtc !== undefined &&
+            !Number.isFinite(Date.parse(suborderPlan.courierDispatchAtUtc)))) {
+        return { status: "rejected", reason: "invalid_checkout_input" };
+      }
+      plansBySuborder.set(request.suborderId, suborderPlan);
+    }
+  } catch {
     return { status: "rejected", reason: "invalid_checkout_input" };
   }
 
@@ -89,7 +111,7 @@ export async function orchestratePaidScheduledCheckout(input: {
       suborderId: request.suborderId,
       reservationReference: inventoryResult.reservationReference
     });
-    tasks.push(...buildScheduledFulfillmentTasks(plan, order.fulfillmentVersion, {
+    tasks.push(...buildScheduledFulfillmentTasks(plansBySuborder.get(request.suborderId)!, order.fulfillmentVersion, {
       merchantTenantId: request.tenantId,
       suborderId: request.suborderId,
       merchantId: request.merchantId,
