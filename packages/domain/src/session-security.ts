@@ -1,4 +1,4 @@
-import type { PrincipalType, SessionDescriptor } from "./identity.js";
+import { isSessionDescriptorValid, type PrincipalType, type SessionDescriptor } from "./identity.js";
 
 export interface StoredSession {
   descriptor: SessionDescriptor;
@@ -69,13 +69,10 @@ export function validateStoredSession(input: {
   if (Date.parse(session.idleExpiresAt) <= Date.parse(input.nowUtc)) {
     return { valid: false, reason: "idle_expired" };
   }
-  const { isSessionDescriptorValid } = requireIdentityHelpers;
   if (!isSessionDescriptorValid(input.principalType, session.descriptor)) {
     return { valid: false, reason: "invalid_descriptor" };
   }
   return { valid: true };
 }
 
-// Keep the session policy independent from token generation and cryptographic libraries.
-import { isSessionDescriptorValid } from "./identity.js";
-const requireIdentityHelpers = { isSessionDescriptorValid };
+// Token generation and cryptographic hashing are supplied by approved infrastructure adapters.
