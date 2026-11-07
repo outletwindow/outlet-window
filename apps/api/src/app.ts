@@ -1,11 +1,14 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { authorize, type Actor, type AuthorizationRequest } from "../../../packages/domain/src/authorization.js";
+import { resolveActorFromBearerToken, type ActorResolutionDependencies } from "../../../packages/domain/src/actor-resolution.js";
 
 export interface AppOptions {
   serviceName?: string;
   version?: string;
   /** Resolve an authenticated principal from a verified session; never trust client-supplied role headers. */
   resolveActor?: (request: FastifyRequest) => Promise<Actor | null>;
+  /** Optional trusted persistence/crypto adapters for resolving real bearer sessions. */
+  actorResolution?: ActorResolutionDependencies;
 }
 
 export function buildApp(options: AppOptions = {}): FastifyInstance {
@@ -43,7 +46,17 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   app.get<{
     Params: { merchantId: string; branchId: string };
   }>("/api/v1/merchants/:merchantId/branches/:branchId/access-check", async (request, reply) => {
-    const actor = await options.resolveActor?.(request) ?? null;
+    let actor: Actor | null = null;
+    if (options.actorResolution) {
+      const authorizationHeader = request.headers.authorization;
+      const resolved = await resolveActorFromBearerToken({
+        authorizationHeader: Array.isArray(authorizationHeader) ? authorizationHeader[0] : authorizationHeader,
+        dependencies: options.actorResolution
+      });
+      actor = resolved.actor;
+    } else {
+      actor = await options.resolveActor?.(request) ?? null;
+    }
     if (!actor) return reply.code(401).send({ error: "unauthenticated" });
 
     const authorizationRequest: AuthorizationRequest = {
