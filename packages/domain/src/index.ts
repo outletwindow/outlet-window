@@ -10,3 +10,4 @@ export * from "./scheduled-task-reconciliation.js";
 export * from "./identity-store.js";
 export * from "./session-security.js";
 export * from "./actor-resolution.js";
+export * from "./postgres-iam-store.js";
