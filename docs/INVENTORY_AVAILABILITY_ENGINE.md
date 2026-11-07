@@ -132,3 +132,5 @@ If a hard reservation is not supported, mark availability as unguaranteed and re
 ## 15. Implementation Status
 Specification only. No merchant POS, ERP, inventory API or live stock integration is claimed to be operational.
 \n\n## 15. Implementation note (development branch)\nA PostgreSQL branch inventory ledger and atomic platform-side reservation adapter have been added, together with order item lines and reservation records. The adapter locks all requested variant rows and reserves all requested lines in one transaction, or none. This prevents two Outlet Window transactions from allocating the same final unit. It does not by itself prove that an external POS/ERP has accepted a hard reservation; external merchant acknowledgement, stock synchronization, expiry/release, reconciliation, and checkout wiring remain pending.\n
+
+Reservation lifecycle support now includes idempotent release, expiry and consumption persistence. These transitions update the platform stock allocation ledger atomically. A background expiry scheduler, stock synchronization adapters, external merchant hard-reservation acknowledgement and full reconciliation remain pending.
