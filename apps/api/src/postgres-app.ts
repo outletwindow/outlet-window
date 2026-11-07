@@ -8,6 +8,7 @@ import { buildApp, type AppOptions, type MerchantBranchReader } from "./app.js";
 import { PostgresMerchantBranchReader } from "../../../packages/domain/src/postgres-merchant-branch-reader.js";
 import { PostgresMerchantBranchWriter } from "../../../packages/domain/src/postgres-merchant-branch-writer.js";
 import { PostgresAuditEventStore } from "../../../packages/domain/src/postgres-audit-event-store.js";
+import { PostgresOrderTransitionStore } from "../../../packages/domain/src/postgres-order-transition-store.js";
 
 export interface PostgresApiOptions {
   pool: PostgresPool;
@@ -31,6 +32,7 @@ export function buildPostgresApp(options: PostgresApiOptions) {
     merchantBranches: options.merchantBranches ?? new PostgresMerchantBranchReader(options.pool),
     merchantBranchWriter: new PostgresMerchantBranchWriter(options.pool),
     auditEvents: new PostgresAuditEventStore(options.pool),
+    orderTransitions: new PostgresOrderTransitionStore(options.pool),
     readinessCheck: async () => {
       const requiredMigrations = [
         "0001_identity_access_sessions",
