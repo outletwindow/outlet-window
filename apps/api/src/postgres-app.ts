@@ -35,7 +35,8 @@ export function buildPostgresApp(options: PostgresApiOptions) {
       const requiredMigrations = [
         "0001_identity_access_sessions",
         "0002_merchants_branches",
-        "0003_audit_events"
+        "0003_audit_events",
+        "0004_customer_orders"
       ];
       const result = await options.pool.query<{ version: string }>(
         "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",
