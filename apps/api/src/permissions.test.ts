@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { grantsForAssignments } from "./server.js";
+import { grantsForAssignments } from "./permissions.js";
 import type { RoleAssignment } from "../../../packages/domain/src/identity.js";
 
 function assignment(role: RoleAssignment["role"]): RoleAssignment {
