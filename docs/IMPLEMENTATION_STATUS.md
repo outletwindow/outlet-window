@@ -14,6 +14,8 @@ Last updated: 2026-11-07
 - [ ] Persistent identity, user, role, and permission storage.
 - [ ] Authentication, password/passkey flows, MFA, and session revocation.
 - [ ] Database provider selection and versioned migrations.
+- [x] Versioned audit event contract with recursive secret redaction and metadata limits.
+- [x] API request correlation ID response header.
 - [ ] Audit event persistence and protected access.
 - [ ] API-level authentication and authorization integration.
 
