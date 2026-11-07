@@ -123,4 +123,33 @@ describe("paid scheduled checkout orchestration", () => {
     expect(result).toEqual({ status: "rejected", reason: "invalid_checkout_input" });
     expect(h.calls).toEqual([]);
   });
+
+  it("uses a separately resolved schedule for each merchant suborder", async () => {
+    const h = harness();
+    const branchPlans = new Map([
+      ["suborder-a", { ...plan, preparationReleaseAtUtc: "2026-11-08T12:00:00.000Z", courierDispatchAtUtc: "2026-11-08T12:30:00.000Z" }],
+      ["suborder-b", { ...plan, preparationReleaseAtUtc: "2026-11-08T13:00:00.000Z", courierDispatchAtUtc: "2026-11-08T13:45:00.000Z" }]
+    ]);
+    const result = await orchestratePaidScheduledCheckout({
+      order, plan, inventoryRequests: [request("suborder-a"), request("suborder-b")],
+      planForSuborder: value => branchPlans.get(value.suborderId)!,
+      ...h, outboxIdForTask: (_task, index) => "outbox-branch-plan-" + index
+    });
+    expect(result.status).toBe("scheduled");
+    const a = h.publishedTasks.filter(task => task.target?.suborderId === "suborder-a");
+    const b = h.publishedTasks.filter(task => task.target?.suborderId === "suborder-b");
+    expect(a.map(task => task.executeAtUtc)).toEqual(["2026-11-08T12:00:00.000Z", "2026-11-08T12:30:00.000Z"]);
+    expect(b.map(task => task.executeAtUtc)).toEqual(["2026-11-08T13:00:00.000Z", "2026-11-08T13:45:00.000Z"]);
+  });
+
+  it("rejects an invalid branch schedule before recording payment evidence", async () => {
+    const h = harness();
+    const result = await orchestratePaidScheduledCheckout({
+      order, plan, inventoryRequests: [request("suborder-a")],
+      planForSuborder: () => ({ ...plan, orderId: "another-order" }),
+      ...h, outboxIdForTask: (_task, index) => "outbox-invalid-plan-" + index
+    });
+    expect(result).toEqual({ status: "rejected", reason: "invalid_checkout_input" });
+    expect(h.calls).toEqual([]);
+  });
 });
