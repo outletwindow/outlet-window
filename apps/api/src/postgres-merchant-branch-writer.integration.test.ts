@@ -51,3 +51,19 @@ integration("PostgresMerchantBranchWriter", () => {
     })).resolves.toBe("merchant_not_found");
   });
 });
+  it("updates only the requested merchant branch and persists the new state", async () => {
+    await expect(writer.updateBranch({
+      merchantId, branchId, displayName: "Jubail Updated", cityCode: "JUB",
+      status: "inactive", address: { district: "Al Fanateer" }
+    })).resolves.toBe("updated");
+    const row = await pool.query<{ display_name: string; status: string }>(
+      "SELECT display_name, status FROM merchant_branches WHERE merchant_id = $1 AND id = $2",
+      [merchantId, branchId]
+    );
+    expect(row.rows[0]).toEqual({ display_name: "Jubail Updated", status: "inactive" });
+    await expect(writer.updateBranch({
+      merchantId: "other-merchant", branchId, displayName: "Wrong Tenant",
+      cityCode: "JUB", status: "active"
+    })).resolves.toBe("not_found");
+  });
+
