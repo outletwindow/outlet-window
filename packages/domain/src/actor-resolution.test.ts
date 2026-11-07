@@ -80,13 +80,21 @@ describe("actor resolution from persisted sessions", () => {
     })).failure).toBe("invalid_session");
   });
 
-  it("rejects inactive identities and ambiguous role sets", async () => {
+  it("rejects inactive identities and accepts multiple explicit active roles", async () => {
     expect((await resolveActorFromBearerToken({
       authorizationHeader: `Bearer ${token}`, dependencies: dependencies({ identityStatus: "suspended" })
     })).failure).toBe("inactive_identity");
-    expect((await resolveActorFromBearerToken({
+    const multiRole = await resolveActorFromBearerToken({
       authorizationHeader: `Bearer ${token}`,
       dependencies: dependencies({ assignments: [assignment, { ...assignment, id: "role-2", role: "branch_manager" }] })
+    });
+    expect(multiRole.actor?.role).toBe("merchant_owner");
+    expect(multiRole.actor?.roles).toEqual(["merchant_owner", "branch_manager"]);
+    expect(multiRole.actor?.grants).toHaveLength(1);
+
+    expect((await resolveActorFromBearerToken({
+      authorizationHeader: `Bearer ${token}`,
+      dependencies: dependencies({ assignments: [] })
     })).failure).toBe("invalid_role_assignments");
   });
 });
