@@ -52,6 +52,10 @@ function mapProduct(value: unknown, tenantId: string, capturedAtUtc: string): No
   const canonicalUrl = safeHttps(urlObject?.customer ?? p.url);
   if (!externalProductId || !title || !canonicalUrl) return null;
   const price = object(p.price);
+  const description = text(p.description);
+  const brand = text(object(p.brand)?.name);
+  const currency = text(price?.currency);
+  const priceMinor = minor(price?.amount);
   const images = [
     safeHttps(p.thumbnail), safeHttps(p.main_image),
     ...list(p.images).map(item => safeHttps(object(item)?.url))
@@ -63,24 +67,30 @@ function mapProduct(value: unknown, tenantId: string, capturedAtUtc: string): No
     const id = scalarText(sku.id) ?? text(sku.sku);
     if (!id) continue;
     const variantPrice = object(sku.price);
+    const variantSku = text(sku.sku);
+    const barcode = text(sku.barcode);
+    const stock = number(sku.stock_quantity);
+    const sizeLabel = text(sku.name);
+    const variantPriceMinor = minor(variantPrice?.amount);
+    const variantCurrency = text(variantPrice?.currency);
     variants.push({
       externalId: id,
-      ...(text(sku.sku) !== undefined ? { sku: text(sku.sku) } : {}),
-      ...(text(sku.barcode) !== undefined ? { barcode: text(sku.barcode) } : {}),
-      ...(number(sku.stock_quantity) !== undefined ? { availability: number(sku.stock_quantity)! > 0 ? "in_stock" as const : "out_of_stock" as const } : {}),
-      ...(text(sku.name) !== undefined ? { sizeLabel: text(sku.name) } : {}),
-      ...(minor(variantPrice?.amount) !== undefined ? { priceMinor: minor(variantPrice?.amount)! } : {}),
-      ...(text(variantPrice?.currency) !== undefined ? { currency: text(variantPrice?.currency) } : {})
+      ...(variantSku !== undefined ? { sku: variantSku } : {}),
+      ...(barcode !== undefined ? { barcode } : {}),
+      ...(stock !== undefined ? { availability: stock > 0 ? "in_stock" as const : "out_of_stock" as const } : {}),
+      ...(sizeLabel !== undefined ? { sizeLabel } : {}),
+      ...(variantPriceMinor !== undefined ? { priceMinor: variantPriceMinor } : {}),
+      ...(variantCurrency !== undefined ? { currency: variantCurrency } : {})
     });
   }
   return {
     tenantId, providerKey: "salla", externalProductId, canonicalUrl, title,
-    ...(text(p.description) !== undefined ? { description: text(p.description) } : {}),
-    ...(text(object(p.brand)?.name) !== undefined ? { brand: text(object(p.brand)?.name) } : {}),
-    ...(text(price?.currency) !== undefined ? { currency: text(price?.currency) } : {}),
-    ...(minor(price?.amount) !== undefined ? { priceMinor: minor(price?.amount)! } : {}),
+    ...(description !== undefined ? { description } : {}),
+    ...(brand !== undefined ? { brand } : {}),
+    ...(currency !== undefined ? { currency } : {}),
+    ...(priceMinor !== undefined ? { priceMinor } : {}),
     imageUrls: [...new Set(images)], variants,
-    sourceType: "official_api", sourceCapturedAtUtc,
+    sourceType: "official_api", sourceCapturedAtUtc: capturedAtUtc,
     sourceContentSha256: createHash("sha256").update(JSON.stringify(p), "utf8").digest("hex")
   };
 }
