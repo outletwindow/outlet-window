@@ -62,15 +62,19 @@ describe("PostgresIntegrationRegistryStore", () => {
     expect(db.query.mock.calls[0]?.[1]).toEqual(["tenant-a", "pos"]);
   });
 
-  it("upserts registrations only within the tenant-scoped key and preserves creation time", async () => {
-    const db = database();
+  it("inserts registrations without overwriting an existing tenant-scoped key", async () => {
+    const db = database({ rows: [{ id: registration.id }], rowCount: 1 });
     const store = new PostgresIntegrationRegistryStore(db.client);
     await store.put(registration);
     const [sql, values] = db.query.mock.calls[0] ?? [];
-    expect(sql).toContain("ON CONFLICT (tenant_id, id)");
-    expect(sql).toContain("tenant_integrations.created_at = EXCLUDED.created_at");
+    expect(sql).toContain("ON CONFLICT (tenant_id, id) DO NOTHING");
+    expect(sql).toContain("RETURNING id");
     expect(values).toContain("tenant-a");
     expect(values).toContain(JSON.stringify(registration.capabilities));
+
+    const duplicateDb = database({ rows: [], rowCount: 0 });
+    const duplicateStore = new PostgresIntegrationRegistryStore(duplicateDb.client);
+    await expect(duplicateStore.put(registration)).rejects.toThrow("INTEGRATION_ALREADY_EXISTS");
   });
 
   it("stores object payloads with a digest and reports inserted versus duplicate events", async () => {
