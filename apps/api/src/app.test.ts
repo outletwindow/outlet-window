@@ -1,5 +1,7 @@
+import { createHmac } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
+import { vi } from "vitest";
 import { buildApp } from "./app.js";
 import type { Actor } from "../../../packages/domain/src/authorization.js";
 
@@ -442,4 +444,54 @@ describe("Outlet Window API foundation", () => {
     } finally { await protectedApp.close(); }
   });
 
+});
+
+
+describe("signed payment provider webhook intake", () => {
+  const secret = "s".repeat(48);
+  const body = JSON.stringify({ id: "evt-api-1", adjustmentId: "adjustment-1", status: "succeeded" });
+  const makeSignature = (rawBody: string) => {
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const digest = createHmac("sha256", secret).update(timestamp + "." + rawBody).digest("hex");
+    return `t=${timestamp},v1=${digest}`;
+  };
+
+  it("verifies the exact raw body before durably recording a provider event", async () => {
+    const record = vi.fn(async () => ({ outcome: "received" as const, receiptId: "receipt-api-1" }));
+    const app = buildApp({
+      paymentWebhookSecretResolver: async (providerKey) => providerKey === "psp-a" ? secret : null,
+      paymentWebhookInbox: { record }
+    });
+    await app.ready();
+    try {
+      const response = await app.inject({
+        method: "POST", url: "/api/v1/webhooks/payments/psp-a",
+        headers: { "content-type": "application/json", "x-payment-signature": makeSignature(body) },
+        payload: body
+      });
+      expect(response.statusCode).toBe(202);
+      expect(response.json()).toEqual({ outcome: "received", receiptId: "receipt-api-1" });
+      expect(record).toHaveBeenCalledWith({
+        providerKey: "psp-a", providerEventId: "evt-api-1", adjustmentId: "adjustment-1", rawBody: body
+      });
+    } finally { await app.close(); }
+  });
+
+  it("rejects invalid signatures without persisting the event", async () => {
+    const record = vi.fn(async () => ({ outcome: "received" as const, receiptId: "unused" }));
+    const app = buildApp({
+      paymentWebhookSecretResolver: async () => secret,
+      paymentWebhookInbox: { record }
+    });
+    await app.ready();
+    try {
+      const response = await app.inject({
+        method: "POST", url: "/api/v1/webhooks/payments/psp-a",
+        headers: { "content-type": "application/json", "x-payment-signature": "t=1794139200,v1=" + "0".repeat(64) },
+        payload: body
+      });
+      expect(response.statusCode).toBe(401);
+      expect(record).not.toHaveBeenCalled();
+    } finally { await app.close(); }
+  });
 });
