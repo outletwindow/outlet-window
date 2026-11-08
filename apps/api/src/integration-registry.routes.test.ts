@@ -1,0 +1,126 @@
+import { afterEach, describe, expect, it } from "vitest";
+import type { Actor } from "../../../packages/domain/src/authorization.js";
+import {
+  InMemoryIntegrationRegistryStore,
+  IntegrationHub
+} from "../../../packages/domain/src/integration-hub.js";
+import { buildApp } from "./app.js";
+
+const owner: Actor = {
+  id: "owner-1",
+  role: "merchant_owner",
+  active: true,
+  grants: [{
+    resource: "merchant.integration",
+    actions: ["read", "create"],
+    scope: { merchantId: "merchant-1" }
+  }]
+};
+
+describe("merchant integration registry API", () => {
+  const apps: Array<Awaited<ReturnType<typeof buildApp>>> = [];
+  afterEach(async () => {
+    await Promise.all(apps.splice(0).map((app) => app.close()));
+  });
+
+  function createApp(actor: Actor | null = owner) {
+    const hub = new IntegrationHub(new InMemoryIntegrationRegistryStore());
+    const app = buildApp({
+      resolveActor: async () => actor,
+      integrationHub: hub
+    });
+    apps.push(app);
+    return { app, hub };
+  }
+
+  it("registers a pending integration using the authenticated merchant scope", async () => {
+    const { app } = createApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/merchants/merchant-1/integrations",
+      payload: {
+        id: "pos-main",
+        family: "pos",
+        providerKey: "generic-pos",
+        displayName: "Main branch POS",
+        capabilities: ["catalog.read", "inventory.read", "inventory.read"]
+      }
+    });
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toMatchObject({
+      integration: {
+        id: "pos-main",
+        tenantId: "merchant-1",
+        family: "pos",
+        status: "pending",
+        capabilities: ["catalog.read", "inventory.read"]
+      }
+    });
+    expect(response.json().integration).not.toHaveProperty("secretReference");
+    expect(response.json().integration).not.toHaveProperty("secret");
+  });
+
+  it("denies cross-merchant registration before writing", async () => {
+    const { app, hub } = createApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/merchants/merchant-2/integrations",
+      payload: {
+        id: "pos-main", family: "pos", providerKey: "generic-pos",
+        displayName: "Main POS", capabilities: []
+      }
+    });
+    expect(response.statusCode).toBe(403);
+    expect(await hub.list("merchant-2")).toEqual([]);
+  });
+
+  it("requires an authenticated actor", async () => {
+    const { app } = createApp(null);
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/merchants/merchant-1/integrations"
+    });
+    expect(response.statusCode).toBe(401);
+  });
+
+  it("rejects malformed families and provider metadata", async () => {
+    const { app, hub } = createApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/merchants/merchant-1/integrations",
+      payload: {
+        id: "x", family: "unknown", providerKey: "", displayName: "X",
+        capabilities: ["inventory.read"]
+      }
+    });
+    expect(response.statusCode).toBe(400);
+    expect(await hub.list("merchant-1")).toEqual([]);
+  });
+
+  it("lists only the authenticated merchant's integrations and supports family filtering", async () => {
+    const { app, hub } = createApp();
+    const now = "2026-11-08T12:00:00.000Z";
+    await hub.register({
+      id: "pos-main", tenantId: "merchant-1", family: "pos",
+      providerKey: "generic-pos", displayName: "Main POS", status: "pending",
+      capabilities: ["inventory.read"], createdAtUtc: now, updatedAtUtc: now
+    });
+    await hub.register({
+      id: "erp-main", tenantId: "merchant-1", family: "erp",
+      providerKey: "generic-erp", displayName: "Main ERP", status: "pending",
+      capabilities: ["catalog.read"], createdAtUtc: now, updatedAtUtc: now
+    });
+    await hub.register({
+      id: "pos-other", tenantId: "merchant-2", family: "pos",
+      providerKey: "generic-pos", displayName: "Other POS", status: "pending",
+      capabilities: ["inventory.read"], createdAtUtc: now, updatedAtUtc: now
+    });
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/merchants/merchant-1/integrations?family=pos"
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().integrations).toHaveLength(1);
+    expect(response.json().integrations[0].id).toBe("pos-main");
+  });
+});
