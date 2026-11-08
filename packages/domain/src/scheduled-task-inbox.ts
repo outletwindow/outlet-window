@@ -18,6 +18,7 @@ export interface ScheduledTaskInboxRecord {
   leaseExpiresAtUtc?: string;
   processedAtUtc?: string;
   lastErrorCode?: string;
+  providerReference?: string;
 }
 
 export interface ScheduledTaskInboxStore {
@@ -27,7 +28,7 @@ export interface ScheduledTaskInboxStore {
     leaseDurationSeconds: number;
     limit: number;
   }): Promise<readonly ScheduledTaskInboxRecord[]>;
-  complete(input: { id: string; leaseToken: string; nowUtc: string }): Promise<boolean>;
+  complete(input: { id: string; leaseToken: string; nowUtc: string; providerReference?: string }): Promise<boolean>;
   retry(input: {
     id: string; leaseToken: string; nowUtc: string; availableAtUtc: string; errorCode: string;
   }): Promise<boolean>;
@@ -38,7 +39,7 @@ export interface ScheduledTaskInboxStore {
 
 export interface ScheduledTaskConsumer {
   /** Must be idempotent by idempotencyKey; delivery is at-least-once. */
-  handle(task: ScheduledFulfillmentTaskEnvelope, idempotencyKey: string): Promise<void>;
+  handle(task: ScheduledFulfillmentTaskEnvelope, idempotencyKey: string): Promise<void | { providerReference: string }>;
 }
 
 export type ScheduledTaskConsumerHandlers =
@@ -149,9 +150,14 @@ export async function runScheduledTaskInboxBatch(input: {
       continue;
     }
     try {
-      await handler.handle(record.payload, record.idempotencyKey);
+      const receipt = await handler.handle(record.payload, record.idempotencyKey);
+      if (receipt !== undefined && (typeof receipt.providerReference !== "string" ||
+          !receipt.providerReference.trim() || receipt.providerReference.length > 500)) {
+        throw new ScheduledTaskConsumeError("INVALID_PROVIDER_REFERENCE", false);
+      }
       const completed = await input.store.complete({
-        id: record.id, leaseToken, nowUtc: clock().toISOString()
+        id: record.id, leaseToken, nowUtc: clock().toISOString(),
+        ...(receipt ? { providerReference: receipt.providerReference.trim() } : {})
       });
       if (completed) result.completed += 1;
       else result.leaseLost += 1;
