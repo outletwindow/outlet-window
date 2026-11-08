@@ -157,6 +157,7 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Added unit and SQL acceptance tests and included the SQL test in CI.
 - [x] Implement PostgreSQL-backed `IntegrationRegistryStore` with tenant-scoped reads, insert-only registration, duplicate rejection, and durable event deduplication; PostgreSQL adapter unit tests added.
 - [x] Add authenticated merchant-owner/admin API routes to list and register integrations, derive tenant identity from the authorized route scope, enforce family/capability validation, and default new registrations to `pending`; cross-tenant and duplicate-registration route tests added (CI run 42491951407 passed typecheck, tests, PostgreSQL acceptance checks, and build).
+- [x] Add an authorized suspend endpoint with idempotent domain behavior and PostgreSQL compare-and-set status updates; disconnected integrations cannot be reactivated through suspension, and tenant-scoped route/domain/adapter tests pass (CI run 42492215365 passed typecheck, tests, PostgreSQL acceptance checks, and build).
 - [ ] Add authorized lifecycle APIs for rotating secret references, suspending/reconnecting, and connection verification.
 - [ ] Implement provider-specific adapters and sandbox contract tests for each selected POS, ERP, commerce, carrier, maps, and payment provider.
 - [ ] Add durable inbox worker with bounded retries, dead-letter handling, event normalization, and reconciliation.
