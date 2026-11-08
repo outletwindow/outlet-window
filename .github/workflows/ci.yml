@@ -78,6 +78,10 @@ jobs:
         env:
           PGPASSWORD: ci_only_password
         run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0008_scheduled_task_inbox_leases.integration.sql
+      - name: Verify durable fulfillment provider receipt constraints
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0009_fulfillment_provider_receipts.integration.sql
       - name: Typecheck
         run: pnpm typecheck
       - name: Test
