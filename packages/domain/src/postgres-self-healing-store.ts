@@ -29,16 +29,19 @@ export class PostgresSelfHealingStore implements RecoveryStateStore {
       await client.query(
         `INSERT INTO self_healing_incidents
           (incident_id,service,severity,status,automatic_attempt_count,last_action,last_attempt_at,last_outcome,updated_at)
-         VALUES ($1,$2,'unknown',$3,$4,$5,$6,$7,$6)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$7)
          ON CONFLICT (incident_id) DO UPDATE SET
+           severity=EXCLUDED.severity,
            status=EXCLUDED.status,
            automatic_attempt_count=self_healing_incidents.automatic_attempt_count + EXCLUDED.automatic_attempt_count,
            last_action=EXCLUDED.last_action,
            last_attempt_at=EXCLUDED.last_attempt_at,
            last_outcome=EXCLUDED.last_outcome,
            updated_at=EXCLUDED.updated_at`,
-        [record.incidentId, record.service, record.outcome === "approval_required" ? "approval_required" : record.outcome === "recovered" ? "recovered" : record.outcome,
-          record.action === "manual_review" ? 0 : 1, record.action, record.occurredAtUtc, record.outcome]
+        [record.incidentId, record.service, record.severity,
+          record.outcome === "retry_scheduled" ? "open" : record.outcome,
+          record.action === "manual_review" || record.outcome === "blocked" || record.outcome === "approval_required" ? 0 : 1,
+          record.action, record.occurredAtUtc, record.outcome]
       );
       await client.query(
         "INSERT INTO self_healing_recovery_events (incident_id,service,action,outcome,reason_code,occurred_at) VALUES ($1,$2,$3,$4,$5,$6)",
