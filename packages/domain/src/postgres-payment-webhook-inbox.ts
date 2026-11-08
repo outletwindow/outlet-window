@@ -121,7 +121,7 @@ export class PostgresPaymentWebhookInbox {
         );
         await appendAdjustmentEvent(client, adjustment, input.actorId, "provider_confirmed", now);
         await client.query(
-          "UPDATE payment_provider_webhook_events SET status='applied',processed_at=$2,failure_code=NULL WHERE id=$1 AND status='processing'",
+          "UPDATE payment_provider_webhook_events SET status='applied',processed_at=$2,failure_code=NULL,lease_owner=NULL,lease_expires_at=NULL WHERE id=$1 AND status='processing'",
           [input.receiptId, now]
         );
         await client.query("COMMIT");
@@ -133,7 +133,7 @@ export class PostgresPaymentWebhookInbox {
       );
       await appendAdjustmentEvent(client, adjustment, input.actorId, "provider_failed", now);
       await client.query(
-        "UPDATE payment_provider_webhook_events SET status='failed',processed_at=$2,failure_code=$3 WHERE id=$1 AND status='processing'",
+        "UPDATE payment_provider_webhook_events SET status='failed',processed_at=$2,failure_code=$3,lease_owner=NULL,lease_expires_at=NULL WHERE id=$1 AND status='processing'",
         [input.receiptId, now, input.failureCode ?? "PROVIDER_PAYMENT_FAILED"]
       );
       await client.query("COMMIT");
@@ -144,6 +144,72 @@ export class PostgresPaymentWebhookInbox {
     } finally {
       client.release();
     }
+  }
+
+  async claimNext(workerId: string, leaseSeconds = 30): Promise<{
+    receiptId: string; providerKey: string; providerEventId: string; adjustmentId: string | null;
+    eventType: string | null; normalizedStatus: "succeeded" | "failed" | "ignored" | "unsupported" | null;
+    providerReference: string | null; failureCode: string | null; attemptCount: number;
+  } | null> {
+    if (!/^[a-zA-Z0-9_-]{1,200}$/.test(workerId) ||
+        !Number.isSafeInteger(leaseSeconds) || leaseSeconds < 5 || leaseSeconds > 300) {
+      throw new Error("INVALID_PAYMENT_WEBHOOK_LEASE");
+    }
+    const result = await this.pool.query<{
+      id: string; provider_key: string; provider_event_id: string; adjustment_id: string | null;
+      event_type: string | null; normalized_status: "succeeded" | "failed" | "ignored" | "unsupported" | null;
+      provider_reference: string | null; failure_code: string | null; attempt_count: number;
+    }>(
+      `WITH candidate AS (
+         SELECT id FROM payment_provider_webhook_events
+         WHERE attempt_count < 20 AND next_attempt_at <= now()
+           AND (status='received' OR (status='processing' AND lease_expires_at <= now()))
+         ORDER BY received_at, id
+         FOR UPDATE SKIP LOCKED
+         LIMIT 1
+       )
+       UPDATE payment_provider_webhook_events AS event
+       SET status='processing', lease_owner=$1,
+           lease_expires_at=now()+($2 * interval '1 second'),
+           attempt_count=attempt_count+1
+       FROM candidate
+       WHERE event.id=candidate.id
+       RETURNING event.id,event.provider_key,event.provider_event_id,event.adjustment_id,
+                 event.event_type,event.normalized_status,event.provider_reference,
+                 event.failure_code,event.attempt_count`,
+      [workerId, leaseSeconds]
+    );
+    if (result.rowCount !== 1) return null;
+    const row = result.rows[0]!;
+    return {
+      receiptId: row.id, providerKey: row.provider_key, providerEventId: row.provider_event_id,
+      adjustmentId: row.adjustment_id, eventType: row.event_type,
+      normalizedStatus: row.normalized_status, providerReference: row.provider_reference,
+      failureCode: row.failure_code, attemptCount: Number(row.attempt_count)
+    };
+  }
+
+  async releaseForRetry(input: {
+    receiptId: string; workerId: string; delaySeconds: number; failureCode: string;
+  }): Promise<"rescheduled" | "dead_lettered" | "lease_lost"> {
+    if (!/^[a-zA-Z0-9_-]{1,200}$/.test(input.receiptId) ||
+        !/^[a-zA-Z0-9_-]{1,200}$/.test(input.workerId) ||
+        !Number.isSafeInteger(input.delaySeconds) || input.delaySeconds < 1 || input.delaySeconds > 86_400 ||
+        !/^[A-Z0-9_]{1,100}$/.test(input.failureCode)) {
+      throw new Error("INVALID_PAYMENT_WEBHOOK_RETRY");
+    }
+    const result = await this.pool.query<{ id: string; attempt_count: number }>(
+      `UPDATE payment_provider_webhook_events
+       SET status=CASE WHEN attempt_count >= 20 THEN 'failed' ELSE 'received' END,
+           processed_at=CASE WHEN attempt_count >= 20 THEN now() ELSE NULL END,
+           next_attempt_at=CASE WHEN attempt_count >= 20 THEN next_attempt_at ELSE now()+($3 * interval '1 second') END,
+           lease_owner=NULL, lease_expires_at=NULL, failure_code=$4
+       WHERE id=$1 AND status='processing' AND lease_owner=$2
+       RETURNING id,attempt_count`,
+      [input.receiptId, input.workerId, input.delaySeconds, input.failureCode]
+    );
+    if (result.rowCount !== 1) return "lease_lost";
+    return Number(result.rows[0]!.attempt_count) >= 20 ? "dead_lettered" : "rescheduled";
   }
 
   async claim(receiptId: string): Promise<"claimed" | "not_pending"> {
@@ -172,7 +238,7 @@ export class PostgresPaymentWebhookInbox {
     const result = await this.pool.query<{ id: string }>(
       `UPDATE payment_provider_webhook_events
        SET status=$2, processed_at=now(),
-           adjustment_id=COALESCE($3, adjustment_id), failure_code=$4
+           adjustment_id=COALESCE($3, adjustment_id), failure_code=$4, lease_owner=NULL, lease_expires_at=NULL
        WHERE id=$1 AND status='processing'
        RETURNING id`,
       [input.receiptId, input.status, input.adjustmentId ?? null, input.failureCode ?? null]
