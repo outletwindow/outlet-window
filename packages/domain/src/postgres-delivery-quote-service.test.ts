@@ -18,6 +18,9 @@ class FakeDatabase implements PostgresQueryable {
     if (sql.includes("branch.latitude")) return this.mode === "no_branch"
       ? { rows: [], rowCount: 0 }
       : { rows: [{ merchant_id: "merchant-1", branch_id: "branch-1", latitude: 27.005, longitude: 49.646 } as Row], rowCount: 1 };
+    if (sql.includes("branch.latitude")) return this.mode === "no_branch"
+      ? { rows: [], rowCount: 0 }
+      : { rows: [{ merchant_id: "merchant-1", branch_id: "branch-1", latitude: 27.005, longitude: 49.646 } as Row], rowCount: 1 };
     if (sql.includes("FROM delivery_service_area_branches")) return this.mode === "no_branch"
       ? { rows: [], rowCount: 0 }
       : { rows: [{ merchant_id: "merchant-1", branch_id: "branch-1" } as Row], rowCount: 1 };
@@ -81,6 +84,9 @@ describe("PostgresDeliveryQuoteService", () => {
     expect(result.status).toBe("quoted");
     if (result.status === "quoted") {
       expect(result.rankedBranches[0]?.branchId).toBe("branch-1");
+      expect(result.selectedBranch).toEqual({ merchantId: "merchant-1", branchId: "branch-1" });
+      expect(result.routeDistanceMeters).toBe(2400);
+      expect(result.quote.totalMinor).toBe(1600);
     }
   });
 
