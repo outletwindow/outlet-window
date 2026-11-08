@@ -72,7 +72,7 @@ export function createHttpDeliveryRoutingProvider(
           typeof data.providerReference !== "string" || !data.providerReference.trim() ||
           data.providerReference.length > 240 ||
           typeof data.estimatedAtUtc !== "string" ||
-          !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$/.test(data.estimatedAtUtc) ||
+          !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(data.estimatedAtUtc) ||
           !Number.isFinite(Date.parse(data.estimatedAtUtc))) return null;
       return {
         distanceMeters: data.distanceMeters as number,
