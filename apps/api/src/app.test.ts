@@ -449,7 +449,7 @@ describe("Outlet Window API foundation", () => {
 
 describe("signed payment provider webhook intake", () => {
   const secret = "s".repeat(48);
-  const body = JSON.stringify({ id: "evt-api-1", adjustmentId: "adjustment-1", status: "succeeded" });
+  const body = JSON.stringify({ id: "evt-api-1", type: "payment.adjustment", adjustmentId: "adjustment-1", status: "succeeded", providerReference: "psp-ref-api-1" });
   const makeSignature = (rawBody: string) => {
     const timestamp = String(Math.floor(Date.now() / 1000));
     const digest = createHmac("sha256", secret).update(timestamp + "." + rawBody).digest("hex");
@@ -472,7 +472,7 @@ describe("signed payment provider webhook intake", () => {
       expect(response.statusCode).toBe(202);
       expect(response.json()).toEqual({ outcome: "received", receiptId: "receipt-api-1" });
       expect(record).toHaveBeenCalledWith({
-        providerKey: "psp-a", providerEventId: "evt-api-1", adjustmentId: "adjustment-1", rawBody: body
+        providerKey: "psp-a", providerEventId: "evt-api-1", adjustmentId: "adjustment-1", eventType: "payment.adjustment", normalizedStatus: "succeeded", providerReference: "psp-ref-api-1", rawBody: body
       });
     } finally { await app.close(); }
   });
