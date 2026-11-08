@@ -15,6 +15,9 @@ class FakeDatabase implements PostgresQueryable {
           id: "rule-1", version: 2, currency: "SAR",
           calculation_config: { method: "fixed_plus_distance", base_fee_minor: 1000, per_km_minor: 200 }
         } as Row], rowCount: 1 };
+    if (sql.includes("branch.latitude")) return this.mode === "no_branch"
+      ? { rows: [], rowCount: 0 }
+      : { rows: [{ merchant_id: "merchant-1", branch_id: "branch-1", latitude: 27.005, longitude: 49.646 } as Row], rowCount: 1 };
     if (sql.includes("FROM delivery_service_area_branches")) return this.mode === "no_branch"
       ? { rows: [], rowCount: 0 }
       : { rows: [{ merchant_id: "merchant-1", branch_id: "branch-1" } as Row], rowCount: 1 };
@@ -56,6 +59,29 @@ describe("PostgresDeliveryQuoteService", () => {
   it("fails closed when no active merchant branch is assigned to the area", async () => {
     const result = await new PostgresDeliveryQuoteService(new FakeDatabase("no_branch")).quote(request);
     expect(result).toEqual({ status: "no_eligible_branch" });
+  });
+
+
+  it("requires at least one fresh road route before returning a routable quote", async () => {
+    const result = await new PostgresDeliveryQuoteService(new FakeDatabase()).quoteWithRoadEta({
+      request,
+      routingProvider: { async estimateRoute() { return null; } }
+    });
+    expect(result).toEqual({ status: "no_routable_branch" });
+  });
+
+  it("returns road ETA ranking when a branch route is fresh", async () => {
+    const result = await new PostgresDeliveryQuoteService(new FakeDatabase()).quoteWithRoadEta({
+      request,
+      routingProvider: { async estimateRoute() {
+        return { distanceMeters: 2400, durationSeconds: 480,
+          providerReference: "test-route", estimatedAtUtc: request.nowUtc };
+      } }
+    });
+    expect(result.status).toBe("quoted");
+    if (result.status === "quoted") {
+      expect(result.rankedBranches[0]?.branchId).toBe("branch-1");
+    }
   });
 
   it("rejects malformed coordinates and quote expiry settings", async () => {
