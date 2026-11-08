@@ -119,6 +119,6 @@ export function verifyPaymentProviderWebhook(input: {
   if (!Number.isSafeInteger(tolerance) || tolerance < 30 || tolerance > 600 ||
       Math.abs(nowSeconds - timestamp) > tolerance) return false;
   const expected = createHmac("sha256", input.secret).update(fields.t + "." + input.rawBody, "utf8").digest();
-  const supplied = Buffer.from(fields.v1, "hex");
+  const supplied = Buffer.from(fields.v1 ?? "", "hex");
   return supplied.length === expected.length && timingSafeEqual(supplied, expected);
 }
