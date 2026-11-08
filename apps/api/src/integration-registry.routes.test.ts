@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { Actor } from "../../../packages/domain/src/authorization.js";
 import {
   InMemoryIntegrationRegistryStore,
-  IntegrationHub
+  IntegrationHub,
+  type IntegrationConnectionVerifier
 } from "../../../packages/domain/src/integration-hub.js";
 import { buildApp } from "./app.js";
 
@@ -23,8 +24,8 @@ describe("merchant integration registry API", () => {
     await Promise.all(apps.splice(0).map((app) => app.close()));
   });
 
-  function createApp(actor: Actor | null = owner) {
-    const hub = new IntegrationHub(new InMemoryIntegrationRegistryStore());
+  function createApp(actor: Actor | null = owner, verifiers: ReadonlyMap<string, IntegrationConnectionVerifier> = new Map()) {
+    const hub = new IntegrationHub(new InMemoryIntegrationRegistryStore(), verifiers);
     const app = buildApp({
       resolveActor: async () => actor,
       integrationHub: hub
@@ -90,6 +91,62 @@ describe("merchant integration registry API", () => {
       url: "/api/v1/merchants/merchant-1/integrations"
     });
     expect(response.statusCode).toBe(401);
+  });
+
+  it("reconnects a suspended merchant integration into pending and requires fresh verification", async () => {
+    const { app, hub } = createApp();
+    const now = "2026-11-08T12:00:00.000Z";
+    await hub.register({
+      id: "pos-main", tenantId: "merchant-1", family: "pos",
+      providerKey: "generic-pos", displayName: "Main POS", status: "suspended",
+      capabilities: ["inventory.read"], createdAtUtc: now, updatedAtUtc: now
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/merchants/merchant-1/integrations/pos-main/reconnect"
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      outcome: "pending", integrationId: "pos-main", requiresVerification: true
+    });
+    expect((await hub.list("merchant-1"))[0]?.status).toBe("pending");
+  });
+
+  it("verifies a merchant integration only through its configured provider adapter", async () => {
+    const verifier = { verify: async () => ({ connected: true }) };
+    const { app, hub } = createApp(owner, new Map([["generic-pos", verifier]]));
+    const now = "2026-11-08T12:00:00.000Z";
+    await hub.register({
+      id: "pos-main", tenantId: "merchant-1", family: "pos",
+      providerKey: "generic-pos", displayName: "Main POS", status: "pending",
+      capabilities: ["inventory.read"], createdAtUtc: now, updatedAtUtc: now
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/merchants/merchant-1/integrations/pos-main/verify"
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      outcome: "connected", status: "connected", integrationId: "pos-main"
+    });
+    expect((await hub.list("merchant-1"))[0]?.status).toBe("connected");
+  });
+
+  it("does not claim a provider connection when no provider adapter is configured", async () => {
+    const { app, hub } = createApp();
+    const now = "2026-11-08T12:00:00.000Z";
+    await hub.register({
+      id: "pos-main", tenantId: "merchant-1", family: "pos",
+      providerKey: "generic-pos", displayName: "Main POS", status: "pending",
+      capabilities: ["inventory.read"], createdAtUtc: now, updatedAtUtc: now
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/merchants/merchant-1/integrations/pos-main/verify"
+    });
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toEqual({ error: "provider_not_configured" });
+    expect((await hub.list("merchant-1"))[0]?.status).toBe("pending");
   });
 
   it("allows merchant admins to suspend their own integration and blocks cross-tenant access", async () => {
