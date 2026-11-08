@@ -42,6 +42,10 @@ export interface CustomerDeliveryDestinationService {
   update(input: { customerId: string; orderId: string; actorId: string; destination: DeliveryCoordinate }): Promise<UpdateDeliveryDestinationResult>;
 }
 
+export interface CustomerPaymentAdjustmentActions {
+  consent(input: { orderId: string; adjustmentId: string; customerId: string }): Promise<{ outcome: string }>;
+  decline(input: { orderId: string; adjustmentId: string; customerId: string }): Promise<{ outcome: string }>;
+}
 export interface AuditEventWriter { append(event: AuditEvent): Promise<"inserted" | "already_exists">; }
 export interface OrderTransitionWriter {
   transitionSuborder(input: { tenantId: string; orderId: string; suborderId: string; nextStatus: OrderStatus; context: OrderTransitionContext; auditEvent: AuditEvent }): Promise<
@@ -68,6 +72,7 @@ export interface AppOptions {
   auditEvents?: AuditEventWriter;
   orderTransitions?: OrderTransitionWriter;
   customerDeliveryDestinations?: CustomerDeliveryDestinationService;
+  customerPaymentAdjustments?: CustomerPaymentAdjustmentActions;
 }
 
 type AuthorizationResult =
@@ -411,6 +416,44 @@ app.patch<{
         quoteReference: updated.quote.quoteReference, expiresAtUtc: updated.quote.expiresAtUtc
       }
     });
+  });
+
+  app.post<{
+    Params: { orderId: string; adjustmentId: string };
+  }>("/api/v1/customer/orders/:orderId/payment-adjustments/:adjustmentId/consent", async (request, reply) => {
+    const result = await authorizeRequest(request, options, {
+      resource: "customer.order", action: "update", scope: { orderId: request.params.orderId }
+    });
+    if (!result.actor) return sendAuthorizationFailure(reply, result.statusCode, result.decision.reason);
+    if (result.actor.role !== "customer") return reply.code(403).send({ error: "customer_only" });
+    if (!options.customerPaymentAdjustments) return reply.code(503).send({ error: "service_unavailable" });
+    const outcome = await options.customerPaymentAdjustments.consent({
+      orderId: request.params.orderId, adjustmentId: request.params.adjustmentId,
+      customerId: result.actor.id
+    });
+    if (outcome.outcome === "not_found") return reply.code(404).send({ error: "not_found" });
+    if (outcome.outcome === "expired") return reply.code(410).send({ error: "adjustment_expired" });
+    if (outcome.outcome !== "consented") return reply.code(409).send({ error: "adjustment_not_pending" });
+    return reply.code(200).send({ outcome: "consented", message: "Customer consent recorded; payment processing is not yet confirmed." });
+  });
+
+  app.post<{
+    Params: { orderId: string; adjustmentId: string };
+  }>("/api/v1/customer/orders/:orderId/payment-adjustments/:adjustmentId/decline", async (request, reply) => {
+    const result = await authorizeRequest(request, options, {
+      resource: "customer.order", action: "update", scope: { orderId: request.params.orderId }
+    });
+    if (!result.actor) return sendAuthorizationFailure(reply, result.statusCode, result.decision.reason);
+    if (result.actor.role !== "customer") return reply.code(403).send({ error: "customer_only" });
+    if (!options.customerPaymentAdjustments) return reply.code(503).send({ error: "service_unavailable" });
+    const outcome = await options.customerPaymentAdjustments.decline({
+      orderId: request.params.orderId, adjustmentId: request.params.adjustmentId,
+      customerId: result.actor.id
+    });
+    if (outcome.outcome === "not_found") return reply.code(404).send({ error: "not_found" });
+    if (outcome.outcome === "expired") return reply.code(410).send({ error: "adjustment_expired" });
+    if (outcome.outcome !== "declined") return reply.code(409).send({ error: "adjustment_not_pending" });
+    return reply.code(200).send({ outcome: "declined", orderUnchanged: true });
   });
 
   return app;
