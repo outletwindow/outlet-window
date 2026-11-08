@@ -57,14 +57,23 @@ export function createHttpDeliveryRoutingProvider(
           response.status === 429 || response.status >= 500;
         throw new Error(name + (retryable ? "_TEMPORARY_FAILURE" : "_REQUEST_REJECTED"));
       }
-      const payload: unknown = await response.json();
+      let payload: unknown;
+      try {
+        const raw = await response.text();
+        if (raw.length > 16_384) return null;
+        payload = JSON.parse(raw) as unknown;
+      } catch {
+        return null;
+      }
       if (typeof payload !== "object" || payload === null) return null;
       const data = payload as Record<string, unknown>;
       if (!Number.isSafeInteger(data.distanceMeters) || (data.distanceMeters as number) < 0 ||
           !Number.isSafeInteger(data.durationSeconds) || (data.durationSeconds as number) < 0 ||
           typeof data.providerReference !== "string" || !data.providerReference.trim() ||
           data.providerReference.length > 240 ||
-          typeof data.estimatedAtUtc !== "string" || !Number.isFinite(Date.parse(data.estimatedAtUtc))) return null;
+          typeof data.estimatedAtUtc !== "string" ||
+          !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$/.test(data.estimatedAtUtc) ||
+          !Number.isFinite(Date.parse(data.estimatedAtUtc))) return null;
       return {
         distanceMeters: data.distanceMeters as number,
         durationSeconds: data.durationSeconds as number,
