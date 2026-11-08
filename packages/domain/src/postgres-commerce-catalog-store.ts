@@ -22,7 +22,7 @@ export class PostgresCommerceCatalogStore implements CommerceCatalogImportStore 
           throw new Error("CATALOG_TENANT_OR_PROVIDER_MISMATCH");
         }
         const result = await client.query<{ id: string }>(
-          \`INSERT INTO commerce_catalog_products
+          `INSERT INTO commerce_catalog_products
            (id,tenant_id,integration_id,provider_key,external_product_id,canonical_url,title,
             description,brand,currency,price_minor,image_urls,source_type,source_captured_at,
             source_content_sha256,size_chart_url,updated_at)
@@ -35,7 +35,7 @@ export class PostgresCommerceCatalogStore implements CommerceCatalogImportStore 
             source_content_sha256=EXCLUDED.source_content_sha256,size_chart_url=EXCLUDED.size_chart_url,
             updated_at=now()
            WHERE commerce_catalog_products.source_captured_at <= EXCLUDED.source_captured_at
-           RETURNING id\`,
+           RETURNING id`,
           [randomUUID(),input.tenantId,input.integrationId,input.providerKey,product.externalProductId,
             product.canonicalUrl,product.title,product.description ?? null,product.brand ?? null,
             product.currency ?? null,product.priceMinor ?? null,JSON.stringify(product.imageUrls),
@@ -50,10 +50,10 @@ export class PostgresCommerceCatalogStore implements CommerceCatalogImportStore 
         );
         for (const variant of product.variants) {
           await client.query(
-            \`INSERT INTO commerce_catalog_variants
+            `INSERT INTO commerce_catalog_variants
              (id,tenant_id,product_id,external_variant_id,sku,barcode,size_label,color_label,
               currency,price_minor,availability)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)\`,
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
             [randomUUID(),input.tenantId,productId,variant.externalId,variant.sku ?? null,
               variant.barcode ?? null,variant.sizeLabel ?? null,variant.colorLabel ?? null,
               variant.currency ?? product.currency ?? null,variant.priceMinor ?? null,
