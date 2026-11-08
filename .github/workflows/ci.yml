@@ -98,6 +98,10 @@ jobs:
         env:
           PGPASSWORD: ci_only_password
         run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0013_payment_adjustment_consents.integration.sql
+      - name: Verify durable payment provider webhook deduplication
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0014_payment_provider_webhook_inbox.integration.sql
       - name: Typecheck
         run: pnpm typecheck
       - name: Test
