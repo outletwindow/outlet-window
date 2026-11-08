@@ -379,7 +379,12 @@ app.patch<{
         updated.outcome === "invalid_service_area" || updated.outcome === "invalid_quote" ? 503 : 409;
       const error = updated.outcome === "invalid_service_area" || updated.outcome === "invalid_quote"
         ? "delivery_quote_unavailable" : updated.outcome;
-      return reply.code(statusCode).send({ error });
+      return reply.code(statusCode).send({
+        error,
+        ...(updated.outcome === "payment_adjustment_required"
+          ? { message: "A payment adjustment must be authorized and confirmed before this destination change can be applied." }
+          : {})
+      });
     }
     return reply.code(200).send({
       outcome: "updated", branchChanged: updated.branchChanged,
