@@ -77,7 +77,10 @@ function productRecord(
   const offerList = asList(source.offers).map(asObject).filter((value): value is JsonObject => Boolean(value));
   const offer = offers ?? offerList[0];
   const currency = asText(offer?.priceCurrency);
+  const normalizedCurrency = currency && /^[A-Z]{3}$/.test(currency) ? currency : undefined;
   const rawPrice = offer?.price ?? offer?.lowPrice;
+  const normalizedPrice = priceMinor(rawPrice);
+  const description = asText(source.description);
   const variants = asList(source.hasVariant).map(asObject).filter((value): value is JsonObject => Boolean(value))
     .map((variant, index) => {
       const variantOffer = asObject(variant.offers);
@@ -97,10 +100,10 @@ function productRecord(
   return {
     tenantId, providerKey: descriptor.providerKey, externalProductId: externalId,
     canonicalUrl, title: name,
-    ...(asText(source.description) ? { description: asText(source.description) } : {}),
-    ...(brand ? { brand } : {}),
-    ...(currency && /^[A-Z]{3}$/.test(currency) ? { currency } : {}),
-    ...(priceMinor(rawPrice) !== undefined ? { priceMinor: priceMinor(rawPrice) } : {}),
+    ...(description !== undefined ? { description } : {}),
+    ...(brand !== undefined ? { brand } : {}),
+    ...(normalizedCurrency !== undefined ? { currency: normalizedCurrency } : {}),
+    ...(normalizedPrice !== undefined ? { priceMinor: normalizedPrice } : {}),
     imageUrls: [...new Set(images)], variants,
     ...(sizeChartUrl ? { sizeChartUrl } : {}),
     sourceType: "structured_data", sourceCapturedAtUtc: capturedAtUtc,
