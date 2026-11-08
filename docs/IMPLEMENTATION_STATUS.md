@@ -11,6 +11,7 @@ Last updated: 2026-11-08
 - [x] Authorization tests for tenant and branch isolation.
 
 ## Implemented domain contracts (not yet connected to live services)
+- [x] Provider-neutral universal commerce connector contracts: normalized catalog/product/variant envelopes, capability descriptors, exact-host HTTPS provider resolution, duplicate adapter protection, and product envelope validation tests. Centrepoint Saudi Arabia is the first planned provider profile; no live Centrepoint catalog adapter or synchronization is claimed yet. Other stores require supported APIs/feeds or provider-specific adapters.
 - [x] Virtual try-on request contract for photo, video, and live-camera modes, explicit consent metadata, private media references, expiring sessions/results, and validation tests. Each try-on request now requires a source-attributed product size-chart reference.
 - [x] Product size-chart domain contract for per-product/per-variant measurement tables, body-vs-garment distinction, source URL/reference, extraction provenance/confidence, content hash, and validation tests. The first merchant's site-specific extraction adapter, scheduled refresh, PostgreSQL persistence, admin review UI, and live fit guidance remain pending.
 - [x] Versioned audit event contract with recursive secret redaction and metadata limits.
