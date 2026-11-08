@@ -43,6 +43,7 @@ export interface IntegrationRegistryStore {
   get(tenantId: string, integrationId: string): Promise<IntegrationRegistration | null>;
   list(tenantId: string, family?: IntegrationFamily): Promise<IntegrationRegistration[]>;
   put(registration: IntegrationRegistration): Promise<void>;
+  updateStatus(tenantId: string, integrationId: string, expectedStatus: IntegrationStatus, nextStatus: IntegrationStatus, updatedAtUtc: string): Promise<"updated" | "conflict">;
   recordEvent(event: IntegrationEvent): Promise<"inserted" | "duplicate">;
 }
 
@@ -80,6 +81,20 @@ export class IntegrationHub {
     return this.store.list(tenantId, family);
   }
 
+  async suspend(tenantId: string, integrationId: string, updatedAtUtc: string): Promise<"suspended" | "not_found" | "invalid_transition"> {
+    if (!nonEmpty(tenantId) || !nonEmpty(integrationId) || !validUtc(updatedAtUtc)) {
+      throw new Error("INVALID_INTEGRATION_STATUS_UPDATE");
+    }
+    const current = await this.store.get(tenantId, integrationId);
+    if (!current) return "not_found";
+    if (current.status === "suspended") return "suspended";
+    if (current.status === "disconnected") return "invalid_transition";
+    const result = await this.store.updateStatus(
+      tenantId, integrationId, current.status, "suspended", updatedAtUtc
+    );
+    return result === "updated" ? "suspended" : "invalid_transition";
+  }
+
   async acceptEvent<T>(event: IntegrationEvent<T>): Promise<IntegrationEventReceipt> {
     if (!nonEmpty(event.tenantId) || !nonEmpty(event.integrationId) ||
         !nonEmpty(event.providerEventId) || !nonEmpty(event.eventType) ||
@@ -114,6 +129,13 @@ export class InMemoryIntegrationRegistryStore implements IntegrationRegistryStor
     const key = this.key(registration.tenantId, registration.id);
     if (this.integrations.has(key)) throw new Error("INTEGRATION_ALREADY_EXISTS");
     this.integrations.set(key, registration);
+  }
+  async updateStatus(tenantId: string, integrationId: string, expectedStatus: IntegrationStatus, nextStatus: IntegrationStatus): Promise<"updated" | "conflict"> {
+    const key = this.key(tenantId, integrationId);
+    const current = this.integrations.get(key);
+    if (!current || current.status !== expectedStatus) return "conflict";
+    this.integrations.set(key, { ...current, status: nextStatus, updatedAtUtc: new Date().toISOString() });
+    return "updated";
   }
   async recordEvent(event: IntegrationEvent): Promise<"inserted" | "duplicate"> {
     const key = [event.tenantId, event.integrationId, event.providerEventId].join(":");
