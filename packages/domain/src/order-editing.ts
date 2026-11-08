@@ -30,7 +30,7 @@ export function evaluatePaidOrderEditWindow(input: {
   if (fulfillmentStarted.has(input.status) || input.fulfillmentTaskDispatched === true) {
     return { allowed: false, reason: "fulfillment_already_started" };
   }
-  if (now < captured || now > editUntil) return { allowed: false, reason: "edit_window_expired" };
+  if (now < captured || now >= editUntil) return { allowed: false, reason: "edit_window_expired" };
   return {
     allowed: true,
     editUntilUtc: new Date(editUntil).toISOString(),
