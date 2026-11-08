@@ -146,7 +146,9 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [ ] Select and configure the actual payment service provider and its sandbox credentials; no production payment provider is connected.
 - [ ] Implement the authenticated customer flow that creates an adjustment intent directly from a trusted fresh delivery quote, then invokes the provider only after explicit consent.
 - [x] Add a durable PostgreSQL payment webhook inbox foundation: persist only SHA-256 payload digests, deduplicate provider/event IDs, detect same-ID/different-payload collisions, claim receipts once, and finalize only claimed events; unit tests cover lifecycle and validation.
-- [ ] Add a raw-body webhook API endpoint that verifies provider signatures before recording receipts, reconciles adjustment state and inbox terminal state in one transaction, and safely handles retries.
+- [x] Add a raw-body Fastify webhook intake route that verifies the exact-body HMAC signature and timestamp before recording provider event IDs, and wire the durable PostgreSQL inbox into the production composition root.
+- [ ] Supply a production secret-manager resolver for each enabled provider; the endpoint intentionally returns unavailable until one is configured.
+- [ ] Reconcile adjustment state and inbox terminal state in one transaction, and add provider-specific retry/contract tests before enabling live capture/refund.
 - [ ] Add an operational retry/reconciliation worker and provider-specific contract tests before enabling live capture/refund.
 
 
