@@ -38,3 +38,5 @@ export * from "./fulfillment-dispatch-handlers.js";
 export * from "./http-fulfillment-provider.js";
 
 export * from "./order-pricing.js";
+
+export * from "./postgres-delivery-quote-service.js";
