@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { PostgresPool } from "./postgres-iam-store.js";
 import {
   evaluatePaidOrderEditWindow,
@@ -145,7 +146,7 @@ export class PostgresCustomerOrderDeliveryUpdater {
         `INSERT INTO customer_order_edit_events
          (id,tenant_id,order_id,actor_id,edit_type,occurred_at,previous_snapshot,next_snapshot,quote_reference)
          VALUES ($1,$2,$3,$4,'delivery_destination',$5,$6::jsonb,$7::jsonb,$8)`,
-        [crypto.randomUUID(), input.tenantId, input.orderId, input.actorId, nowUtc,
+        [randomUUID(), input.tenantId, input.orderId, input.actorId, nowUtc,
           JSON.stringify(asSnapshot(previous)), JSON.stringify(asSnapshot(next)), next.quote.quoteReference]
       );
       await client.query("COMMIT");
