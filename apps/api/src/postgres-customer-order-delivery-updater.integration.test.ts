@@ -43,7 +43,7 @@ integration("PostgreSQL customer delivery destination updater", () => {
       id: "jubail-core", center: { latitude: 27.0046, longitude: 49.646 }, radiusMeters: 10_000
     },
     quote: {
-      branchId: "branch-new", deliveryFeeMinor: 1500, totalMinor: 51500,
+      branchId: "branch-new", deliveryFeeMinor: 1500, totalMinor: 50000,
       currency: "SAR", estimatedDeliveryAtUtc: "2026-11-08T13:00:00.000Z",
       quoteReference: "delivery-quote-" + suffix, expiresAtUtc: "2026-11-08T12:05:00.000Z"
     }
@@ -58,7 +58,7 @@ integration("PostgreSQL customer delivery destination updater", () => {
     );
     expect(order.rows[0]).toMatchObject({
       delivery_destination: { latitude: 27.01, longitude: 49.65 },
-      delivery_zone_id: "jubail-core", delivery_branch_id: "branch-new", total_minor: "51500"
+      delivery_zone_id: "jubail-core", delivery_branch_id: "branch-new", total_minor: "50000"
     });
     const events = await pool.query(
       "SELECT edit_type,quote_reference FROM customer_order_edit_events WHERE order_id = $1", [orderId]
@@ -81,4 +81,17 @@ integration("PostgreSQL customer delivery destination updater", () => {
     const lateUpdater = new PostgresCustomerOrderDeliveryUpdater(pool, () => new Date("2026-11-08T12:00:06.000Z"));
     expect(await lateUpdater.update(baseInput())).toEqual({ outcome: "edit_window_expired" });
   });
+
+  it("requires payment-provider adjustment confirmation before changing the payable total", async () => {
+    const result = await updater.update({
+      ...baseInput(),
+      quote: { ...baseInput().quote, totalMinor: 51500 }
+    });
+    expect(result).toEqual({ outcome: "payment_adjustment_required" });
+    const order = await pool.query(
+      "SELECT delivery_destination,total_minor FROM customer_orders WHERE id = $1", [orderId]
+    );
+    expect(order.rows[0]).toEqual({ delivery_destination: null, total_minor: "50000" });
+  });
+
 });
