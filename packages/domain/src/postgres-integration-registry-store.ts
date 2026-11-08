@@ -63,6 +63,23 @@ export class PostgresIntegrationRegistryStore implements IntegrationRegistryStor
     if (result.rowCount !== 1) throw new Error("INTEGRATION_ALREADY_EXISTS");
   }
 
+  async updateStatus(
+    tenantId: string,
+    integrationId: string,
+    expectedStatus: IntegrationRegistration["status"],
+    nextStatus: IntegrationRegistration["status"],
+    updatedAtUtc: string
+  ): Promise<"updated" | "conflict"> {
+    const result = await this.db.query<{ id: string }>(
+      `UPDATE tenant_integrations
+       SET status = $4, updated_at = $5
+       WHERE tenant_id = $1 AND id = $2 AND status = $3 AND updated_at <= $5
+       RETURNING id`,
+      [tenantId, integrationId, expectedStatus, nextStatus, updatedAtUtc]
+    );
+    return result.rowCount === 1 ? "updated" : "conflict";
+  }
+
   async recordEvent(event: IntegrationEvent): Promise<"inserted" | "duplicate"> {
     if (typeof event.payload !== "object" || event.payload === null) {
       throw new Error("INVALID_INTEGRATION_EVENT_PAYLOAD");
