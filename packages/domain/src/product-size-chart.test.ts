@@ -20,6 +20,8 @@ const input: SizeChartExtractionInput = {
   contentSha256: "a".repeat(64)
 };
 
+const validEntry = input.entries[0]!;
+
 describe("product size chart", () => {
   it("stores source-attributed size entries and measurement type", () => {
     expect(createProductSizeChart(input)).toMatchObject({
@@ -32,12 +34,12 @@ describe("product size chart", () => {
     expect(() => createProductSizeChart({ ...input, sourceUrl: "http://shop.example/item" }))
       .toThrow("INVALID_SIZE_CHART");
     expect(() => createProductSizeChart({
-      ...input, entries: [{ ...input.entries[0], measurements: [{ key: "chest", label: "Chest", value: -1, unit: "cm" }] }]
+      ...input, entries: [{ ...validEntry, measurements: [{ key: "chest", label: "Chest", value: -1, unit: "cm" }] }]
     })).toThrow("INVALID_SIZE_MEASUREMENT");
   });
   it("rejects duplicate size labels", () => {
     expect(() => createProductSizeChart({
-      ...input, entries: [input.entries[0], input.entries[0]]
+      ...input, entries: [validEntry, validEntry]
     })).toThrow("INVALID_SIZE_CHART_ENTRY");
   });
 });
