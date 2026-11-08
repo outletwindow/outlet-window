@@ -111,3 +111,25 @@ export function validateNormalizedCommerceProduct(product: NormalizedCommercePro
     (variant.currency === undefined || /^[A-Z]{3}$/.test(variant.currency))
   );
 }
+
+/** Validate that an imported product belongs to the provider being used.
+ * Product images may use a CDN host, but the canonical product page and size-chart
+ * source must remain on the provider's explicitly allowlisted hosts.
+ */
+export function validateCommerceProductForProvider(
+  product: NormalizedCommerceProduct,
+  provider: CommerceProviderDescriptor
+): boolean {
+  if (product.providerKey.toLowerCase() !== provider.providerKey.toLowerCase()) return false;
+  let canonical: URL;
+  try { canonical = new URL(product.canonicalUrl); } catch { return false; }
+  if (canonical.protocol !== "https:" || !hostMatchesAllowlist(canonical.hostname, provider.websiteHosts)) {
+    return false;
+  }
+  if (product.sizeChartUrl !== undefined) {
+    let chart: URL;
+    try { chart = new URL(product.sizeChartUrl); } catch { return false; }
+    if (chart.protocol !== "https:" || !hostMatchesAllowlist(chart.hostname, provider.websiteHosts)) return false;
+  }
+  return validateNormalizedCommerceProduct(product);
+}
