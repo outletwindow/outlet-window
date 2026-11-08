@@ -102,7 +102,7 @@ export class PostgresCustomerOrderDeliveryUpdater {
       }
       // Never silently capture an increase or issue a refund for a decrease. Until a payment
       // provider confirms the exact adjustment, fail closed and leave the order unchanged.
-      if (input.quote.totalMinor !== Number(current.total_minor)) {
+      if (!Number.isSafeInteger(input.quote.totalMinor) || BigInt(input.quote.totalMinor) !== BigInt(current.total_minor)) {
         await client.query("ROLLBACK");
         return { outcome: "payment_adjustment_required" };
       }
