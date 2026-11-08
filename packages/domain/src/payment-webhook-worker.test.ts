@@ -33,7 +33,8 @@ describe("payment webhook worker", () => {
 
   it("records provider-declined adjustment events without changing the order total", async () => {
     const store = makeStore({
-      claimNext: vi.fn(async (): Promise<ClaimedPaymentWebhook> => ({ ...event, normalizedStatus: "failed", providerReference: null }))
+      claimNext: vi.fn(async (): Promise<ClaimedPaymentWebhook> => ({ ...event, normalizedStatus: "failed", providerReference: null })),
+      reconcileAdjustment: vi.fn(async () => "failed" as const)
     });
     const worker = new PaymentWebhookWorker(store, "worker-1");
     await expect(worker.runOnce()).resolves.toEqual({ outcome: "failed", receiptId: "receipt-1" });
