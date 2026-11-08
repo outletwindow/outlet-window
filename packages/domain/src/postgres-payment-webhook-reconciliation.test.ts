@@ -5,7 +5,7 @@ import { PostgresPaymentWebhookInbox } from "./postgres-payment-webhook-inbox.js
 function makePool(options: { receiptStatus?: string; receiptAdjustmentId?: string | null; adjustmentStatus?: string; orderRowCount?: number } = {}) {
   const calls: Array<{ sql: string; values?: readonly unknown[] }> = [];
   const query = vi.fn(async (sql: string, values?: readonly unknown[]) => {
-    calls.push({ sql, values });
+    calls.push({ sql, ...(values === undefined ? {} : { values }) });
     if (sql.includes("SELECT id,adjustment_id,status FROM payment_provider_webhook_events")) {
       return { rows: [{ id: "receipt-1", adjustment_id: options.receiptAdjustmentId ?? "adjustment-1", status: options.receiptStatus ?? "processing" }], rowCount: 1 };
     }
