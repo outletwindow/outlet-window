@@ -74,6 +74,32 @@ describe("HTTP delivery routing gateway", () => {
     })).resolves.toBeNull();
   });
 
+
+  it("rejects malformed, oversized and non-UTC gateway responses", async () => {
+    const malformed = createHttpDeliveryRoutingProvider({
+      endpoint: options.endpoint, bearerToken: "x",
+      fetchImpl: vi.fn(async () => new Response("{not-json", { status: 200 }))
+    });
+    const oversized = createHttpDeliveryRoutingProvider({
+      endpoint: options.endpoint, bearerToken: "x",
+      fetchImpl: vi.fn(async () => new Response(" ".repeat(16_385), { status: 200 }))
+    });
+    const nonUtc = createHttpDeliveryRoutingProvider({
+      endpoint: options.endpoint, bearerToken: "x",
+      fetchImpl: vi.fn(async () => new Response(JSON.stringify({
+        distanceMeters: 100, durationSeconds: 10, providerReference: "r",
+        estimatedAtUtc: "2026-11-08T12:00:00+03:00"
+      }), { status: 200 }))
+    });
+    const input = {
+      origin: { latitude: 27, longitude: 49 },
+      destination: { latitude: 27.1, longitude: 49.1 }
+    };
+    await expect(malformed.estimateRoute(input)).resolves.toBeNull();
+    await expect(oversized.estimateRoute(input)).resolves.toBeNull();
+    await expect(nonUtc.estimateRoute(input)).resolves.toBeNull();
+  });
+
   it("classifies retryable provider errors without exposing response bodies", async () => {
     const failing = createHttpDeliveryRoutingProvider({
       endpoint: options.endpoint, bearerToken: "x",
