@@ -69,6 +69,8 @@ export class PostgresMerchantBranchWriter implements MerchantBranchWriter {
     displayName: string;
     cityCode: string;
     address?: Readonly<Record<string, unknown>>;
+    latitude?: number;
+    longitude?: number;
     status: "active" | "inactive";
   }): Promise<UpdateMerchantBranchResult> {
     this.validateCoordinates(input);
