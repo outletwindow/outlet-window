@@ -10,6 +10,7 @@ import {
   type AuthorizationRequest
 } from "../../../packages/domain/src/authorization.js";
 import { ORDER_STATUSES, type OrderStatus, type OrderTransitionContext } from "../../../packages/domain/src/order-lifecycle.js";
+import { INTEGRATION_FAMILIES, IntegrationHub } from "../../../packages/domain/src/integration-hub.js";
 import {
   resolveActorFromBearerToken,
   type ActorResolutionDependencies
@@ -73,6 +74,7 @@ export interface AppOptions {
   orderTransitions?: OrderTransitionWriter;
   customerDeliveryDestinations?: CustomerDeliveryDestinationService;
   customerPaymentAdjustments?: CustomerPaymentAdjustmentActions;
+  integrationHub?: IntegrationHub;
 }
 
 type AuthorizationResult =
@@ -454,6 +456,87 @@ app.patch<{
     if (outcome.outcome === "expired") return reply.code(410).send({ error: "adjustment_expired" });
     if (outcome.outcome !== "declined") return reply.code(409).send({ error: "adjustment_not_pending" });
     return reply.code(200).send({ outcome: "declined", orderUnchanged: true });
+  });
+
+
+  app.get<{
+    Params: { merchantId: string };
+    Querystring: { family?: string };
+  }>("/api/v1/merchants/:merchantId/integrations", async (request, reply) => {
+    const { merchantId } = request.params;
+    const result = await authorizeRequest(request, options, {
+      resource: "merchant.integration", action: "read", scope: { merchantId }
+    });
+    if (!result.actor) return sendAuthorizationFailure(reply, result.statusCode, result.decision.reason);
+    if (!["merchant_owner", "merchant_admin"].includes(result.actor.role)) {
+      return reply.code(403).send({ error: "merchant_admin_only" });
+    }
+    if (!options.integrationHub) return reply.code(503).send({ error: "service_unavailable" });
+    const family = request.query.family;
+    if (family !== undefined && !INTEGRATION_FAMILIES.includes(family as typeof INTEGRATION_FAMILIES[number])) {
+      return reply.code(400).send({ error: "invalid_integration_family" });
+    }
+    const integrations = await options.integrationHub.list(
+      merchantId, family as typeof INTEGRATION_FAMILIES[number] | undefined
+    );
+    return reply.code(200).send({ integrations });
+  });
+
+  app.post<{
+    Params: { merchantId: string };
+    Body: {
+      id: string;
+      family: string;
+      providerKey: string;
+      displayName: string;
+      capabilities: string[];
+    };
+  }>("/api/v1/merchants/:merchantId/integrations", async (request, reply) => {
+    const { merchantId } = request.params;
+    const result = await authorizeRequest(request, options, {
+      resource: "merchant.integration", action: "create", scope: { merchantId }
+    });
+    if (!result.actor) return sendAuthorizationFailure(reply, result.statusCode, result.decision.reason);
+    if (!["merchant_owner", "merchant_admin"].includes(result.actor.role)) {
+      return reply.code(403).send({ error: "merchant_admin_only" });
+    }
+    if (!options.integrationHub) return reply.code(503).send({ error: "service_unavailable" });
+    const body = request.body;
+    if (!body || typeof body.id !== "string" || !/^[a-zA-Z0-9_-]{2,80}$/.test(body.id) ||
+        typeof body.family !== "string" || !INTEGRATION_FAMILIES.includes(body.family as typeof INTEGRATION_FAMILIES[number]) ||
+        typeof body.providerKey !== "string" || body.providerKey.trim().length < 1 || body.providerKey.trim().length > 100 ||
+        typeof body.displayName !== "string" || body.displayName.trim().length < 2 || body.displayName.trim().length > 160 ||
+        !Array.isArray(body.capabilities) || body.capabilities.length > 50 ||
+        body.capabilities.some((item) => typeof item !== "string" || item.trim().length < 1 || item.length > 100)) {
+      return reply.code(400).send({ error: "invalid_request" });
+    }
+    const now = new Date().toISOString();
+    try {
+      await options.integrationHub.register({
+        id: body.id,
+        tenantId: merchantId,
+        family: body.family as typeof INTEGRATION_FAMILIES[number],
+        providerKey: body.providerKey.trim(),
+        displayName: body.displayName.trim(),
+        status: "pending",
+        capabilities: body.capabilities.map((item) => item.trim()),
+        createdAtUtc: now,
+        updatedAtUtc: now
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === "INVALID_INTEGRATION_REGISTRATION") {
+        return reply.code(400).send({ error: "invalid_request" });
+      }
+      throw error;
+    }
+    return reply.code(201).send({
+      integration: {
+        id: body.id, tenantId: merchantId, family: body.family,
+        providerKey: body.providerKey.trim(), displayName: body.displayName.trim(),
+        status: "pending", capabilities: [...new Set(body.capabilities.map((item) => item.trim()))],
+        createdAtUtc: now, updatedAtUtc: now
+      }
+    });
   });
 
   return app;
