@@ -95,12 +95,12 @@ export class PostgresDeliveryQuoteService {
       request.destination
     );
     if (method !== "fixed_plus_distance" ||
-        !Number.isSafeInteger(baseFee) || (baseFee as number) < 0 ||
-        !Number.isSafeInteger(perKm) || (perKm as number) < 0) {
+        typeof baseFee !== "number" || !Number.isSafeInteger(baseFee) || baseFee < 0 ||
+        typeof perKm !== "number" || !Number.isSafeInteger(perKm) || perKm < 0) {
       return { status: "no_active_pricing_rule" };
     }
     const distanceKmCeiling = Math.ceil(distanceMeters / 1000);
-    const deliveryFee = (baseFee as number) + distanceKmCeiling * (perKm as number);
+    const deliveryFee = baseFee + distanceKmCeiling * perKm;
     if (!Number.isSafeInteger(deliveryFee)) return { status: "no_active_pricing_rule" };
 
     const quote = calculatePricingQuote({
