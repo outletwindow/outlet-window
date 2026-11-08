@@ -91,7 +91,7 @@ describe("atomic payment webhook reconciliation", () => {
 
 describe("payment webhook lease recovery", () => {
   it("claims one due event with a bounded lease and returns only normalized metadata", async () => {
-    const query = vi.fn(async () => ({
+    const query = vi.fn(async (_sql: string, _values?: readonly unknown[]) => ({
       rows: [{
         id: "receipt-lease-1", provider_key: "psp-a", provider_event_id: "evt-lease-1",
         adjustment_id: "adjustment-1", event_type: "payment.adjustment",
