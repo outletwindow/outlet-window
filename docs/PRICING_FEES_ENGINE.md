@@ -176,3 +176,10 @@ Specification only. No final prices, commercial rates, tax treatment or live pri
 - Treats no-route responses as unavailable, classifies transient HTTP failures without logging or exposing provider response bodies, and rejects malformed payloads.
 - Unit tests cover request shape, HTTPS/credential enforcement, timeout validation, no-route behavior, malformed data and transient errors.
 - This is an adapter contract only. No external map vendor is selected or configured, no production credentials exist in the repository, and live road ETA remains unavailable until deployment supplies an approved gateway and secrets.
+
+## 21. Routing measurement timestamp integrity
+- The HTTP routing gateway response must include its own `estimatedAtUtc` measurement timestamp.
+- The adapter no longer stamps a fresh local time onto a received route. It preserves the gateway timestamp so the domain's five-minute freshness check can reject stale routes.
+- Negative distances and durations, missing/invalid timestamps, empty references and malformed payloads are rejected as unavailable.
+- Unit tests cover provider timestamp preservation and missing timestamp rejection.
+- The gateway contract must return UTC ISO-8601 timestamps for when the route was calculated, not when the response was relayed.
