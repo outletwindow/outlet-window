@@ -100,9 +100,9 @@ try {
   await pool.query("SELECT 1");
   const migration = await pool.query(
     "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",
-    [["0008_scheduled_task_inbox_leases", "0009_fulfillment_provider_receipts"]]
+    [["0008_scheduled_task_inbox_leases", "0009_fulfillment_provider_receipts", "0010_customer_order_editing_and_delivery_destination"]]
   );
-  if (migration.rowCount !== 2) throw new Error("scheduled_task_inbox_migration_required");
+  if (migration.rowCount !== 3) throw new Error("scheduled_task_inbox_migration_required");
   process.stdout.write(JSON.stringify({
     event: "fulfillment_worker_started", pollMs, batchSize,
     configuredHandlers: Object.keys(handlers)
