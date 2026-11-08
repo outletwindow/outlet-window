@@ -128,3 +128,7 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Map active customer IAM role assignments to `customer.order` read/update grants only when the assignment contains the exact `orderId`; assignments without an order scope receive no customer-order grant.
 - [x] Add permission tests proving customers cannot receive a broad order grant and are limited to the assigned order.
 - [ ] Ensure customer order IAM assignments are issued only after order ownership is verified by the order-creation/authentication workflow; do not create broad customer grants.
+
+- [x] Fail closed on any delivery re-quote that changes the payable order total: the updater returns `payment_adjustment_required` and commits no destination/price changes until an authorized payment adjustment workflow exists.
+- [x] Compare PostgreSQL bigint order totals without lossy JavaScript number conversion; added integration coverage proving a changed total leaves the order untouched.
+- [ ] Implement provider-backed payment increase authorization/capture and decrease refund evidence, with explicit customer consent and idempotent reconciliation, before allowing changed totals.
