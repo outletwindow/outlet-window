@@ -65,3 +65,5 @@ export * from "./product-size-chart.js";
 export * from "./commerce-connectors.js";
 
 export * from "./commerce-catalog-importer.js";
+
+export * from "./postgres-commerce-catalog-store.js";
