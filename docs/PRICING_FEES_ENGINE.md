@@ -153,3 +153,10 @@ Specification only. No final prices, commercial rates, tax treatment or live pri
 - Duplicate branch candidates and invalid coordinates are rejected.
 - Unit tests cover ranking, unavailable routes, stale estimates and invalid inputs.
 - No routing vendor credentials or endpoint are configured. This contract is not a live maps integration and must be connected to an approved routing provider before using ETA for customer promises or dispatch decisions.
+
+## 18. Branch geolocation and quote-to-routing composition
+- Migration 0012 adds optional latitude/longitude columns to merchant branches, with paired-coordinate and geographic-range constraints.
+- Merchant branch create/update writes accept optional coordinates and validate the pair and ranges before SQL.
+- `PostgresDeliveryQuoteService.quoteWithRoadEta` resolves the quote, loads only geocoded active branches assigned to the selected service area, and ranks them through the injected routing provider.
+- API readiness now requires migrations 0011 and 0012.
+- No routing provider is configured by the production composition root yet. Branches without coordinates are excluded from ETA ranking; a quote may still be returned with no ranked route. Before launch, enforce at least one ranked branch and configure a trusted routing provider.
