@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { createProductSizeChart } from "./product-size-chart.js";
+import { createProductSizeChart, type SizeChartExtractionInput } from "./product-size-chart.js";
 
-const input = {
+const input: SizeChartExtractionInput = {
   tenantId: "tenant-1", productId: "product-1",
   sourceUrl: "https://shop.example/products/shirt",
   sourceProductReference: "shirt-001",
