@@ -7,7 +7,7 @@ import {
 
 const base: VirtualTryOnRequest = {
   id: "tryon-1", tenantId: "tenant-1", customerId: "customer-1",
-  productId: "product-1", productVariantId: "variant-1", mode: "photo",
+  productId: "product-1", productVariantId: "variant-1", sizeChartId: "sizechart-1", mode: "photo",
   customerMediaAssetId: "private-media-1",
   consent: {
     processingAccepted: true, retentionAccepted: true,
