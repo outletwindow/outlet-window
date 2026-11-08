@@ -99,8 +99,8 @@ process.on("SIGTERM", () => void shutdown("SIGTERM"));
 try {
   await pool.query("SELECT 1");
   const migration = await pool.query(
-    "SELECT version FROM schema_migrations WHERE version = $1",
-    ["0008_scheduled_task_inbox_leases"]
+    "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",
+    [["0008_scheduled_task_inbox_leases", "0009_fulfillment_provider_receipts"]]
   );
   if (migration.rowCount !== 1) throw new Error("scheduled_task_inbox_migration_required");
   process.stdout.write(JSON.stringify({
