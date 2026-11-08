@@ -83,7 +83,9 @@ export interface AppOptions {
   orderTransitions?: OrderTransitionWriter;
   customerDeliveryDestinations?: CustomerDeliveryDestinationService;
   customerPaymentAdjustments?: CustomerPaymentAdjustmentActions;
-  integrationHub?: IntegrationHub;\n  paymentWebhookInbox?: PaymentWebhookInboxWriter;\n  paymentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
+  integrationHub?: IntegrationHub;
+  paymentWebhookInbox?: PaymentWebhookInboxWriter;
+  paymentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
 }
 
 const paymentWebhookRawBodies = new WeakMap<FastifyRequest, string>();
