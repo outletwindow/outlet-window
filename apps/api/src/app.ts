@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { DeliveryCoordinate, RepricedDeliveryQuote } from "../../../packages/domain/src/order-editing.js";
+import type { DeliveryCoordinate } from "../../../packages/domain/src/order-editing.js";
 import type { UpdateDeliveryDestinationResult } from "../../../packages/domain/src/postgres-customer-order-delivery-updater.js";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { createAuditEvent, type AuditEvent } from "../../../packages/domain/src/audit.js";
