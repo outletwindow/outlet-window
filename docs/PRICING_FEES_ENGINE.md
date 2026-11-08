@@ -188,3 +188,11 @@ Specification only. No final prices, commercial rates, tax treatment or live pri
 - Response bodies are capped at 16 KiB and malformed JSON is treated as an unavailable route rather than bubbling a parser exception into the API.
 - Measurement timestamps must be explicit UTC ISO-8601 values ending in `Z`; offset-local timestamps are rejected.
 - Unit tests cover malformed JSON, oversized responses and non-UTC timestamps.
+
+## 23. Customer-approved payment adjustment ledger
+- Migration 0013 adds a durable adjustment intent for additional charges or refunds caused by a repriced destination or order edit.
+- Each intent records the old and proposed totals, exact positive delta, currency, immutable quote reference, idempotency key, expiry and explicit consent fields.
+- Provider-confirmed status requires a provider reference and confirmation timestamp. No row can claim provider confirmation without both.
+- Append-only events retain the lifecycle history; composite tenant-scoped foreign keys prevent cross-tenant event attachment.
+- CI acceptance tests cover persistence, arithmetic consistency and append-only history.
+- This is a consent/evidence ledger only. It does not call a payment provider, authorize a charge, issue a refund, or change an order total. Those actions must wait for explicit customer consent and independently verified provider evidence.
