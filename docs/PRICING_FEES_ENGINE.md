@@ -145,3 +145,11 @@ Specification only. No final prices, commercial rates, tax treatment or live pri
 - Fails closed for missing rules, malformed configuration, invalid coordinates and missing eligible branches.
 - PostgreSQL migration 0011 adds service areas, branch assignments, versioned pricing rules, approval fields and append-only rule events. CI acceptance tests verify approval gates, immutable approved snapshots and audit immutability.
 - Important limitation: the current distance basis is straight-line distance from the service-area center, not road distance. The resolver returns eligible branches but does not yet rank them by branch-to-customer road ETA. It is a backend foundation, not yet wired into the production checkout or delivery-destination API. Production use requires a trusted routing provider, branch geocoordinates, tenant/merchant ownership enforcement, authorized admin approval workflows and payment-provider integration.
+
+## 17. Road ETA branch ranking contract
+- Added a provider-neutral routing contract for obtaining road distance and travel duration from each eligible branch to the customer destination.
+- Branches are ranked by ETA, then road distance, then stable merchant/branch identifiers.
+- Unavailable routes are excluded; stale estimates older than five minutes and malformed provider responses are discarded.
+- Duplicate branch candidates and invalid coordinates are rejected.
+- Unit tests cover ranking, unavailable routes, stale estimates and invalid inputs.
+- No routing vendor credentials or endpoint are configured. This contract is not a live maps integration and must be connected to an approved routing provider before using ETA for customer promises or dispatch decisions.
