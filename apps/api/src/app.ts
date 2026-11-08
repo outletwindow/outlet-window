@@ -50,7 +50,7 @@ export interface CustomerPaymentAdjustmentActions {
   decline(input: { orderId: string; adjustmentId: string; customerId: string }): Promise<{ outcome: string }>;
 }
 export interface PaymentWebhookInboxWriter {
-  record(input: { providerKey: string; providerEventId: string; rawBody: string; adjustmentId?: string }): Promise<
+  record(input: { providerKey: string; providerEventId: string; rawBody: string; adjustmentId?: string; eventType?: string; normalizedStatus?: "succeeded" | "failed" | "ignored" | "unsupported"; providerReference?: string }): Promise<
     | { outcome: "received"; receiptId: string }
     | { outcome: "duplicate"; receiptId: string }
     | { outcome: "event_id_collision" }
@@ -262,16 +262,26 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
         (body as { id: string }).id.length > 240) {
       return reply.code(400).send({ error: "invalid_webhook_event" });
     }
+    const eventType = (body as { type?: unknown }).type;
+    const normalizedStatus = (body as { status?: unknown }).status;
     const adjustmentId = (body as { adjustmentId?: unknown }).adjustmentId;
-    if (adjustmentId !== undefined &&
-        (typeof adjustmentId !== "string" || !/^[a-zA-Z0-9_-]{1,200}$/.test(adjustmentId))) {
+    const providerReference = (body as { providerReference?: unknown }).providerReference;
+    if (typeof eventType !== "string" || !/^[a-zA-Z0-9._:-]{1,160}$/.test(eventType) ||
+        typeof normalizedStatus !== "string" ||
+        !["succeeded", "failed", "ignored", "unsupported"].includes(normalizedStatus) ||
+        (adjustmentId !== undefined && (typeof adjustmentId !== "string" || !/^[a-zA-Z0-9_-]{1,200}$/.test(adjustmentId))) ||
+        (providerReference !== undefined && (typeof providerReference !== "string" || !providerReference.trim() || providerReference.length > 240)) ||
+        (normalizedStatus === "succeeded" && (typeof adjustmentId !== "string" || typeof providerReference !== "string"))) {
       return reply.code(400).send({ error: "invalid_webhook_event" });
     }
     const receipt = await options.paymentWebhookInbox.record({
       providerKey,
       providerEventId: (body as { id: string }).id,
       rawBody,
-      ...(typeof adjustmentId === "string" ? { adjustmentId } : {})
+      eventType,
+      normalizedStatus: normalizedStatus as "succeeded" | "failed" | "ignored" | "unsupported",
+      ...(typeof adjustmentId === "string" ? { adjustmentId } : {}),
+      ...(typeof providerReference === "string" ? { providerReference } : {})
     });
     if (receipt.outcome === "event_id_collision") {
       return reply.code(409).send({ error: "provider_event_id_collision" });
