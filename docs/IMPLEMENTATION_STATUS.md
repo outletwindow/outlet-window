@@ -124,3 +124,7 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] PostgreSQL API composition can receive the trusted destination service through dependency injection.
 - [ ] Implement and configure the production service-area resolver and quote/pricing provider, and wire it to `PostgresCustomerOrderDeliveryUpdater`; the API deliberately returns 503 until this trusted dependency is supplied.
 - [ ] Connect the customer app UI, display the five-second countdown and repriced amount/ETA, and obtain explicit authorization/collection for any payment difference before confirming the change.
+
+- [x] Map active customer IAM role assignments to `customer.order` read/update grants only when the assignment contains the exact `orderId`; assignments without an order scope receive no customer-order grant.
+- [x] Add permission tests proving customers cannot receive a broad order grant and are limited to the assigned order.
+- [ ] Ensure customer order IAM assignments are issued only after order ownership is verified by the order-creation/authentication workflow; do not create broad customer grants.
