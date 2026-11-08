@@ -63,3 +63,5 @@ export * from "./virtual-try-on.js";
 export * from "./product-size-chart.js";
 
 export * from "./commerce-connectors.js";
+
+export * from "./commerce-catalog-importer.js";
