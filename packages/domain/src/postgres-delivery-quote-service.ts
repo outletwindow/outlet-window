@@ -16,7 +16,7 @@ export interface DeliveryQuoteRequest {
 
 export type DeliveryQuoteResult =
   | { status: "quoted"; serviceAreaId: string; currency: string; distanceFromZoneCenterMeters: number; eligibleBranches: readonly { merchantId: string; branchId: string }[]; quote: PricingQuote }
-  | { status: "outside_service_area" | "no_active_pricing_rule" | "no_eligible_branch" | "invalid_request" };
+  | { status: "outside_service_area" | "no_active_pricing_rule" | "no_eligible_branch" | "no_routable_branch" | "invalid_request" };
 
 type AreaRow = {
   id: string; center_latitude: string | number; center_longitude: string | number;
@@ -61,6 +61,7 @@ export class PostgresDeliveryQuoteService {
       provider: input.routingProvider,
       nowUtc: input.request.nowUtc
     });
+    if (rankedBranches.length === 0) return { status: "no_routable_branch" };
     return { ...result, rankedBranches };
   }
 
