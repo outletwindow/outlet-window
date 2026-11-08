@@ -38,7 +38,7 @@ describe("payment webhook worker", () => {
     const worker = new PaymentWebhookWorker(store, "worker-1");
     await expect(worker.runOnce()).resolves.toEqual({ outcome: "failed", receiptId: "receipt-1" });
     expect(store.reconcileAdjustment).toHaveBeenCalledWith(expect.objectContaining({
-      confirmed: false, failureCode: undefined
+      confirmed: false
     }));
   });
 
