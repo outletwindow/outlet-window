@@ -155,7 +155,9 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Added event intake contract with tenant ownership checks, connected-state gating, UTC timestamp validation, and duplicate provider-event detection.
 - [x] Added PostgreSQL migration `0015_multi_provider_integration_hub` with tenant-scoped foreign keys, unique provider event/idempotency keys, payload digest, and durable inbox state.
 - [x] Added unit and SQL acceptance tests and included the SQL test in CI.
-- [ ] Implement PostgreSQL-backed `IntegrationRegistryStore` and authenticated admin APIs for registering, rotating, suspending, and testing connections.
+- [x] Implement PostgreSQL-backed `IntegrationRegistryStore` with tenant-scoped reads, insert-only registration, duplicate rejection, and durable event deduplication; PostgreSQL adapter unit tests added.
+- [x] Add authenticated merchant-owner/admin API routes to list and register integrations, derive tenant identity from the authorized route scope, enforce family/capability validation, and default new registrations to `pending`; cross-tenant and duplicate-registration route tests added (CI run 42491951407 passed typecheck, tests, PostgreSQL acceptance checks, and build).
+- [ ] Add authorized lifecycle APIs for rotating secret references, suspending/reconnecting, and connection verification.
 - [ ] Implement provider-specific adapters and sandbox contract tests for each selected POS, ERP, commerce, carrier, maps, and payment provider.
 - [ ] Add durable inbox worker with bounded retries, dead-letter handling, event normalization, and reconciliation.
 - [ ] Add operational integration health dashboard, secret-manager deployment wiring, and per-provider rate limits.
