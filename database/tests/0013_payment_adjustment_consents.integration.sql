@@ -3,7 +3,7 @@ BEGIN;
 INSERT INTO customer_orders
   (id, tenant_id, customer_id, idempotency_key, status, currency, total_minor)
 VALUES
-  ('adjustment-order','adjustment-tenant','adjustment-customer','order-key-0013',
+  ('adjustment-order','platform','adjustment-customer','order-key-0013',
    'confirmed','SAR',10000);
 
 INSERT INTO customer_payment_adjustments
@@ -11,7 +11,7 @@ INSERT INTO customer_payment_adjustments
    adjustment_direction,amount_minor,previous_total_minor,proposed_total_minor,
    status,expires_at)
 VALUES
-  ('adjustment-1','adjustment-tenant','adjustment-order','adjustment-customer',
+  ('adjustment-1','platform','adjustment-order','adjustment-customer',
    'adjustment-key-001','quote-001','SAR','additional_charge',2500,10000,12500,
    'awaiting_customer_consent',now() + interval '5 minutes');
 
@@ -29,7 +29,7 @@ BEGIN
        adjustment_direction,amount_minor,previous_total_minor,proposed_total_minor,
        status,expires_at)
     VALUES
-      ('adjustment-invalid','adjustment-tenant','adjustment-order','adjustment-customer',
+      ('adjustment-invalid','platform','adjustment-order','adjustment-customer',
        'adjustment-key-002','quote-002','SAR','additional_charge',3000,10000,12000,
        'awaiting_customer_consent',now() + interval '5 minutes');
     RAISE EXCEPTION 'inconsistent adjustment amount unexpectedly accepted';
@@ -38,7 +38,7 @@ BEGIN
 
   INSERT INTO customer_payment_adjustment_events
     (id,tenant_id,adjustment_id,actor_id,event_type,occurred_at,snapshot)
-  VALUES ('adjustment-event-1','adjustment-tenant','adjustment-1',
+  VALUES ('adjustment-event-1','platform','adjustment-1',
     'adjustment-customer','created',now(),'{"status":"awaiting_customer_consent"}'::jsonb);
 
   BEGIN
