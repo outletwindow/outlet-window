@@ -173,3 +173,17 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [ ] Implement provider-specific adapters and sandbox contract tests for each selected POS, ERP, commerce, carrier, maps, and payment provider; the verification interface is injectable but no live provider adapter is configured.
 - [ ] Add durable inbox worker with bounded retries, dead-letter handling, event normalization, and reconciliation.
 - [ ] Add operational integration health dashboard, secret-manager deployment wiring, and per-provider rate limits.
+
+
+## Automatic runtime operations (development branch)
+- [x] Added a multi-stage Node 22 container image for the API and worker packages.
+- [x] Added a Compose runtime with separate API, scheduled outbox, and payment webhook worker services.
+- [x] Added restart-unless-stopped policies, init processes, bounded container logs, and graceful stop windows for long-running services.
+- [x] Added API readiness healthcheck; the API readiness endpoint checks required database migrations.
+- [x] Added a one-shot migration service; API and default workers wait for successful migration completion.
+- [x] Added a fulfillment-worker profile that can only be enabled when the three real HTTPS connector endpoints and credentials are supplied.
+- [x] Added Compose configuration validation to CI.
+- [ ] Run the stack on a provisioned production host/container platform with persistent PostgreSQL, TLS, backups, and alerting.
+- [ ] Configure provider-specific fulfillment endpoints and sandbox-test merchant, shopper, and courier integrations before enabling the fulfillment profile.
+- [ ] Configure provider-specific payment webhook signature adapters and the production secret resolver before accepting real PSP events.
+- [ ] Implement remaining recurring expiry/reconciliation, integration inbox, stock synchronization, notification/alert, and other planned workers before claiming the whole product is fully autonomous.
