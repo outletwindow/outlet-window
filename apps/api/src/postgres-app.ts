@@ -10,6 +10,8 @@ import { PostgresMerchantBranchWriter } from "../../../packages/domain/src/postg
 import { PostgresAuditEventStore } from "../../../packages/domain/src/postgres-audit-event-store.js";
 import { PostgresOrderTransitionStore } from "../../../packages/domain/src/postgres-order-transition-store.js";
 import { PostgresPaymentAdjustmentStore } from "../../../packages/domain/src/postgres-payment-adjustment-store.js";
+import { IntegrationHub } from "../../../packages/domain/src/integration-hub.js";
+import { PostgresIntegrationRegistryStore } from "../../../packages/domain/src/postgres-integration-registry-store.js";
 
 export interface PostgresApiOptions {
   pool: PostgresPool;
@@ -35,6 +37,7 @@ export function buildPostgresApp(options: PostgresApiOptions) {
     merchantBranches: options.merchantBranches ?? new PostgresMerchantBranchReader(options.pool),
     merchantBranchWriter: new PostgresMerchantBranchWriter(options.pool),
     auditEvents: new PostgresAuditEventStore(options.pool),
+    integrationHub: new IntegrationHub(new PostgresIntegrationRegistryStore(options.pool)),
     orderTransitions: new PostgresOrderTransitionStore(options.pool),
     customerPaymentAdjustments: options.customerPaymentAdjustments ?? (() => {
       const store = new PostgresPaymentAdjustmentStore(options.pool, options.now);
