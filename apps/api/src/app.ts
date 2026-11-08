@@ -527,6 +527,9 @@ app.patch<{
       if (error instanceof Error && error.message === "INVALID_INTEGRATION_REGISTRATION") {
         return reply.code(400).send({ error: "invalid_request" });
       }
+      if (error instanceof Error && error.message === "INTEGRATION_ALREADY_EXISTS") {
+        return reply.code(409).send({ error: "integration_already_exists" });
+      }
       throw error;
     }
     return reply.code(201).send({
