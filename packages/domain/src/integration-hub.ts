@@ -111,7 +111,9 @@ export class InMemoryIntegrationRegistryStore implements IntegrationRegistryStor
       item.tenantId === tenantId && (!family || item.family === family));
   }
   async put(registration: IntegrationRegistration): Promise<void> {
-    this.integrations.set(this.key(registration.tenantId, registration.id), registration);
+    const key = this.key(registration.tenantId, registration.id);
+    if (this.integrations.has(key)) throw new Error("INTEGRATION_ALREADY_EXISTS");
+    this.integrations.set(key, registration);
   }
   async recordEvent(event: IntegrationEvent): Promise<"inserted" | "duplicate"> {
     const key = [event.tenantId, event.integrationId, event.providerEventId].join(":");
