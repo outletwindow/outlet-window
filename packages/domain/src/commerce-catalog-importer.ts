@@ -76,7 +76,10 @@ export class CommerceCatalogImporter {
         seenCursors.add(cursor);
       }
 
-      const page = await this.adapter.importPage({ ...request, cursor });
+      const page = await this.adapter.importPage({
+        ...request,
+        ...(cursor !== undefined ? { cursor } : {})
+      });
       if (!page || !Array.isArray(page.products) || page.products.length > maxProducts ||
           !validUtc(page.capturedAtUtc) || typeof page.completed !== "boolean" ||
           (page.nextCursor !== undefined && (typeof page.nextCursor !== "string" ||
@@ -110,6 +113,11 @@ export class CommerceCatalogImporter {
       cursor = page.nextCursor;
     }
 
-    return { pagesImported, productsImported, completed: false, nextCursor: cursor };
+    return {
+      pagesImported,
+      productsImported,
+      completed: false,
+      ...(cursor !== undefined ? { nextCursor: cursor } : {})
+    };
   }
 }
