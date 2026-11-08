@@ -51,3 +51,6 @@ export * from "./payment-adjustment-provider.js";
 export * from "./integration-hub.js";
 
 export * from "./postgres-integration-registry-store.js";
+
+export * from "./postgres-payment-webhook-inbox.js";
+export * from "./payment-webhook-worker.js";
