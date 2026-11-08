@@ -12,4 +12,4 @@ RUN corepack enable && groupadd --system outlet && useradd --system --gid outlet
 COPY --from=build --chown=outlet:outlet /workspace /workspace
 USER outlet
 EXPOSE 3000
-CMD ["node", "dist/apps/api/src/server.js"]
+CMD ["node", "apps/api/dist/apps/api/src/server.js"]
