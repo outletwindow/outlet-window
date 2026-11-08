@@ -4,11 +4,12 @@ import {
   PostgresIamStore,
   type PostgresPool
 } from "../../../packages/domain/src/postgres-iam-store.js";
-import { buildApp, type AppOptions, type MerchantBranchReader, type CustomerDeliveryDestinationService } from "./app.js";
+import { buildApp, type AppOptions, type MerchantBranchReader, type CustomerDeliveryDestinationService, type CustomerPaymentAdjustmentActions } from "./app.js";
 import { PostgresMerchantBranchReader } from "../../../packages/domain/src/postgres-merchant-branch-reader.js";
 import { PostgresMerchantBranchWriter } from "../../../packages/domain/src/postgres-merchant-branch-writer.js";
 import { PostgresAuditEventStore } from "../../../packages/domain/src/postgres-audit-event-store.js";
 import { PostgresOrderTransitionStore } from "../../../packages/domain/src/postgres-order-transition-store.js";
+import { PostgresPaymentAdjustmentStore } from "../../../packages/domain/src/postgres-payment-adjustment-store.js";
 
 export interface PostgresApiOptions {
   pool: PostgresPool;
@@ -19,6 +20,7 @@ export interface PostgresApiOptions {
   serviceName?: string;
   version?: string;
   customerDeliveryDestinations?: CustomerDeliveryDestinationService;
+  customerPaymentAdjustments?: CustomerPaymentAdjustmentActions;
 }
 
 /**
@@ -34,6 +36,13 @@ export function buildPostgresApp(options: PostgresApiOptions) {
     merchantBranchWriter: new PostgresMerchantBranchWriter(options.pool),
     auditEvents: new PostgresAuditEventStore(options.pool),
     orderTransitions: new PostgresOrderTransitionStore(options.pool),
+    customerPaymentAdjustments: options.customerPaymentAdjustments ?? (() => {
+      const store = new PostgresPaymentAdjustmentStore(options.pool, options.now);
+      return {
+        consent: (input: { orderId: string; adjustmentId: string; customerId: string }) => store.consent(input),
+        decline: (input: { orderId: string; adjustmentId: string; customerId: string }) => store.decline(input)
+      };
+    })(),
     ...(options.customerDeliveryDestinations === undefined ? {} : { customerDeliveryDestinations: options.customerDeliveryDestinations }),
     readinessCheck: async () => {
       const requiredMigrations = [
