@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { Pool } from "pg";
 import { PostgresCustomerOrderDeliveryUpdater } from "../../../packages/domain/src/postgres-customer-order-delivery-updater.js";
 
@@ -11,12 +11,15 @@ integration("PostgreSQL customer delivery destination updater", () => {
   if (!pool) throw new Error("Pool must exist when DATABASE_URL is configured");
   const now = new Date("2026-11-08T12:00:02.000Z");
   const updater = new PostgresCustomerOrderDeliveryUpdater(pool, () => now);
-  const suffix = randomUUID();
+  let suffix = randomUUID();
   const tenantId = "platform";
-  const customerId = "delivery-customer-" + suffix;
-  const orderId = "delivery-order-" + suffix;
+  let customerId = "delivery-customer-" + suffix;
+  let orderId = "delivery-order-" + suffix;
 
   beforeEach(async () => {
+    suffix = randomUUID();
+    customerId = "delivery-customer-" + suffix;
+    orderId = "delivery-order-" + suffix;
     await pool.query(
       `INSERT INTO customer_orders
        (id,tenant_id,customer_id,idempotency_key,status,currency,total_minor)
@@ -31,10 +34,6 @@ integration("PostgreSQL customer delivery destination updater", () => {
     );
   });
 
-  afterEach(async () => {
-    await pool.query("DELETE FROM customer_order_edit_events WHERE order_id = $1", [orderId]);
-    await pool.query("DELETE FROM customer_orders WHERE id = $1", [orderId]);
-  });
   afterAll(async () => { await pool.end(); });
 
   const baseInput = () => ({
