@@ -36,6 +36,18 @@ describe("multi-family integration hub", () => {
     })).toMatchObject({ accepted: false, reason: "integration_not_found" });
   });
 
+  it("suspends active integrations idempotently and refuses disconnected integrations", async () => {
+    const store = new InMemoryIntegrationRegistryStore();
+    const hub = new IntegrationHub(store);
+    await hub.register(connected);
+    await expect(hub.suspend("tenant-a", "pos-main", "2026-11-08T10:02:00.000Z")).resolves.toBe("suspended");
+    await expect(hub.suspend("tenant-a", "pos-main", "2026-11-08T10:03:00.000Z")).resolves.toBe("suspended");
+    expect((await hub.list("tenant-a"))[0]?.status).toBe("suspended");
+    await hub.register({ ...connected, id: "pos-old", status: "disconnected" });
+    await expect(hub.suspend("tenant-a", "pos-old", "2026-11-08T10:04:00.000Z")).resolves.toBe("invalid_transition");
+    await expect(hub.suspend("tenant-b", "missing", "2026-11-08T10:04:00.000Z")).resolves.toBe("not_found");
+  });
+
   it("accepts connected integration events once and identifies provider retries", async () => {
     const hub = new IntegrationHub(new InMemoryIntegrationRegistryStore());
     await hub.register(connected);
