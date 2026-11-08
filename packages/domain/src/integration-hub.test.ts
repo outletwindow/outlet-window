@@ -48,6 +48,26 @@ describe("multi-family integration hub", () => {
     await expect(hub.suspend("tenant-b", "missing", "2026-11-08T10:04:00.000Z")).resolves.toBe("not_found");
   });
 
+  it("reconnects suspended and disconnected integrations to pending without claiming connectivity", async () => {
+    const store = new InMemoryIntegrationRegistryStore();
+    const hub = new IntegrationHub(store);
+    await hub.register({ ...connected, status: "suspended" });
+    await expect(hub.reconnect(
+      "tenant-a", "pos-main", "2026-11-08T10:02:00.000Z"
+    )).resolves.toBe("pending");
+    expect((await hub.list("tenant-a"))[0]?.status).toBe("pending");
+    await expect(hub.reconnect(
+      "tenant-a", "pos-main", "2026-11-08T10:03:00.000Z"
+    )).resolves.toBe("pending");
+    await hub.register({ ...connected, id: "pos-old", status: "disconnected" });
+    await expect(hub.reconnect(
+      "tenant-a", "pos-old", "2026-11-08T10:04:00.000Z"
+    )).resolves.toBe("pending");
+    await expect(hub.reconnect(
+      "tenant-b", "missing", "2026-11-08T10:04:00.000Z"
+    )).resolves.toBe("not_found");
+  });
+
   it("verifies provider connectivity through an injected adapter and persists the outcome", async () => {
     const store = new InMemoryIntegrationRegistryStore();
     const verifier = { verify: async () => ({ connected: true }) };
