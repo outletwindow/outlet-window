@@ -39,6 +39,10 @@ export interface IntegrationEventReceipt {
   reason?: "integration_not_found" | "integration_not_active" | "invalid_event";
 }
 
+export interface IntegrationSecretReferenceValidator {
+  isAuthorizedReference(tenantId: string, reference: string): Promise<boolean>;
+}
+
 export interface IntegrationConnectionVerifier {
   verify(registration: IntegrationRegistration): Promise<{ connected: boolean }>;
 }
@@ -48,6 +52,7 @@ export interface IntegrationRegistryStore {
   list(tenantId: string, family?: IntegrationFamily): Promise<IntegrationRegistration[]>;
   put(registration: IntegrationRegistration): Promise<void>;
   updateStatus(tenantId: string, integrationId: string, expectedStatus: IntegrationStatus, nextStatus: IntegrationStatus, updatedAtUtc: string): Promise<"updated" | "conflict">;
+  updateSecretReference(tenantId: string, integrationId: string, secretReference: string, updatedAtUtc: string): Promise<"updated" | "not_found">;
   recordEvent(event: IntegrationEvent): Promise<"inserted" | "duplicate">;
 }
 
@@ -65,7 +70,8 @@ function validUtc(value: string): boolean {
 export class IntegrationHub {
   constructor(
     private readonly store: IntegrationRegistryStore,
-    private readonly verifiers: ReadonlyMap<string, IntegrationConnectionVerifier> = new Map()
+    private readonly verifiers: ReadonlyMap<string, IntegrationConnectionVerifier> = new Map(),
+    private readonly secretReferenceValidator?: IntegrationSecretReferenceValidator
   ) {}
 
   async register(input: IntegrationRegistration): Promise<void> {
@@ -100,6 +106,31 @@ export class IntegrationHub {
       tenantId, integrationId, current.status, "suspended", updatedAtUtc
     );
     return result === "updated" ? "suspended" : "invalid_transition";
+  }
+
+  async rotateSecretReference(
+    tenantId: string,
+    integrationId: string,
+    secretReference: string,
+    updatedAtUtc: string
+  ): Promise<"rotated" | "not_found" | "invalid_reference" | "validator_not_configured"> {
+    if (!nonEmpty(tenantId) || !nonEmpty(integrationId) || !validUtc(updatedAtUtc)) {
+      throw new Error("INVALID_INTEGRATION_SECRET_ROTATION");
+    }
+    // Only opaque references are accepted; raw credentials must never enter this API.
+    if (!/^vault:\/\/[a-zA-Z0-9/_-]{3,450}$/.test(secretReference) || secretReference.includes("..")) {
+      return "invalid_reference";
+    }
+    if (!this.secretReferenceValidator) return "validator_not_configured";
+    if (!(await this.secretReferenceValidator.isAuthorizedReference(tenantId, secretReference))) {
+      return "invalid_reference";
+    }
+    const current = await this.store.get(tenantId, integrationId);
+    if (!current) return "not_found";
+    const updated = await this.store.updateSecretReference(
+      tenantId, integrationId, secretReference, updatedAtUtc
+    );
+    return updated === "updated" ? "rotated" : "not_found";
   }
 
   async reconnect(
@@ -183,6 +214,13 @@ export class InMemoryIntegrationRegistryStore implements IntegrationRegistryStor
     const key = this.key(registration.tenantId, registration.id);
     if (this.integrations.has(key)) throw new Error("INTEGRATION_ALREADY_EXISTS");
     this.integrations.set(key, registration);
+  }
+  async updateSecretReference(tenantId: string, integrationId: string, secretReference: string, updatedAtUtc: string): Promise<"updated" | "not_found"> {
+    const key = this.key(tenantId, integrationId);
+    const current = this.integrations.get(key);
+    if (!current) return "not_found";
+    this.integrations.set(key, { ...current, secretReference, updatedAtUtc });
+    return "updated";
   }
   async updateStatus(tenantId: string, integrationId: string, expectedStatus: IntegrationStatus, nextStatus: IntegrationStatus, updatedAtUtc: string): Promise<"updated" | "conflict"> {
     const key = this.key(tenantId, integrationId);
