@@ -6,7 +6,7 @@ function makePool(options: { receiptStatus?: string; receiptAdjustmentId?: strin
   const calls: Array<{ sql: string; values?: readonly unknown[] }> = [];
   const query = vi.fn(async (sql: string, values?: readonly unknown[]) => {
     calls.push({ sql, ...(values === undefined ? {} : { values }) });
-    if (sql.includes("SELECT id,adjustment_id,status FROM payment_provider_webhook_events")) {
+    if (sql.includes("SELECT id,adjustment_id,status,lease_owner FROM payment_provider_webhook_events")) {
       return { rows: [{ id: "receipt-1", adjustment_id: options.receiptAdjustmentId ?? "adjustment-1", status: options.receiptStatus ?? "processing", lease_owner: "worker-1" }], rowCount: 1 };
     }
     if (sql.includes("SELECT id,tenant_id,order_id,customer_id,currency,previous_total_minor,proposed_total_minor,status FROM customer_payment_adjustments")) {
