@@ -418,4 +418,28 @@ describe("Outlet Window API foundation", () => {
     } finally { await protectedApp.close(); }
   });
 
+
+  it("returns a clear conflict when a delivery change needs a payment adjustment", async () => {
+    const customer: Actor = {
+      id: "customer-8", role: "customer", active: true,
+      grants: [{ resource: "customer.order", actions: ["update"], scope: { orderId: "order-8" } }]
+    };
+    const protectedApp = buildApp({
+      resolveActor: async () => customer,
+      customerDeliveryDestinations: { update: async () => ({ outcome: "payment_adjustment_required" }) }
+    });
+    await protectedApp.ready();
+    try {
+      const response = await protectedApp.inject({
+        method: "PATCH", url: "/api/v1/customer/orders/order-8/delivery-destination",
+        payload: { latitude: 27.01, longitude: 49.65 }
+      });
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toMatchObject({
+        error: "payment_adjustment_required",
+        message: expect.stringContaining("authorized and confirmed")
+      });
+    } finally { await protectedApp.close(); }
+  });
+
 });
