@@ -17,6 +17,15 @@ export class PostgresSelfHealingStore implements RecoveryStateStore {
     return result.rows[0]?.found === true;
   }
 
+  async getAutomaticAttemptCount(incidentId: string): Promise<number> {
+    if (!/^[a-zA-Z0-9._:-]{1,160}$/.test(incidentId)) throw new Error("INVALID_RECOVERY_INCIDENT_ID");
+    const result = await this.pool.query<{ automatic_attempt_count: number }>(
+      "SELECT automatic_attempt_count FROM self_healing_incidents WHERE incident_id=$1",
+      [incidentId]
+    );
+    return result.rows[0]?.automatic_attempt_count ?? 0;
+  }
+
   async record(record: RecoveryRecord): Promise<void> {
     if (!/^[a-zA-Z0-9._:-]{1,160}$/.test(record.incidentId) ||
         !/^[a-zA-Z0-9._:-]{1,120}$/.test(record.service) ||
