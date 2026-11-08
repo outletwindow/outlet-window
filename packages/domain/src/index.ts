@@ -49,3 +49,5 @@ export * from "./postgres-payment-adjustment-store.js";
 
 export * from "./payment-adjustment-provider.js";
 export * from "./integration-hub.js";
+
+export * from "./postgres-integration-registry-store.js";
