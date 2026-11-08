@@ -39,7 +39,7 @@ services:
 
   api:
     <<: *runtime
-    command: ["node", "dist/apps/api/src/server.js"]
+    command: ["node", "apps/api/dist/apps/api/src/server.js"]
     ports:
       - "${API_PORT:-3000}:3000"
     healthcheck:
@@ -55,7 +55,7 @@ services:
 
   scheduled-worker:
     <<: *runtime
-    command: ["node", "dist/apps/worker/src/scheduled-main.js"]
+    command: ["node", "apps/worker/dist/apps/worker/src/scheduled-main.js"]
     environment:
       NODE_ENV: production
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
@@ -64,7 +64,7 @@ services:
 
   payment-webhook-worker:
     <<: *runtime
-    command: ["node", "dist/apps/worker/src/payment-webhook-main.js"]
+    command: ["node", "apps/worker/dist/apps/worker/src/payment-webhook-main.js"]
     environment:
       NODE_ENV: production
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
@@ -75,7 +75,7 @@ services:
   fulfillment-worker:
     <<: *runtime
     profiles: ["fulfillment"]
-    command: ["node", "dist/apps/worker/src/fulfillment-main.js"]
+    command: ["node", "apps/worker/dist/apps/worker/src/fulfillment-main.js"]
     environment:
       NODE_ENV: production
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
