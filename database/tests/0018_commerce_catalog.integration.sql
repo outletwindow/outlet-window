@@ -1,6 +1,6 @@
 BEGIN;
-INSERT INTO merchants (id, name, status, created_at, updated_at)
-VALUES ('catalog-merchant-a', 'Catalog Merchant A', 'active', now(), now())
+INSERT INTO merchants (id, legal_name, display_name, country_code, status, created_at, updated_at)
+VALUES ('catalog-merchant-a', 'Catalog Merchant A LLC', 'Catalog Merchant A', 'SA', 'active', now(), now())
 ON CONFLICT DO NOTHING;
 INSERT INTO tenant_integrations
 (id, tenant_id, family, provider_key, display_name, status, capabilities, created_at, updated_at)
