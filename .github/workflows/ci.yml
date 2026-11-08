@@ -94,6 +94,10 @@ jobs:
         env:
           PGPASSWORD: ci_only_password
         run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0012_branch_geolocation.integration.sql
+      - name: Verify customer payment adjustment consent and immutable event constraints
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0013_payment_adjustment_consents.integration.sql
       - name: Typecheck
         run: pnpm typecheck
       - name: Test
