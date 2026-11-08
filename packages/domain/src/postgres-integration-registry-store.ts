@@ -48,23 +48,19 @@ export class PostgresIntegrationRegistryStore implements IntegrationRegistryStor
   }
 
   async put(registration: IntegrationRegistration): Promise<void> {
-    await this.db.query(
+    const result = await this.db.query<{ id: string }>(
       `INSERT INTO tenant_integrations
        (id, tenant_id, family, provider_key, display_name, status, secret_reference,
         capabilities, created_at, updated_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10)
-       ON CONFLICT (tenant_id, id) DO UPDATE SET
-         family = EXCLUDED.family, provider_key = EXCLUDED.provider_key,
-         display_name = EXCLUDED.display_name, status = EXCLUDED.status,
-         secret_reference = EXCLUDED.secret_reference, capabilities = EXCLUDED.capabilities,
-         updated_at = EXCLUDED.updated_at
-       WHERE tenant_integrations.created_at = EXCLUDED.created_at
-         AND EXCLUDED.updated_at >= tenant_integrations.updated_at`,
+       ON CONFLICT (tenant_id, id) DO NOTHING
+       RETURNING id`,
       [registration.id, registration.tenantId, registration.family, registration.providerKey,
         registration.displayName, registration.status, registration.secretReference ?? null,
         JSON.stringify([...new Set(registration.capabilities)]),
         registration.createdAtUtc, registration.updatedAtUtc]
     );
+    if (result.rowCount !== 1) throw new Error("INTEGRATION_ALREADY_EXISTS");
   }
 
   async recordEvent(event: IntegrationEvent): Promise<"inserted" | "duplicate"> {
