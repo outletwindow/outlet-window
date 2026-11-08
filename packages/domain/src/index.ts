@@ -59,3 +59,5 @@ export * from "./self-healing.js";
 export * from "./postgres-self-healing-store.js";
 
 export * from "./virtual-try-on.js";
+
+export * from "./product-size-chart.js";
