@@ -69,8 +69,13 @@ integration("PostgreSQL scheduled task inbox leases", () => {
       id: inboxId, leaseToken: first[0]!.leaseToken!, nowUtc: "2026-11-08T10:00:06.000Z"
     })).toBe(false);
     expect(await store.complete({
-      id: inboxId, leaseToken: second[0]!.leaseToken!, nowUtc: "2026-11-08T10:00:07.000Z"
+      id: inboxId, leaseToken: second[0]!.leaseToken!, nowUtc: "2026-11-08T10:00:07.000Z",
+      providerReference: "provider-receipt-123"
     })).toBe(true);
+    const persisted = await pool.query(
+      "SELECT provider_reference,status FROM scheduled_task_inbox WHERE id = $1", [inboxId]
+    );
+    expect(persisted.rows[0]).toEqual({ provider_reference: "provider-receipt-123", status: "completed" });
   });
 
   it("retries and dead-letters only under the active lease", async () => {
