@@ -49,7 +49,7 @@ function storeFor(item: ScheduledTaskInboxRecord) {
   const completed: Array<{ providerReference?: string }> = [];
   const store: ScheduledTaskInboxStore = {
     async claimDue(input) { calls.push("claim:" + input.limit); return [item]; },
-    async complete(input) { calls.push("complete:" + input.leaseToken); completed.push({ providerReference: input.providerReference }); return true; },
+    async complete(input) { calls.push("complete:" + input.leaseToken); completed.push(input.providerReference === undefined ? {} : { providerReference: input.providerReference }); return true; },
     async retry(input) { calls.push("retry:" + input.errorCode); return true; },
     async deadLetter(input) { calls.push("dead:" + input.errorCode); return true; }
   };
