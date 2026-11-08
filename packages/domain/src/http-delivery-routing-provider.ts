@@ -60,14 +60,16 @@ export function createHttpDeliveryRoutingProvider(
       const payload: unknown = await response.json();
       if (typeof payload !== "object" || payload === null) return null;
       const data = payload as Record<string, unknown>;
-      if (!Number.isSafeInteger(data.distanceMeters) || !Number.isSafeInteger(data.durationSeconds) ||
+      if (!Number.isSafeInteger(data.distanceMeters) || (data.distanceMeters as number) < 0 ||
+          !Number.isSafeInteger(data.durationSeconds) || (data.durationSeconds as number) < 0 ||
           typeof data.providerReference !== "string" || !data.providerReference.trim() ||
-          data.providerReference.length > 240) return null;
+          data.providerReference.length > 240 ||
+          typeof data.estimatedAtUtc !== "string" || !Number.isFinite(Date.parse(data.estimatedAtUtc))) return null;
       return {
         distanceMeters: data.distanceMeters as number,
         durationSeconds: data.durationSeconds as number,
         providerReference: data.providerReference,
-        estimatedAtUtc: new Date().toISOString()
+        estimatedAtUtc: data.estimatedAtUtc
       };
     }
   };
