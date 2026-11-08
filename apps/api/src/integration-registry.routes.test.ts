@@ -12,7 +12,7 @@ const owner: Actor = {
   active: true,
   grants: [{
     resource: "merchant.integration",
-    actions: ["read", "create"],
+    actions: ["read", "create", "update"],
     scope: { merchantId: "merchant-1" }
   }]
 };
@@ -90,6 +90,30 @@ describe("merchant integration registry API", () => {
       url: "/api/v1/merchants/merchant-1/integrations"
     });
     expect(response.statusCode).toBe(401);
+  });
+
+  it("allows merchant admins to suspend their own integration and blocks cross-tenant access", async () => {
+    const { app, hub } = createApp();
+    const now = "2026-11-08T12:00:00.000Z";
+    await hub.register({
+      id: "pos-main", tenantId: "merchant-1", family: "pos",
+      providerKey: "generic-pos", displayName: "Main POS", status: "connected",
+      capabilities: ["inventory.read"], createdAtUtc: now, updatedAtUtc: now
+    });
+    const denied = await app.inject({
+      method: "POST",
+      url: "/api/v1/merchants/merchant-2/integrations/pos-main/suspend"
+    });
+    expect(denied.statusCode).toBe(403);
+    expect((await hub.list("merchant-1"))[0]?.status).toBe("connected");
+
+    const suspended = await app.inject({
+      method: "POST",
+      url: "/api/v1/merchants/merchant-1/integrations/pos-main/suspend"
+    });
+    expect(suspended.statusCode).toBe(200);
+    expect(suspended.json()).toMatchObject({ outcome: "suspended", integrationId: "pos-main" });
+    expect((await hub.list("merchant-1"))[0]?.status).toBe("suspended");
   });
 
   it("rejects malformed families and provider metadata", async () => {
