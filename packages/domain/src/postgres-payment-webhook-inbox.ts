@@ -20,23 +20,31 @@ export class PostgresPaymentWebhookInbox {
     providerEventId: string;
     rawBody: string;
     adjustmentId?: string;
+    eventType?: string;
+    normalizedStatus?: "succeeded" | "failed" | "ignored" | "unsupported";
+    providerReference?: string;
   }): Promise<PaymentWebhookReceipt> {
     if (!/^[a-zA-Z0-9._-]{1,100}$/.test(input.providerKey) ||
         !/^[a-zA-Z0-9._:-]{1,240}$/.test(input.providerEventId) ||
         typeof input.rawBody !== "string" || input.rawBody.length === 0 ||
         Buffer.byteLength(input.rawBody, "utf8") > 65_536 ||
-        (input.adjustmentId !== undefined && !/^[a-zA-Z0-9_-]{1,200}$/.test(input.adjustmentId))) {
+        (input.adjustmentId !== undefined && !/^[a-zA-Z0-9_-]{1,200}$/.test(input.adjustmentId)) ||
+        (input.eventType !== undefined && !/^[a-zA-Z0-9._:-]{1,160}$/.test(input.eventType)) ||
+        (input.normalizedStatus !== undefined && !["succeeded", "failed", "ignored", "unsupported"].includes(input.normalizedStatus)) ||
+        (input.providerReference !== undefined && (!input.providerReference.trim() || input.providerReference.length > 240))) {
       throw new Error("INVALID_PAYMENT_WEBHOOK_RECEIPT");
     }
     const digest = createSha256(input.rawBody);
     const id = randomUUID();
     const inserted = await this.pool.query<{ id: string }>(
       `INSERT INTO payment_provider_webhook_events
-       (id, provider_key, provider_event_id, payload_sha256, status, adjustment_id)
-       VALUES ($1,$2,$3,$4,'received',$5)
+       (id, provider_key, provider_event_id, payload_sha256, status, adjustment_id,
+        event_type, normalized_status, provider_reference)
+       VALUES ($1,$2,$3,$4,'received',$5,$6,$7,$8)
        ON CONFLICT (provider_key, provider_event_id) DO NOTHING
        RETURNING id`,
-      [id, input.providerKey, input.providerEventId, digest, input.adjustmentId ?? null]
+      [id, input.providerKey, input.providerEventId, digest, input.adjustmentId ?? null,
+        input.eventType ?? null, input.normalizedStatus ?? null, input.providerReference ?? null]
     );
     if (inserted.rowCount === 1) return { outcome: "received", receiptId: inserted.rows[0]!.id };
     const existing = await this.pool.query<{ id: string; payload_sha256: string }>(
