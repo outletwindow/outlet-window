@@ -36,6 +36,28 @@ BEGIN
   EXCEPTION WHEN check_violation THEN NULL;
   END;
 
+  -- Simulate the guarded lifecycle: consent -> provider pending -> provider-confirmed evidence.
+  UPDATE customer_payment_adjustments
+    SET status='consented', consented_at=now(), consent_actor_id='adjustment-customer'
+    WHERE id='adjustment-1';
+  UPDATE customer_payment_adjustments SET status='provider_pending'
+    WHERE id='adjustment-1' AND status='consented';
+  UPDATE customer_orders SET total_minor=12500, version=version+1
+    WHERE id='adjustment-order' AND tenant_id='platform' AND customer_id='adjustment-customer'
+      AND total_minor=10000 AND currency='SAR';
+  UPDATE customer_payment_adjustments
+    SET status='provider_confirmed', provider_reference='provider-confirmed-001',
+        provider_confirmed_at=now()
+    WHERE id='adjustment-1' AND status='provider_pending';
+  IF NOT EXISTS (
+    SELECT 1 FROM customer_orders WHERE id='adjustment-order' AND total_minor=12500
+  ) THEN RAISE EXCEPTION 'order total was not updated after provider confirmation'; END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM customer_payment_adjustments
+    WHERE id='adjustment-1' AND status='provider_confirmed'
+      AND provider_reference='provider-confirmed-001' AND provider_confirmed_at IS NOT NULL
+  ) THEN RAISE EXCEPTION 'provider confirmation evidence not persisted'; END IF;
+
   INSERT INTO customer_payment_adjustment_events
     (id,tenant_id,adjustment_id,actor_id,event_type,occurred_at,snapshot)
   VALUES ('adjustment-event-1','platform','adjustment-1',
