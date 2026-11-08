@@ -79,13 +79,20 @@ function productRecord(
   const currency = asText(offer?.priceCurrency);
   const rawPrice = offer?.price ?? offer?.lowPrice;
   const variants = asList(source.hasVariant).map(asObject).filter((value): value is JsonObject => Boolean(value))
-    .map((variant, index) => ({
-      externalId: asText(variant.sku) ?? asText(variant.productID) ?? `${externalId}-variant-${index + 1}`,
-      ...(asText(variant.size) ? { sizeLabel: asText(variant.size) } : {}),
-      ...(asText(variant.color) ? { colorLabel: asText(variant.color) } : {}),
-      ...(priceMinor(asObject(variant.offers)?.price) !== undefined ? { priceMinor: priceMinor(asObject(variant.offers)?.price) } : {}),
-      ...(asText(asObject(variant.offers)?.priceCurrency) ? { currency: asText(asObject(variant.offers)?.priceCurrency) } : {})
-    }));
+    .map((variant, index) => {
+      const variantOffer = asObject(variant.offers);
+      const variantSize = asText(variant.size);
+      const variantColor = asText(variant.color);
+      const variantPrice = priceMinor(variantOffer?.price);
+      const variantCurrency = asText(variantOffer?.priceCurrency);
+      return {
+        externalId: asText(variant.sku) ?? asText(variant.productID) ?? `${externalId}-variant-${index + 1}`,
+        ...(variantSize !== undefined ? { sizeLabel: variantSize } : {}),
+        ...(variantColor !== undefined ? { colorLabel: variantColor } : {}),
+        ...(variantPrice !== undefined ? { priceMinor: variantPrice } : {}),
+        ...(variantCurrency !== undefined ? { currency: variantCurrency } : {})
+      };
+    });
   const sizeChartUrl = absoluteHttps(source.sizeChartUrl ?? source.sizeGuideUrl, pageUrl, descriptor.websiteHosts);
   return {
     tenantId, providerKey: descriptor.providerKey, externalProductId: externalId,
