@@ -4,10 +4,10 @@ import { SallaOAuthTokenManager, type SallaOAuthTokenSet } from "./salla-oauth-t
 const now = new Date("2026-11-08T10:00:00.000Z");
 const initial: SallaOAuthTokenSet = {
   accessToken: "old-access", refreshToken: "single-use-refresh",
-  expiresAtUtc
+  expiresAtUtc: "2026-11-08T10:01:00.000Z"
 };
 function setup(expiresAtUtc = "2026-11-08T10:01:00.000Z") {
-  let tokens: SallaOAuthTokenSet | null = { ...initial };
+  let tokens: SallaOAuthTokenSet | null = { ...initial, expiresAtUtc };
   let refreshCalls = 0;
   let writes = 0;
   const vault = {
