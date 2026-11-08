@@ -37,7 +37,10 @@ export class PostgresDeliveryQuoteService {
   async quoteWithRoadEta(input: {
     request: DeliveryQuoteRequest;
     routingProvider: DeliveryRoutingProvider;
-  }): Promise<DeliveryQuoteResult | { status: "quoted"; serviceAreaId: string; currency: string; distanceFromZoneCenterMeters: number; eligibleBranches: readonly { merchantId: string; branchId: string }[]; rankedBranches: readonly RankedBranchRoute[]; quote: PricingQuote }> {
+  }): Promise<
+    | Exclude<DeliveryQuoteResult, { status: "quoted" }>
+    | { status: "quoted"; serviceAreaId: string; currency: string; distanceFromZoneCenterMeters: number; eligibleBranches: readonly { merchantId: string; branchId: string }[]; rankedBranches: readonly RankedBranchRoute[]; quote: PricingQuote }
+  > {
     const result = await this.quote(input.request);
     if (result.status !== "quoted") return result;
     const branches = await this.database.query<GeocodedBranchRow>(
