@@ -46,13 +46,14 @@ function record(overrides: Partial<ScheduledTaskInboxRecord> = {}): ScheduledTas
 
 function storeFor(item: ScheduledTaskInboxRecord) {
   const calls: string[] = [];
+  const completed: Array<{ providerReference?: string }> = [];
   const store: ScheduledTaskInboxStore = {
     async claimDue(input) { calls.push("claim:" + input.limit); return [item]; },
-    async complete(input) { calls.push("complete:" + input.leaseToken); return true; },
+    async complete(input) { calls.push("complete:" + input.leaseToken); completed.push({ providerReference: input.providerReference }); return true; },
     async retry(input) { calls.push("retry:" + input.errorCode); return true; },
     async deadLetter(input) { calls.push("dead:" + input.errorCode); return true; }
   };
-  return { store, calls };
+  return { store, calls, completed };
 }
 
 const base = {
@@ -73,6 +74,18 @@ describe("scheduled task inbox worker", () => {
     expect(result).toEqual({ claimed: 1, completed: 1, retried: 0, deadLettered: 0, leaseLost: 0 });
     expect(handled).toEqual([task.idempotencyKey]);
     expect(h.calls).toContain("complete:batch:inbox-1");
+  });
+
+  it("persists a provider receipt as part of lease completion", async () => {
+    const h = storeFor(record());
+    const handlers: ScheduledTaskConsumerHandlers = {
+      merchant_preparation: {
+        async handle() { return { providerReference: "merchant-job-42" }; }
+      }
+    };
+    const result = await runScheduledTaskInboxBatch({ ...base, ...h, handlers });
+    expect(result.completed).toBe(1);
+    expect(h.completed).toEqual([{ providerReference: "merchant-job-42" }]);
   });
 
   it("retries transient consumer failures with bounded backoff", async () => {
