@@ -187,3 +187,14 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [ ] Configure provider-specific fulfillment endpoints and sandbox-test merchant, shopper, and courier integrations before enabling the fulfillment profile.
 - [ ] Configure provider-specific payment webhook signature adapters and the production secret resolver before accepting real PSP events.
 - [ ] Implement remaining recurring expiry/reconciliation, integration inbox, stock synchronization, notification/alert, and other planned workers before claiming the whole product is fully autonomous.
+
+
+## Self-healing and automatic error recovery (development branch)
+- [x] Added a fail-closed recovery policy controller with explicit incident classification.
+- [x] Automatically permits only idempotent transient-job retries and recovery of leases explicitly confirmed expired.
+- [x] Added cooldown checks, per-incident attempt caps, structured recovery records, and deterministic outcomes.
+- [x] Security violations, data-loss risks, invariant violations, unknown failures, and non-idempotent operations require human review; the controller does not mutate them automatically.
+- [x] Added unit tests for allowed recovery, approval boundaries, cooldown, attempt limits, and malformed incidents.
+- [ ] Implement a durable PostgreSQL recovery incident store and worker that discovers incidents from API, queue, database, and integration health signals.
+- [ ] Wire approved safe executors to real idempotent queue replay and lease-recovery adapters; no arbitrary shell execution or unrestricted database repair.
+- [ ] Add alert delivery, recovery dashboard, incident correlation, and post-recovery verification against real services.
