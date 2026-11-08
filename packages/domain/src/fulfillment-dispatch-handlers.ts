@@ -47,7 +47,7 @@ export function createFulfillmentDispatchHandlers(
     const provider = providers[taskType];
     if (!provider) continue;
     const consumer: ScheduledTaskConsumer = {
-      async handle(task: ScheduledFulfillmentTaskEnvelope, idempotencyKey: string): Promise<void> {
+      async handle(task: ScheduledFulfillmentTaskEnvelope, idempotencyKey: string): Promise<void | { providerReference: string }> {
         if (task.taskType !== taskType || !task.target ||
             task.idempotencyKey !== idempotencyKey || !idempotencyKey.trim() ||
             !task.orderId.trim() || task.plan.orderId !== task.orderId ||
@@ -69,7 +69,7 @@ export function createFulfillmentDispatchHandlers(
           if (!result.providerReference?.trim()) {
             throw new ScheduledTaskConsumeError("MISSING_PROVIDER_REFERENCE");
           }
-          return;
+          return { providerReference: result.providerReference.trim() };
         }
         if (result.status === "retry") {
           throw new ScheduledTaskConsumeError(safeProviderCode(result.code));
