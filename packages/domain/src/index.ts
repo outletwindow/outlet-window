@@ -69,3 +69,4 @@ export * from "./commerce-catalog-importer.js";
 export * from "./postgres-commerce-catalog-store.js";
 
 export * from "./jsonld-commerce-catalog-adapter.js";
+export * from "./salla-commerce-catalog-adapter.js";
