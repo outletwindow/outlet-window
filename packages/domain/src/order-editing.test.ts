@@ -21,7 +21,7 @@ describe("paid order editing", () => {
 
   it("closes the window after five seconds and rejects invalid timestamps", () => {
     expect(evaluatePaidOrderEditWindow({
-      paymentCapturedAtUtc: capturedAt, nowUtc: "2026-11-08T12:00:05.001Z", status: "confirmed"
+      paymentCapturedAtUtc: capturedAt, nowUtc: "2026-11-08T12:00:05.000Z", status: "confirmed"
     })).toMatchObject({ allowed: false, reason: "edit_window_expired" });
     expect(evaluatePaidOrderEditWindow({
       paymentCapturedAtUtc: "bad", nowUtc: capturedAt, status: "confirmed"
