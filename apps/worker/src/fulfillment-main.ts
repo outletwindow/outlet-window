@@ -102,7 +102,7 @@ try {
     "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",
     [["0008_scheduled_task_inbox_leases", "0009_fulfillment_provider_receipts"]]
   );
-  if (migration.rowCount !== 1) throw new Error("scheduled_task_inbox_migration_required");
+  if (migration.rowCount !== 2) throw new Error("scheduled_task_inbox_migration_required");
   process.stdout.write(JSON.stringify({
     event: "fulfillment_worker_started", pollMs, batchSize,
     configuredHandlers: Object.keys(handlers)
