@@ -67,13 +67,18 @@ export function createHttpDeliveryRoutingProvider(
       }
       if (typeof payload !== "object" || payload === null) return null;
       const data = payload as Record<string, unknown>;
+      const timestamp = typeof data.estimatedAtUtc === "string"
+        ? Date.parse(data.estimatedAtUtc) : Number.NaN;
+      const canonicalTimestamp = Number.isFinite(timestamp)
+        ? new Date(timestamp).toISOString() : "";
+      const isUtcTimestamp = typeof data.estimatedAtUtc === "string" &&
+        data.estimatedAtUtc.endsWith("Z") &&
+        (data.estimatedAtUtc === canonicalTimestamp ||
+          data.estimatedAtUtc === canonicalTimestamp.replace(".000Z", "Z"));
       if (!Number.isSafeInteger(data.distanceMeters) || (data.distanceMeters as number) < 0 ||
           !Number.isSafeInteger(data.durationSeconds) || (data.durationSeconds as number) < 0 ||
           typeof data.providerReference !== "string" || !data.providerReference.trim() ||
-          data.providerReference.length > 240 ||
-          typeof data.estimatedAtUtc !== "string" ||
-          !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(data.estimatedAtUtc) ||
-          !Number.isFinite(Date.parse(data.estimatedAtUtc))) return null;
+          data.providerReference.length > 240 || !isUtcTimestamp) return null;
       return {
         distanceMeters: data.distanceMeters as number,
         durationSeconds: data.durationSeconds as number,
