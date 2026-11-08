@@ -65,6 +65,7 @@ export class PostgresPaymentWebhookInbox {
     receiptId: string;
     adjustmentId: string;
     actorId: string;
+    workerId: string;
     confirmed: boolean;
     providerReference?: string;
     failureCode?: string;
@@ -72,6 +73,7 @@ export class PostgresPaymentWebhookInbox {
     if (!/^[a-zA-Z0-9_-]{1,200}$/.test(input.receiptId) ||
         !/^[a-zA-Z0-9_-]{1,200}$/.test(input.adjustmentId) ||
         !/^[a-zA-Z0-9_-]{1,200}$/.test(input.actorId) ||
+        !/^[a-zA-Z0-9_-]{1,200}$/.test(input.workerId) ||
         (input.confirmed && (!input.providerReference?.trim() || input.providerReference.length > 240)) ||
         (!input.confirmed && input.failureCode !== undefined && !/^[A-Z0-9_]{1,100}$/.test(input.failureCode))) {
       throw new Error("INVALID_PAYMENT_WEBHOOK_RECONCILIATION");
@@ -80,11 +82,11 @@ export class PostgresPaymentWebhookInbox {
     const now = new Date().toISOString();
     try {
       await client.query("BEGIN");
-      const receipt = await client.query<{ id: string; adjustment_id: string | null; status: string }>(
-        "SELECT id,adjustment_id,status FROM payment_provider_webhook_events WHERE id=$1 FOR UPDATE",
+      const receipt = await client.query<{ id: string; adjustment_id: string | null; status: string; lease_owner: string | null }>(
+        "SELECT id,adjustment_id,status,lease_owner FROM payment_provider_webhook_events WHERE id=$1 FOR UPDATE",
         [input.receiptId]
       );
-      if (receipt.rowCount !== 1 || receipt.rows[0]!.status !== "processing") {
+      if (receipt.rowCount !== 1 || receipt.rows[0]!.status !== "processing" || receipt.rows[0]!.lease_owner !== input.workerId) {
         await client.query("ROLLBACK");
         return "not_processing";
       }
@@ -229,6 +231,7 @@ export class PostgresPaymentWebhookInbox {
     status: PaymentWebhookTerminalStatus;
     adjustmentId?: string;
     failureCode?: string;
+    workerId?: string;
   }): Promise<"finalized" | "not_processing"> {
     if (!/^[a-zA-Z0-9_-]{1,200}$/.test(input.receiptId) ||
         !["applied", "ignored", "failed"].includes(input.status) ||
@@ -239,9 +242,9 @@ export class PostgresPaymentWebhookInbox {
       `UPDATE payment_provider_webhook_events
        SET status=$2, processed_at=now(),
            adjustment_id=COALESCE($3, adjustment_id), failure_code=$4, lease_owner=NULL, lease_expires_at=NULL
-       WHERE id=$1 AND status='processing'
+       WHERE id=$1 AND status='processing' AND ($5::text IS NULL OR lease_owner=$5)
        RETURNING id`,
-      [input.receiptId, input.status, input.adjustmentId ?? null, input.failureCode ?? null]
+      [input.receiptId, input.status, input.adjustmentId ?? null, input.failureCode ?? null, input.workerId ?? null]
     );
     return result.rowCount === 1 ? "finalized" : "not_processing";
   }
