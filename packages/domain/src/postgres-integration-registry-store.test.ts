@@ -77,6 +77,26 @@ describe("PostgresIntegrationRegistryStore", () => {
     await expect(duplicateStore.put(registration)).rejects.toThrow("INTEGRATION_ALREADY_EXISTS");
   });
 
+  it("updates integration lifecycle state with tenant and expected-status compare-and-set", async () => {
+    const db = database({ rows: [{ id: "pos-main" }], rowCount: 1 });
+    const store = new PostgresIntegrationRegistryStore(db.client);
+    await expect(store.updateStatus(
+      "tenant-a", "pos-main", "connected", "suspended", "2026-11-08T10:02:00.000Z"
+    )).resolves.toBe("updated");
+    const [sql, values] = db.query.mock.calls[0] ?? [];
+    expect(sql).toContain("WHERE tenant_id = $1 AND id = $2 AND status = $3");
+    expect(sql).toContain("updated_at <= $5");
+    expect(values).toEqual([
+      "tenant-a", "pos-main", "connected", "suspended", "2026-11-08T10:02:00.000Z"
+    ]);
+
+    const conflictDb = database({ rows: [], rowCount: 0 });
+    const conflictStore = new PostgresIntegrationRegistryStore(conflictDb.client);
+    await expect(conflictStore.updateStatus(
+      "tenant-a", "pos-main", "connected", "suspended", "2026-11-08T10:02:00.000Z"
+    )).resolves.toBe("conflict");
+  });
+
   it("stores object payloads with a digest and reports inserted versus duplicate events", async () => {
     const insertedDb = database({ rows: [{ id: "event-1" }], rowCount: 1 });
     const inserted = new PostgresIntegrationRegistryStore(insertedDb.client);
