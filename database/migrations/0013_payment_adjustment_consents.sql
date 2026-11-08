@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS customer_payment_adjustments (
   updated_at timestamptz NOT NULL DEFAULT now(),
   FOREIGN KEY (tenant_id, order_id) REFERENCES customer_orders(tenant_id, id) ON DELETE RESTRICT,
   UNIQUE (tenant_id, idempotency_key),
+  UNIQUE (tenant_id, id),
   CHECK (expires_at > created_at),
   CHECK (
     (adjustment_direction = 'additional_charge' AND proposed_total_minor > previous_total_minor
@@ -61,7 +62,7 @@ CREATE TABLE IF NOT EXISTS customer_payment_adjustment_events (
   )),
   occurred_at timestamptz NOT NULL,
   snapshot jsonb NOT NULL CHECK (jsonb_typeof(snapshot) = 'object'),
-  FOREIGN KEY (adjustment_id) REFERENCES customer_payment_adjustments(id) ON DELETE RESTRICT
+  FOREIGN KEY (tenant_id, adjustment_id) REFERENCES customer_payment_adjustments(tenant_id, id) ON DELETE RESTRICT
 );
 CREATE INDEX IF NOT EXISTS customer_payment_adjustment_events_history_idx
   ON customer_payment_adjustment_events (tenant_id, adjustment_id, occurred_at, id);
