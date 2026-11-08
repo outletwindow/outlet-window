@@ -20,8 +20,9 @@ describe("multi-family integration hub", () => {
     await hub.register(connected);
     const result = await hub.list("tenant-a", "pos");
     expect(result).toHaveLength(1);
-    expect(result[0].secretReference).toBe("vault://tenant-a/pos-main");
-    expect(result[0].capabilities).toEqual(["catalog.read", "inventory.read", "inventory.write"]);
+    const registration = result[0]!;
+    expect(registration.secretReference).toBe("vault://tenant-a/pos-main");
+    expect(registration.capabilities).toEqual(["catalog.read", "inventory.read", "inventory.write"]);
   });
 
   it("isolates registrations by tenant", async () => {
