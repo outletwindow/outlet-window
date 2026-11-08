@@ -350,4 +350,72 @@ describe("Outlet Window API foundation", () => {
       expect(writes).toBe(0);
     } finally { await protectedApp.close(); }
   });
+
+  it("requires a verified customer grant before changing a delivery destination", async () => {
+    let updates = 0;
+    const customer: Actor = {
+      id: "customer-7", role: "customer", active: true,
+      grants: [{ resource: "customer.order", actions: ["update"], scope: { orderId: "order-7" } }]
+    };
+    const protectedApp = buildApp({
+      resolveActor: async () => customer,
+      customerDeliveryDestinations: { update: async input => {
+        updates += 1;
+        expect(input).toEqual({
+          customerId: "customer-7", actorId: "customer-7", orderId: "order-7",
+          destination: { latitude: 27.01, longitude: 49.65 }
+        });
+        return {
+          outcome: "updated", branchChanged: true,
+          quote: {
+            branchId: "branch-new", deliveryFeeMinor: 1500, totalMinor: 51500,
+            currency: "SAR", estimatedDeliveryAtUtc: "2026-11-08T13:00:00.000Z",
+            quoteReference: "server-quote", expiresAtUtc: "2026-11-08T12:05:00.000Z"
+          }
+        };
+      } }
+    });
+    await protectedApp.ready();
+    try {
+      const denied = await protectedApp.inject({
+        method: "PATCH", url: "/api/v1/customer/orders/order-other/delivery-destination",
+        payload: { latitude: 27.01, longitude: 49.65 }
+      });
+      expect(denied.statusCode).toBe(403);
+      expect(updates).toBe(0);
+
+      const changed = await protectedApp.inject({
+        method: "PATCH", url: "/api/v1/customer/orders/order-7/delivery-destination",
+        payload: { latitude: 27.01, longitude: 49.65, totalMinor: 1, branchId: "attacker-branch" }
+      });
+      expect(changed.statusCode).toBe(200);
+      expect(changed.json()).toMatchObject({
+        outcome: "updated", branchChanged: true,
+        delivery: { branchId: "branch-new", totalMinor: 51500, quoteReference: "server-quote" }
+      });
+      expect(updates).toBe(1);
+    } finally { await protectedApp.close(); }
+  });
+
+  it("rejects invalid customer destination coordinates before invoking pricing", async () => {
+    const customer: Actor = {
+      id: "customer-7", role: "customer", active: true,
+      grants: [{ resource: "customer.order", actions: ["update"], scope: { orderId: "order-7" } }]
+    };
+    let updates = 0;
+    const protectedApp = buildApp({
+      resolveActor: async () => customer,
+      customerDeliveryDestinations: { update: async () => { updates += 1; return { outcome: "not_found" }; } }
+    });
+    await protectedApp.ready();
+    try {
+      const response = await protectedApp.inject({
+        method: "PATCH", url: "/api/v1/customer/orders/order-7/delivery-destination",
+        payload: { latitude: 100, longitude: 49.65 }
+      });
+      expect(response.statusCode).toBe(400);
+      expect(updates).toBe(0);
+    } finally { await protectedApp.close(); }
+  });
+
 });
