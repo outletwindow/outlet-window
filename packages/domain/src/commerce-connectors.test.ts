@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CENTREPOINT_SA_PROVIDER, CommerceConnectorRegistry, hostMatchesAllowlist,
-  validateNormalizedCommerceProduct, type CommerceCatalogAdapter
+  validateNormalizedCommerceProduct, validateCommerceProductForProvider, type CommerceCatalogAdapter
 } from "./commerce-connectors.js";
 
 const adapter: CommerceCatalogAdapter = {
@@ -43,5 +43,10 @@ describe("universal commerce connectors", () => {
     expect(validateNormalizedCommerceProduct(product)).toBe(true);
     expect(validateNormalizedCommerceProduct({ ...product, canonicalUrl: "http://example.com" })).toBe(false);
     expect(validateNormalizedCommerceProduct({ ...product, priceMinor: -1 })).toBe(false);
+    expect(validateCommerceProductForProvider(product, CENTREPOINT_SA_PROVIDER)).toBe(true);
+    expect(validateCommerceProductForProvider({ ...product, providerKey: "other-store" }, CENTREPOINT_SA_PROVIDER)).toBe(false);
+    expect(validateCommerceProductForProvider({ ...product, canonicalUrl: "https://fake-shop.example/item" }, CENTREPOINT_SA_PROVIDER)).toBe(false);
+    expect(validateCommerceProductForProvider({ ...product, sizeChartUrl: "http://www.centrepointstores.com/size" }, CENTREPOINT_SA_PROVIDER)).toBe(false);
+    expect(validateCommerceProductForProvider({ ...product, sizeChartUrl: "https://fake-shop.example/size" }, CENTREPOINT_SA_PROVIDER)).toBe(false);
   });
 });
