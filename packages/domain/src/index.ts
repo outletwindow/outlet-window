@@ -22,6 +22,7 @@ export * from "./postgres-merchant-branch-writer.js";
 export * from "./postgres-audit-event-store.js";
 
 export * from "./order-lifecycle.js";
+export * from "./order-editing.js";
 
 export * from "./postgres-order-store.js";
 
