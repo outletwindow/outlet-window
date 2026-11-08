@@ -141,6 +141,7 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Added a provider-neutral HTTPS payment adjustment adapter with bearer credentials supplied by deployment configuration, redirect blocking, bounded timeouts, idempotency keys, and strict accepted-response validation.
 - [x] Added HMAC-SHA256 webhook signature verification over the exact raw request body, constant-time signature comparison, and a bounded timestamp tolerance.
 - [x] Added migration `0014_payment_provider_webhook_inbox` with unique provider/event identity, payload digest, processing state, and terminal processing timestamp constraints.
+- [x] Added migration `0016_payment_webhook_worker_envelope` with normalized event metadata, bounded attempts, due-time scheduling, and paired worker-lease constraints; PostgreSQL CI acceptance verifies valid/invalid leases and event status.
 - [x] Added SQL acceptance coverage for duplicate webhook rejection and valid/invalid receipt states; CI now runs this test.
 - [x] Added unit tests for HTTPS enforcement, idempotent request headers, malformed provider responses, tampered webhook bodies, and stale signatures.
 - [ ] Select and configure the actual payment service provider and its sandbox credentials; no production payment provider is connected.
@@ -148,8 +149,10 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Add a durable PostgreSQL payment webhook inbox foundation: persist only SHA-256 payload digests, deduplicate provider/event IDs, detect same-ID/different-payload collisions, claim receipts once, and finalize only claimed events; unit tests cover lifecycle and validation.
 - [x] Add a raw-body Fastify webhook intake route that verifies the exact-body HMAC signature and timestamp before recording provider event IDs, and wire the durable PostgreSQL inbox into the production composition root.
 - [ ] Supply a production secret-manager resolver for each enabled provider; the endpoint intentionally returns unavailable until one is configured.
-- [x] Add a transactional webhook reconciliation operation that locks the processing receipt and payment adjustment, conditionally updates the order total only after provider confirmation, appends immutable adjustment evidence, and finalizes the inbox receipt in the same PostgreSQL transaction; unit tests cover success, provider failure, stale order totals, duplicate state, and receipt/adjustment mismatch.
-- [ ] Implement a leased webhook consumer that claims received events, normalizes provider-specific success/failure events, calls the atomic reconciler, and retries recoverable failures without losing receipts.
+- [x] Add a transactional webhook reconciliation operation that locks the processing receipt and payment adjustment, fences reconciliation by the active worker lease, conditionally updates the order total only after provider confirmation, appends immutable adjustment evidence, and finalizes the inbox receipt in the same PostgreSQL transaction; unit tests cover success, provider failure, stale order totals, duplicate state, and receipt/adjustment mismatch.
+- [x] Add a leased payment webhook worker that claims due/expired-lease events with `SKIP LOCKED`, processes normalized success/failure/ignored envelopes, performs atomic reconciliation, applies bounded exponential retry, and dead-letters after 20 attempts.
+- [x] Add a standalone worker process (`pnpm worker:payment-webhooks`) with database/migration checks, configurable polling/batch/lease limits, structured outcome logs, and graceful shutdown.
+- [ ] Implement provider-specific event signature/field adapters and sandbox contract tests; the current API accepts a canonical normalized event envelope after HMAC verification, not a live PSP-specific payload contract.
 - [ ] Add an operational retry/reconciliation worker and provider-specific contract tests before enabling live capture/refund.
 
 
