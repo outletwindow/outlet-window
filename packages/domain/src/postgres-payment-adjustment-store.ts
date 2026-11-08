@@ -19,14 +19,15 @@ export class PostgresPaymentAdjustmentStore {
     idempotencyKey: string; quoteReference: string; currency: string;
     previousTotalMinor: number; proposedTotalMinor: number; expiresAtUtc: string;
   }): Promise<PaymentAdjustmentOutcome & { adjustmentId?: string; amountMinor?: number; direction?: "additional_charge" | "refund" }> {
-    const previous = BigInt(input.previousTotalMinor);
-    const proposed = BigInt(input.proposedTotalMinor);
     if (!input.tenantId.trim() || !input.orderId.trim() || !input.customerId.trim() ||
         input.actorId !== input.customerId || !/^[A-Z]{3}$/.test(input.currency) ||
-        !input.idempotencyKey.trim() || input.idempotencyKey.length > 200 ||
+        !input.idempotencyKey.trim() || input.idempotencyKey.length < 8 || input.idempotencyKey.length > 200 ||
         !input.quoteReference.trim() || input.quoteReference.length > 240 ||
         !Number.isSafeInteger(input.previousTotalMinor) || !Number.isSafeInteger(input.proposedTotalMinor) ||
-        previous < 0n || proposed < 0n || previous === proposed) throw new Error("invalid_payment_adjustment");
+        input.previousTotalMinor < 0 || input.proposedTotalMinor < 0 ||
+        input.previousTotalMinor === input.proposedTotalMinor) throw new Error("invalid_payment_adjustment");
+    const previous = BigInt(input.previousTotalMinor);
+    const proposed = BigInt(input.proposedTotalMinor);
     const expires = Date.parse(input.expiresAtUtc);
     const now = this.now();
     if (!Number.isFinite(expires) || expires <= now.getTime() || expires > now.getTime() + 15 * 60_000) {
@@ -56,15 +57,20 @@ export class PostgresPaymentAdjustmentStore {
           input.currency,direction,amount,input.previousTotalMinor,input.proposedTotalMinor,input.expiresAtUtc]
       );
       if (inserted.rowCount !== 1) {
-        const existing = await client.query<{id:string;amount_minor:string;adjustment_direction:string}>(
-          "SELECT id,amount_minor,adjustment_direction FROM customer_payment_adjustments WHERE tenant_id=$1 AND idempotency_key=$2",
+        const existing = await client.query<{id:string;amount_minor:string;adjustment_direction:string;order_id:string;customer_id:string;currency:string;previous_total_minor:string;proposed_total_minor:string;quote_reference:string}>(
+          "SELECT id,amount_minor,adjustment_direction,order_id,customer_id,currency,previous_total_minor,proposed_total_minor,quote_reference FROM customer_payment_adjustments WHERE tenant_id=$1 AND idempotency_key=$2",
           [input.tenantId,input.idempotencyKey]
         );
         await client.query("COMMIT");
-        return existing.rowCount === 1 ? {
-          outcome: "created", adjustmentId: existing.rows[0]!.id,
-          amountMinor: Number(existing.rows[0]!.amount_minor),
-          direction: existing.rows[0]!.adjustment_direction as "additional_charge" | "refund"
+        if (existing.rowCount !== 1) return { outcome: "conflict" };
+        const prior = existing.rows[0]!;
+        const sameRequest = prior.order_id === input.orderId && prior.customer_id === input.customerId &&
+          prior.currency === input.currency && BigInt(prior.previous_total_minor) === previous &&
+          BigInt(prior.proposed_total_minor) === proposed && prior.quote_reference === input.quoteReference;
+        return sameRequest ? {
+          outcome: "created", adjustmentId: prior.id,
+          amountMinor: Number(prior.amount_minor),
+          direction: prior.adjustment_direction as "additional_charge" | "refund"
         } : { outcome: "conflict" };
       }
       await client.query(
