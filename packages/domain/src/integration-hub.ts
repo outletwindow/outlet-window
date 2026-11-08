@@ -102,6 +102,26 @@ export class IntegrationHub {
     return result === "updated" ? "suspended" : "invalid_transition";
   }
 
+  async reconnect(
+    tenantId: string,
+    integrationId: string,
+    updatedAtUtc: string
+  ): Promise<"pending" | "not_found" | "invalid_transition"> {
+    if (!nonEmpty(tenantId) || !nonEmpty(integrationId) || !validUtc(updatedAtUtc)) {
+      throw new Error("INVALID_INTEGRATION_STATUS_UPDATE");
+    }
+    const current = await this.store.get(tenantId, integrationId);
+    if (!current) return "not_found";
+    if (current.status === "pending") return "pending";
+    if (current.status !== "suspended" && current.status !== "disconnected") {
+      return "invalid_transition";
+    }
+    const updated = await this.store.updateStatus(
+      tenantId, integrationId, current.status, "pending", updatedAtUtc
+    );
+    return updated === "updated" ? "pending" : "invalid_transition";
+  }
+
   async verifyConnection(
     tenantId: string,
     integrationId: string,
