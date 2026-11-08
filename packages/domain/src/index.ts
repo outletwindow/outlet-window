@@ -61,3 +61,5 @@ export * from "./postgres-self-healing-store.js";
 export * from "./virtual-try-on.js";
 
 export * from "./product-size-chart.js";
+
+export * from "./commerce-connectors.js";
