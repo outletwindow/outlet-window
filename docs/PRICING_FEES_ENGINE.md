@@ -168,3 +168,11 @@ Specification only. No final prices, commercial rates, tax treatment or live pri
 - The final quote retains the original quote expiry and rule version; if no valid route or valid pricing rule exists, the operation fails closed.
 - Unit tests assert the selected branch, road distance and recalculated integer fee.
 - A production routing provider is still not configured. Do not expose this as a customer quote until a trusted provider is wired and its route freshness, coverage, rate limits and service terms are verified.
+
+## 20. Secure HTTP routing gateway adapter
+- Added a provider-neutral HTTP adapter for a deployment-controlled routing gateway.
+- Requires HTTPS, bearer credentials, redirect rejection and bounded request timeout (250–15,000 ms).
+- Sends origin/destination coordinates in metric units; normalizes valid distance, duration and provider reference into a fresh estimate.
+- Treats no-route responses as unavailable, classifies transient HTTP failures without logging or exposing provider response bodies, and rejects malformed payloads.
+- Unit tests cover request shape, HTTPS/credential enforcement, timeout validation, no-route behavior, malformed data and transient errors.
+- This is an adapter contract only. No external map vendor is selected or configured, no production credentials exist in the repository, and live road ETA remains unavailable until deployment supplies an approved gateway and secrets.
