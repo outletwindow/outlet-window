@@ -48,6 +48,44 @@ describe("multi-family integration hub", () => {
     await expect(hub.suspend("tenant-b", "missing", "2026-11-08T10:04:00.000Z")).resolves.toBe("not_found");
   });
 
+  it("verifies provider connectivity through an injected adapter and persists the outcome", async () => {
+    const store = new InMemoryIntegrationRegistryStore();
+    const verifier = { verify: async () => ({ connected: true }) };
+    const hub = new IntegrationHub(store, new Map([["generic-pos", verifier]]));
+    await hub.register({ ...connected, status: "pending" });
+    await expect(hub.verifyConnection(
+      "tenant-a", "pos-main", "2026-11-08T10:02:00.000Z"
+    )).resolves.toBe("connected");
+    expect((await hub.list("tenant-a"))[0]?.status).toBe("connected");
+  });
+
+  it("marks failed provider verification as degraded and never verifies suspended integrations", async () => {
+    const store = new InMemoryIntegrationRegistryStore();
+    const verifier = { verify: async () => ({ connected: false }) };
+    const hub = new IntegrationHub(store, new Map([["generic-pos", verifier]]));
+    await hub.register({ ...connected, status: "pending" });
+    await expect(hub.verifyConnection(
+      "tenant-a", "pos-main", "2026-11-08T10:02:00.000Z"
+    )).resolves.toBe("verification_failed");
+    expect((await hub.list("tenant-a"))[0]?.status).toBe("degraded");
+    await hub.suspend("tenant-a", "pos-main", "2026-11-08T10:03:00.000Z");
+    await expect(hub.verifyConnection(
+      "tenant-a", "pos-main", "2026-11-08T10:04:00.000Z"
+    )).resolves.toBe("invalid_transition");
+  });
+
+  it("reports missing provider adapters and missing tenant integrations without changing state", async () => {
+    const hub = new IntegrationHub(new InMemoryIntegrationRegistryStore());
+    await hub.register({ ...connected, status: "pending" });
+    await expect(hub.verifyConnection(
+      "tenant-a", "pos-main", "2026-11-08T10:02:00.000Z"
+    )).resolves.toBe("provider_not_configured");
+    await expect(hub.verifyConnection(
+      "tenant-b", "pos-main", "2026-11-08T10:02:00.000Z"
+    )).resolves.toBe("not_found");
+    expect((await hub.list("tenant-a"))[0]?.status).toBe("pending");
+  });
+
   it("accepts connected integration events once and identifies provider retries", async () => {
     const hub = new IntegrationHub(new InMemoryIntegrationRegistryStore());
     await hub.register(connected);
