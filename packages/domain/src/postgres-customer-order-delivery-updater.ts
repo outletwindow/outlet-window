@@ -23,7 +23,7 @@ type LockedOrder = {
 export type UpdateDeliveryDestinationResult =
   | { outcome: "updated"; branchChanged: boolean; quote: RepricedDeliveryQuote }
   | { outcome: "not_found" | "edit_window_expired" | "fulfillment_already_started" |
-      "outside_service_area" | "invalid_destination" | "invalid_quote" | "version_conflict" };
+      "outside_service_area" | "invalid_destination" | "invalid_service_area" | "invalid_quote" | "version_conflict" };
 
 function asSnapshot(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value)
