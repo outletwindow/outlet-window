@@ -11,7 +11,8 @@ Last updated: 2026-11-08
 - [x] Authorization tests for tenant and branch isolation.
 
 ## Implemented domain contracts (not yet connected to live services)
-- [x] Virtual try-on request contract for photo, video, and live-camera modes, explicit consent metadata, private media references, expiring sessions/results, and validation tests. AI rendering provider, camera/video client capture, media gateway, persistence, billing/quotas, and customer UI remain pending.
+- [x] Virtual try-on request contract for photo, video, and live-camera modes, explicit consent metadata, private media references, expiring sessions/results, and validation tests. Each try-on request now requires a source-attributed product size-chart reference.
+- [x] Product size-chart domain contract for per-product/per-variant measurement tables, body-vs-garment distinction, source URL/reference, extraction provenance/confidence, content hash, and validation tests. The first merchant's site-specific extraction adapter, scheduled refresh, PostgreSQL persistence, admin review UI, and live fit guidance remain pending.
 - [x] Versioned audit event contract with recursive secret redaction and metadata limits.
 - [x] API request correlation ID response header.
 - [x] Identity lifecycle and session descriptor validation.
