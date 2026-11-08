@@ -9,7 +9,7 @@ type InboxRow = {
   attempt_count: number;
   created_at: Date | string; updated_at: Date | string; available_at: Date | string;
   lease_token: string | null; lease_expires_at: Date | string | null;
-  processed_at: Date | string | null; last_error_code: string | null;
+  processed_at: Date | string | null; last_error_code: string | null; provider_reference: string | null;
 };
 const iso = (value: Date | string) => new Date(value).toISOString();
 
@@ -23,7 +23,8 @@ function fromRow(row: InboxRow): ScheduledTaskInboxRecord {
     ...(row.lease_token === null ? {} : { leaseToken: row.lease_token }),
     ...(row.lease_expires_at === null ? {} : { leaseExpiresAtUtc: iso(row.lease_expires_at) }),
     ...(row.processed_at === null ? {} : { processedAtUtc: iso(row.processed_at) }),
-    ...(row.last_error_code === null ? {} : { lastErrorCode: row.last_error_code })
+    ...(row.last_error_code === null ? {} : { lastErrorCode: row.last_error_code }),
+    ...(row.provider_reference === null ? {} : { providerReference: row.provider_reference })
   };
 }
 
@@ -60,13 +61,18 @@ export class PostgresScheduledTaskInboxStore implements ScheduledTaskInboxStore 
     return result.rows.map(fromRow);
   }
 
-  async complete(input: { id: string; leaseToken: string; nowUtc: string }): Promise<boolean> {
+  async complete(input: { id: string; leaseToken: string; nowUtc: string; providerReference?: string }): Promise<boolean> {
+    if (input.providerReference !== undefined &&
+        (!input.providerReference.trim() || input.providerReference.length > 500)) {
+      throw new Error("invalid_provider_reference");
+    }
     const result = await this.pool.query(
       `UPDATE scheduled_task_inbox
        SET status = 'completed', processed_at = $3, updated_at = $3,
+           provider_reference = $4,
            lease_token = NULL, lease_expires_at = NULL, last_error_code = NULL
        WHERE id = $1 AND status = 'processing' AND lease_token = $2 AND lease_expires_at > $3`,
-      [input.id, input.leaseToken, input.nowUtc]
+      [input.id, input.leaseToken, input.nowUtc, input.providerReference ?? null]
     );
     return result.rowCount === 1;
   }
