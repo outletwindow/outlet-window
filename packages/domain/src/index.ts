@@ -42,3 +42,5 @@ export * from "./order-pricing.js";
 export * from "./postgres-delivery-quote-service.js";
 
 export * from "./delivery-routing.js";
+
+export * from "./http-delivery-routing-provider.js";
