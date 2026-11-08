@@ -88,3 +88,53 @@ describe("atomic payment webhook reconciliation", () => {
     expect(mock.calls.some(call => call.sql.includes("SELECT id,tenant_id,order_id"))).toBe(false);
   });
 });
+
+describe("payment webhook lease recovery", () => {
+  it("claims one due event with a bounded lease and returns only normalized metadata", async () => {
+    const query = vi.fn(async () => ({
+      rows: [{
+        id: "receipt-lease-1", provider_key: "psp-a", provider_event_id: "evt-lease-1",
+        adjustment_id: "adjustment-1", event_type: "payment.adjustment",
+        normalized_status: "succeeded" as const, provider_reference: "psp-ref-1",
+        failure_code: null, attempt_count: 1
+      }], rowCount: 1
+    }));
+    const pool = { query, connect: vi.fn() } as unknown as PostgresPool;
+    const inbox = new PostgresPaymentWebhookInbox(pool);
+    await expect(inbox.claimNext("worker-1", 30)).resolves.toMatchObject({
+      receiptId: "receipt-lease-1", providerKey: "psp-a",
+      normalizedStatus: "succeeded", attemptCount: 1
+    });
+    expect(query.mock.calls[0]?.[0]).toContain("FOR UPDATE SKIP LOCKED");
+    expect(query.mock.calls[0]?.[0]).toContain("lease_expires_at <= now()");
+  });
+
+  it("reschedules recoverable errors and dead-letters after the bounded attempt limit", async () => {
+    const query = vi.fn()
+      .mockResolvedValueOnce({ rows: [{ id: "receipt-lease-1", attempt_count: 2 }], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ id: "receipt-lease-2", attempt_count: 20 }], rowCount: 1 });
+    const pool = { query, connect: vi.fn() } as unknown as PostgresPool;
+    const inbox = new PostgresPaymentWebhookInbox(pool);
+    await expect(inbox.releaseForRetry({
+      receiptId: "receipt-lease-1", workerId: "worker-1", delaySeconds: 30,
+      failureCode: "PROVIDER_TEMPORARY_ERROR"
+    })).resolves.toBe("rescheduled");
+    await expect(inbox.releaseForRetry({
+      receiptId: "receipt-lease-2", workerId: "worker-1", delaySeconds: 30,
+      failureCode: "PROVIDER_TEMPORARY_ERROR"
+    })).resolves.toBe("dead_lettered");
+    expect(query.mock.calls[0]?.[0]).toContain("lease_owner=$2");
+    expect(query.mock.calls[0]?.[0]).toContain("attempt_count >= 20");
+  });
+
+  it("rejects invalid lease and retry settings", async () => {
+    const query = vi.fn();
+    const pool = { query, connect: vi.fn() } as unknown as PostgresPool;
+    const inbox = new PostgresPaymentWebhookInbox(pool);
+    await expect(inbox.claimNext("worker-1", 2)).rejects.toThrow("INVALID_PAYMENT_WEBHOOK_LEASE");
+    await expect(inbox.releaseForRetry({
+      receiptId: "receipt-1", workerId: "worker-1", delaySeconds: 0, failureCode: "RETRY"
+    })).rejects.toThrow("INVALID_PAYMENT_WEBHOOK_RETRY");
+    expect(query).not.toHaveBeenCalled();
+  });
+});
