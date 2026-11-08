@@ -10,6 +10,15 @@ Last updated: 2026-11-08
 - [x] Domain package with deny-by-default authorization.
 - [x] Authorization tests for tenant and branch isolation.
 
+## Salla Merchant API connector progress
+- [x] Added a Salla-specific catalog adapter using the documented Merchant API products endpoint `GET https://api.salla.dev/admin/v2/products`, page-based pagination, and the `products.read` scope.
+- [x] Added tenant/integration-scoped access-token injection; the adapter never persists or embeds access tokens.
+- [x] Normalizes product IDs, names, customer URLs, prices/currencies, images, SKU/variant identifiers, and stock signals when the API response includes them.
+- [x] Added unit tests for product mapping, page pagination, tenant-scoped token lookup, invalid store host, invalid cursor, unavailable token, and malformed API response.
+- [ ] Live OAuth installation, secure token refresh/rotation, Salla webhook signature verification and durable event intake, actual Salla sandbox account, and end-to-end sync remain pending.
+- [ ] Salla product quantity endpoint supports branch filtering; implement and test a separate branch inventory sync before claiming branch-level live stock availability. Product-level quantity must not be treated as branch-specific stock.
+- [ ] Merchant must authorize the `products.read` scope; no real credentials or store connection are configured.
+
 ## Merchant catalog adapter progress
 - [x] Added a provider-neutral JSON-LD product-page adapter for Schema.org Product/ProductGroup data, offers, image URLs, explicit variants/sizes, source timestamps, and SHA-256 provenance.
 - [x] Adapter validates HTTPS source and final redirect hosts against the provider allowlist, caps HTML response size, rejects unsupported cursor pagination, and never fabricates missing product fields.
