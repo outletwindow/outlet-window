@@ -39,7 +39,7 @@ export class PostgresDeliveryQuoteService {
     routingProvider: DeliveryRoutingProvider;
   }): Promise<
     | Exclude<DeliveryQuoteResult, { status: "quoted" }>
-    | { status: "quoted"; serviceAreaId: string; currency: string; distanceFromZoneCenterMeters: number; eligibleBranches: readonly { merchantId: string; branchId: string }[]; rankedBranches: readonly RankedBranchRoute[]; quote: PricingQuote }
+    | { status: "quoted"; serviceAreaId: string; currency: string; distanceFromZoneCenterMeters: number; eligibleBranches: readonly { merchantId: string; branchId: string }[]; rankedBranches: readonly RankedBranchRoute[]; selectedBranch: { merchantId: string; branchId: string }; routeDistanceMeters: number; quote: PricingQuote }
   > {
     const result = await this.quote(input.request);
     if (result.status !== "quoted") return result;
@@ -64,8 +64,40 @@ export class PostgresDeliveryQuoteService {
       provider: input.routingProvider,
       nowUtc: input.request.nowUtc
     });
-    if (rankedBranches.length === 0) return { status: "no_routable_branch" };
-    return { ...result, rankedBranches };
+    const selected = rankedBranches[0];
+    if (!selected) return { status: "no_routable_branch" };
+
+    const ruleResult = await this.database.query<RuleRow>(
+      `SELECT id, version, currency, calculation_config
+       FROM delivery_pricing_rules
+       WHERE tenant_id = $1 AND id = $2 AND version = $3
+         AND service_area_id = $4 AND status = 'active'
+         AND approved_by IS NOT NULL AND approved_at IS NOT NULL`,
+      [input.request.tenantId, result.quote.ruleId, result.quote.ruleVersion, result.serviceAreaId]
+    );
+    const config = ruleResult.rows[0]?.calculation_config;
+    const baseFee = config?.base_fee_minor;
+    const perKm = config?.per_km_minor;
+    if (config?.method !== "fixed_plus_distance" ||
+        typeof baseFee !== "number" || !Number.isSafeInteger(baseFee) || baseFee < 0 ||
+        typeof perKm !== "number" || !Number.isSafeInteger(perKm) || perKm < 0) {
+      return { status: "no_active_pricing_rule" };
+    }
+    const routeFee = baseFee + Math.ceil(selected.route.distanceMeters / 1000) * perKm;
+    if (!Number.isSafeInteger(routeFee)) return { status: "no_active_pricing_rule" };
+    const now = Date.parse(input.request.nowUtc);
+    const quote = calculatePricingQuote({
+      quoteId: result.quote.quoteId, ruleId: result.quote.ruleId,
+      ruleVersion: result.quote.ruleVersion, currency: result.quote.currency,
+      components: [{ kind: "delivery", amountMinor: routeFee, label: "Delivery fee (road distance)" }],
+      createdAtUtc: new Date(now).toISOString(),
+      expiresAtUtc: result.quote.expiresAtUtc
+    });
+    return {
+      ...result, rankedBranches, quote,
+      selectedBranch: { merchantId: selected.merchantId, branchId: selected.branchId },
+      routeDistanceMeters: selected.route.distanceMeters
+    };
   }
 
   async quote(request: DeliveryQuoteRequest): Promise<DeliveryQuoteResult> {
