@@ -58,6 +58,15 @@ describe("merchant integration registry API", () => {
     });
     expect(response.json().integration).not.toHaveProperty("secretReference");
     expect(response.json().integration).not.toHaveProperty("secret");
+    const duplicate = await app.inject({
+      method: "POST", url: "/api/v1/merchants/merchant-1/integrations",
+      payload: {
+        id: "pos-main", family: "pos", providerKey: "generic-pos",
+        displayName: "Main branch POS", capabilities: ["catalog.read"]
+      }
+    });
+    expect(duplicate.statusCode).toBe(409);
+    expect(duplicate.json()).toEqual({ error: "integration_already_exists" });
   });
 
   it("denies cross-merchant registration before writing", async () => {
