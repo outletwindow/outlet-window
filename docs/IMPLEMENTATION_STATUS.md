@@ -145,7 +145,8 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Added unit tests for HTTPS enforcement, idempotent request headers, malformed provider responses, tampered webhook bodies, and stale signatures.
 - [ ] Select and configure the actual payment service provider and its sandbox credentials; no production payment provider is connected.
 - [ ] Implement the authenticated customer flow that creates an adjustment intent directly from a trusted fresh delivery quote, then invokes the provider only after explicit consent.
-- [ ] Add a raw-body webhook API endpoint that verifies provider signatures, persists/deduplicates the provider event, reconciles adjustment state transactionally, and safely handles retries.
+- [x] Add a durable PostgreSQL payment webhook inbox foundation: persist only SHA-256 payload digests, deduplicate provider/event IDs, detect same-ID/different-payload collisions, claim receipts once, and finalize only claimed events; unit tests cover lifecycle and validation.
+- [ ] Add a raw-body webhook API endpoint that verifies provider signatures before recording receipts, reconciles adjustment state and inbox terminal state in one transaction, and safely handles retries.
 - [ ] Add an operational retry/reconciliation worker and provider-specific contract tests before enabling live capture/refund.
 
 
