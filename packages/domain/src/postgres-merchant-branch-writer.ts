@@ -29,9 +29,20 @@ export interface MerchantBranchWriter {
 
 /** PostgreSQL writer. Every write is constrained by merchant ownership in SQL. */
 export class PostgresMerchantBranchWriter implements MerchantBranchWriter {
+  private validateCoordinates(input: { latitude?: number; longitude?: number }): void {
+    const hasLatitude = input.latitude !== undefined;
+    const hasLongitude = input.longitude !== undefined;
+    if (hasLatitude !== hasLongitude ||
+        (hasLatitude && (!Number.isFinite(input.latitude) || input.latitude! < -90 || input.latitude! > 90)) ||
+        (hasLongitude && (!Number.isFinite(input.longitude) || input.longitude! < -180 || input.longitude! > 180))) {
+      throw new Error("invalid_branch_coordinates");
+    }
+  }
+
   constructor(private readonly database: PostgresQueryable) {}
 
   async createBranch(input: CreateMerchantBranchInput): Promise<CreateMerchantBranchResult> {
+    this.validateCoordinates(input);
     const result = await this.database.query<{ id: string }>(
       `INSERT INTO merchant_branches
          (id, merchant_id, display_name, city_code, address, latitude, longitude, status)
@@ -60,6 +71,7 @@ export class PostgresMerchantBranchWriter implements MerchantBranchWriter {
     address?: Readonly<Record<string, unknown>>;
     status: "active" | "inactive";
   }): Promise<UpdateMerchantBranchResult> {
+    this.validateCoordinates(input);
     const result = await this.database.query<{ id: string }>(
       `UPDATE merchant_branches AS b
        SET display_name = $3, city_code = $4,
