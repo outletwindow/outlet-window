@@ -40,7 +40,7 @@ describe("PostgresCommerceCatalogStore",()=>{
  it("rolls back the entire page if any variant write fails",async()=>{
   const x=setup();
   x.query.mockImplementation(async(sql:string,values?:readonly unknown[])=>{
-   x.calls.push({sql,values});
+   x.calls.push({sql,...(values !== undefined ? { values } : {})});
    if(sql.includes("INSERT INTO commerce_catalog_products")) return {rows:[{id:"product-id"}],rowCount:1};
    if(sql.includes("INSERT INTO commerce_catalog_variants")) throw new Error("db failure");
    return {rows:[],rowCount:1};
