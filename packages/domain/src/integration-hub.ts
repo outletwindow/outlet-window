@@ -39,6 +39,10 @@ export interface IntegrationEventReceipt {
   reason?: "integration_not_found" | "integration_not_active" | "invalid_event";
 }
 
+export interface IntegrationConnectionVerifier {
+  verify(registration: IntegrationRegistration): Promise<{ connected: boolean }>;
+}
+
 export interface IntegrationRegistryStore {
   get(tenantId: string, integrationId: string): Promise<IntegrationRegistration | null>;
   list(tenantId: string, family?: IntegrationFamily): Promise<IntegrationRegistration[]>;
@@ -59,7 +63,10 @@ function validUtc(value: string): boolean {
 }
 
 export class IntegrationHub {
-  constructor(private readonly store: IntegrationRegistryStore) {}
+  constructor(
+    private readonly store: IntegrationRegistryStore,
+    private readonly verifiers: ReadonlyMap<string, IntegrationConnectionVerifier> = new Map()
+  ) {}
 
   async register(input: IntegrationRegistration): Promise<void> {
     if (!nonEmpty(input.id) || !nonEmpty(input.tenantId) ||
@@ -93,6 +100,33 @@ export class IntegrationHub {
       tenantId, integrationId, current.status, "suspended", updatedAtUtc
     );
     return result === "updated" ? "suspended" : "invalid_transition";
+  }
+
+  async verifyConnection(
+    tenantId: string,
+    integrationId: string,
+    checkedAtUtc: string
+  ): Promise<"connected" | "verification_failed" | "not_found" | "provider_not_configured" | "invalid_transition"> {
+    if (!nonEmpty(tenantId) || !nonEmpty(integrationId) || !validUtc(checkedAtUtc)) {
+      throw new Error("INVALID_INTEGRATION_VERIFICATION");
+    }
+    const current = await this.store.get(tenantId, integrationId);
+    if (!current) return "not_found";
+    if (current.status === "suspended" || current.status === "disconnected") return "invalid_transition";
+    const verifier = this.verifiers.get(current.providerKey);
+    if (!verifier) return "provider_not_configured";
+    let connected = false;
+    try {
+      connected = (await verifier.verify(current)).connected === true;
+    } catch {
+      connected = false;
+    }
+    const nextStatus: IntegrationStatus = connected ? "connected" : "degraded";
+    const updated = await this.store.updateStatus(
+      tenantId, integrationId, current.status, nextStatus, checkedAtUtc
+    );
+    if (updated !== "updated") return "invalid_transition";
+    return connected ? "connected" : "verification_failed";
   }
 
   async acceptEvent<T>(event: IntegrationEvent<T>): Promise<IntegrationEventReceipt> {
