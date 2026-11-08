@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
 import type { DeliveryCoordinate } from "../../../packages/domain/src/order-editing.js";
 import type { UpdateDeliveryDestinationResult } from "../../../packages/domain/src/postgres-customer-order-delivery-updater.js";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
@@ -11,6 +12,7 @@ import {
 } from "../../../packages/domain/src/authorization.js";
 import { ORDER_STATUSES, type OrderStatus, type OrderTransitionContext } from "../../../packages/domain/src/order-lifecycle.js";
 import { INTEGRATION_FAMILIES, IntegrationHub } from "../../../packages/domain/src/integration-hub.js";
+import { verifyPaymentProviderWebhook } from "../../../packages/domain/src/payment-adjustment-provider.js";
 import {
   resolveActorFromBearerToken,
   type ActorResolutionDependencies
@@ -47,6 +49,13 @@ export interface CustomerPaymentAdjustmentActions {
   consent(input: { orderId: string; adjustmentId: string; customerId: string }): Promise<{ outcome: string }>;
   decline(input: { orderId: string; adjustmentId: string; customerId: string }): Promise<{ outcome: string }>;
 }
+export interface PaymentWebhookInboxWriter {
+  record(input: { providerKey: string; providerEventId: string; rawBody: string; adjustmentId?: string }): Promise<
+    | { outcome: "received"; receiptId: string }
+    | { outcome: "duplicate"; receiptId: string }
+    | { outcome: "event_id_collision" }
+  >;
+}
 export interface AuditEventWriter { append(event: AuditEvent): Promise<"inserted" | "already_exists">; }
 export interface OrderTransitionWriter {
   transitionSuborder(input: { tenantId: string; orderId: string; suborderId: string; nextStatus: OrderStatus; context: OrderTransitionContext; auditEvent: AuditEvent }): Promise<
@@ -74,8 +83,10 @@ export interface AppOptions {
   orderTransitions?: OrderTransitionWriter;
   customerDeliveryDestinations?: CustomerDeliveryDestinationService;
   customerPaymentAdjustments?: CustomerPaymentAdjustmentActions;
-  integrationHub?: IntegrationHub;
+  integrationHub?: IntegrationHub;\n  paymentWebhookInbox?: PaymentWebhookInboxWriter;\n  paymentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
 }
+
+const paymentWebhookRawBodies = new WeakMap<FastifyRequest, string>();
 
 type AuthorizationResult =
   | { actor: Actor; decision: AuthorizationDecision & { allowed: true } }
@@ -199,6 +210,74 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     });
     if (!result.actor) return sendAuthorizationFailure(reply, result.statusCode, result.decision.reason);
     return reply.code(200).send({ access: "granted" });
+  });
+
+  app.post<{
+    Params: { providerKey: string };
+    Body: unknown;
+  }>("/api/v1/webhooks/payments/:providerKey", {
+    bodyLimit: 65_536,
+    preParsing: async (request, reply, payload) => {
+      const chunks: Buffer[] = [];
+      let size = 0;
+      for await (const chunk of payload) {
+        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
+        size += buffer.length;
+        if (size > 65_536) {
+          reply.code(413).send({ error: "webhook_payload_too_large" });
+          return Readable.from([]);
+        }
+        chunks.push(buffer);
+      }
+      const raw = Buffer.concat(chunks);
+      paymentWebhookRawBodies.set(request, raw.toString("utf8"));
+      return Readable.from([raw]);
+    }
+  }, async (request, reply) => {
+    if (reply.sent) return reply;
+    const { providerKey } = request.params;
+    if (!/^[a-zA-Z0-9._-]{1,100}$/.test(providerKey)) {
+      return reply.code(400).send({ error: "invalid_provider" });
+    }
+    if (!options.paymentWebhookInbox || !options.paymentWebhookSecretResolver) {
+      return reply.code(503).send({ error: "webhook_service_unavailable" });
+    }
+    const rawBody = paymentWebhookRawBodies.get(request);
+    if (rawBody === undefined || !rawBody.length) {
+      return reply.code(400).send({ error: "empty_webhook_body" });
+    }
+    const signatureHeader = request.headers["x-payment-signature"];
+    const signature = Array.isArray(signatureHeader) ? signatureHeader[0] : signatureHeader;
+    const secret = await options.paymentWebhookSecretResolver(providerKey);
+    if (!secret) return reply.code(503).send({ error: "webhook_provider_not_configured" });
+    if (!verifyPaymentProviderWebhook({ rawBody, signatureHeader: signature, secret })) {
+      return reply.code(401).send({ error: "invalid_webhook_signature" });
+    }
+    const body = request.body;
+    if (typeof body !== "object" || body === null ||
+        typeof (body as { id?: unknown }).id !== "string" ||
+        !(body as { id: string }).id.trim() ||
+        (body as { id: string }).id.length > 240) {
+      return reply.code(400).send({ error: "invalid_webhook_event" });
+    }
+    const adjustmentId = (body as { adjustmentId?: unknown }).adjustmentId;
+    if (adjustmentId !== undefined &&
+        (typeof adjustmentId !== "string" || !/^[a-zA-Z0-9_-]{1,200}$/.test(adjustmentId))) {
+      return reply.code(400).send({ error: "invalid_webhook_event" });
+    }
+    const receipt = await options.paymentWebhookInbox.record({
+      providerKey,
+      providerEventId: (body as { id: string }).id,
+      rawBody,
+      ...(typeof adjustmentId === "string" ? { adjustmentId } : {})
+    });
+    if (receipt.outcome === "event_id_collision") {
+      return reply.code(409).send({ error: "provider_event_id_collision" });
+    }
+    return reply.code(202).send({
+      outcome: receipt.outcome,
+      receiptId: receipt.receiptId
+    });
   });
 
   // Authentication and authorization always precede adapter availability checks and data access.
