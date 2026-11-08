@@ -115,3 +115,12 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Worker refuses startup unless all three provider endpoints and tokens are configured, preventing unhandled tasks from being claimed and dead-lettered.
 - [ ] Real provider endpoints, credentials, sandbox contract acceptance, monitoring/alert delivery, and production deployment remain external prerequisites. No real fulfillment action is claimed live.
 - [ ] Provider contract currently expects POST JSON and a successful JSON response containing `status: "accepted"` plus a non-empty `providerReference`; align each connector with its provider's signed/verified contract before production use.
+
+## Customer five-second order editing and delivery destination API
+- [x] Five-second paid-order edit window is measured from provider-confirmed capture; the exact five-second boundary is exclusive and covered by a unit test.
+- [x] Delivery destination persistence rechecks the edit window under row locks, blocks dispatched fulfillment, validates the trusted service-area snapshot and fresh server quote, then atomically updates destination, price, ETA, zone, branch and immutable audit event.
+- [x] Added authenticated customer API route `PATCH /api/v1/customer/orders/:orderId/delivery-destination`; authorization is scoped to the order and the customer identity is derived from the verified session, not the request body.
+- [x] Route accepts coordinates only; pricing, branch and service-area data are never accepted from the client.
+- [x] PostgreSQL API composition can receive the trusted destination service through dependency injection.
+- [ ] Implement and configure the production service-area resolver and quote/pricing provider, and wire it to `PostgresCustomerOrderDeliveryUpdater`; the API deliberately returns 503 until this trusted dependency is supplied.
+- [ ] Connect the customer app UI, display the five-second countdown and repriced amount/ETA, and obtain explicit authorization/collection for any payment difference before confirming the change.
