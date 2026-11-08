@@ -77,6 +77,24 @@ describe("PostgresIntegrationRegistryStore", () => {
     await expect(duplicateStore.put(registration)).rejects.toThrow("INTEGRATION_ALREADY_EXISTS");
   });
 
+  it("rotates only the tenant-scoped opaque secret reference", async () => {
+    const db = database({ rows: [{ id: "pos-main" }], rowCount: 1 });
+    const store = new PostgresIntegrationRegistryStore(db.client);
+    await expect(store.updateSecretReference(
+      "tenant-a", "pos-main", "vault://tenant-a/pos-main-v2", "2026-11-08T10:02:00.000Z"
+    )).resolves.toBe("updated");
+    const [sql, values] = db.query.mock.calls[0] ?? [];
+    expect(sql).toContain("SET secret_reference = $3, updated_at = $4");
+    expect(sql).toContain("WHERE tenant_id = $1 AND id = $2");
+    expect(values).toEqual([
+      "tenant-a", "pos-main", "vault://tenant-a/pos-main-v2", "2026-11-08T10:02:00.000Z"
+    ]);
+    const missingDb = database({ rows: [], rowCount: 0 });
+    await expect(new PostgresIntegrationRegistryStore(missingDb.client).updateSecretReference(
+      "tenant-a", "missing", "vault://tenant-a/pos-main-v2", "2026-11-08T10:02:00.000Z"
+    )).resolves.toBe("not_found");
+  });
+
   it("updates integration lifecycle state with tenant and expected-status compare-and-set", async () => {
     const db = database({ rows: [{ id: "pos-main" }], rowCount: 1 });
     const store = new PostgresIntegrationRegistryStore(db.client);
