@@ -13,7 +13,8 @@ export function grantsForAssignments(assignments: readonly RoleAssignment[]): re
       : [];
     if (manageRoles.has(assignment.role)) return [
       { resource: "merchant.branch", actions: ["read", "create", "update"] as const, scope: assignment.scope },
-      { resource: "merchant.order", actions: ["read", "update"] as const, scope: assignment.scope }
+      { resource: "merchant.order", actions: ["read", "update"] as const, scope: assignment.scope },
+      { resource: "merchant.integration", actions: ["read", "create"] as const, scope: assignment.scope }
     ];
     if (orderManageRoles.has(assignment.role)) return [
       { resource: "merchant.branch", actions: ["read"] as const, scope: assignment.scope },
