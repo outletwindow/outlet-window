@@ -135,3 +135,13 @@ Specification only. No final prices, commercial rates, tax treatment or live pri
 - Quote usability is bounded by its original validity window; expiry cannot be extended by the client.
 - Unit tests cover arithmetic, validation, overflow and expiry.
 - Still not a live pricing service: market-specific rules, road-distance provider, tax configuration, merchant contracts, approval workflow, persistence and customer checkout integration remain to be implemented and reviewed.
+
+## 16. Database-backed delivery quote resolver
+- Resolves active service areas by tenant, country, city and effective window.
+- Rejects coordinates outside every configured service area.
+- Resolves only active, approved pricing rules matching service area, service code and currency.
+- Confirms that at least one active merchant branch is assigned to the area and returns the eligible branch list.
+- Calculates a versioned, expiring quote using the configured `fixed_plus_distance` rule and integer minor units.
+- Fails closed for missing rules, malformed configuration, invalid coordinates and missing eligible branches.
+- PostgreSQL migration 0011 adds service areas, branch assignments, versioned pricing rules, approval fields and append-only rule events. CI acceptance tests verify approval gates, immutable approved snapshots and audit immutability.
+- Important limitation: the current distance basis is straight-line distance from the service-area center, not road distance. The resolver returns eligible branches but does not yet rank them by branch-to-customer road ETA. It is a backend foundation, not yet wired into the production checkout or delivery-destination API. Production use requires a trusted routing provider, branch geocoordinates, tenant/merchant ownership enforcement, authorized admin approval workflows and payment-provider integration.
