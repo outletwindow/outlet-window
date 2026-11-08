@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { PostgresFulfillmentReceiptReader } from "./postgres-fulfillment-receipt-reader.js";
 import type { PostgresQueryable, PostgresQueryResult } from "./postgres-iam-store.js";
 
-function fakeDb(rows: unknown[], capture: { sql?: string; values?: readonly unknown[] }): PostgresQueryable {
+function fakeDb(rows: unknown[], capture: { sql?: string; values?: readonly unknown[] | undefined }): PostgresQueryable {
   return {
     async query<Row>(sql: string, values?: readonly unknown[]): Promise<PostgresQueryResult<Row>> {
       capture.sql = sql;
