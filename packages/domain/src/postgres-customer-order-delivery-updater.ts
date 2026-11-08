@@ -13,6 +13,7 @@ type LockedOrder = {
     "pickup_in_progress" | "in_transit" | "out_for_delivery" | "delivered" | "completed" |
     "cancelled" | "refunded";
   currency: string;
+  total_minor: string | number;
   payment_captured_at: Date | string;
   delivery_destination: Record<string, unknown> | null;
   delivery_quote: Record<string, unknown> | null;
@@ -23,7 +24,7 @@ type LockedOrder = {
 export type UpdateDeliveryDestinationResult =
   | { outcome: "updated"; branchChanged: boolean; quote: RepricedDeliveryQuote }
   | { outcome: "not_found" | "edit_window_expired" | "fulfillment_already_started" |
-      "outside_service_area" | "invalid_destination" | "invalid_service_area" | "invalid_quote" | "version_conflict" };
+      "outside_service_area" | "invalid_destination" | "invalid_service_area" | "invalid_quote" | "version_conflict" | "payment_adjustment_required" };
 
 function asSnapshot(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -58,7 +59,7 @@ export class PostgresCustomerOrderDeliveryUpdater {
     try {
       await client.query("BEGIN");
       const locked = await client.query<LockedOrder>(
-        `SELECT o.status, o.currency, c.payment_captured_at,
+        `SELECT o.status, o.currency, o.total_minor, c.payment_captured_at,
                 o.delivery_destination, o.delivery_quote, o.delivery_zone_id, o.delivery_branch_id
          FROM customer_orders o
          JOIN scheduled_order_confirmations c
@@ -98,6 +99,12 @@ export class PostgresCustomerOrderDeliveryUpdater {
       if (input.quote.currency !== current.currency) {
         await client.query("ROLLBACK");
         return { outcome: "invalid_quote" };
+      }
+      // Never silently capture an increase or issue a refund for a decrease. Until a payment
+      // provider confirms the exact adjustment, fail closed and leave the order unchanged.
+      if (input.quote.totalMinor !== Number(current.total_minor)) {
+        await client.query("ROLLBACK");
+        return { outcome: "payment_adjustment_required" };
       }
       const validation = validateDeliveryDestinationChange({
         destination: input.destination,
