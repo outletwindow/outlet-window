@@ -35,6 +35,7 @@ export interface SizeChartExtractionInput {
   productId: string;
   sourceUrl: string;
   sourceProductReference: string;
+  sourceUpdatedAtUtc?: string;
   capturedAtUtc: string;
   measurementKind: SizeMeasurementKind;
   entries: readonly ProductSizeEntry[];
@@ -60,20 +61,20 @@ export function createProductSizeChart(input: SizeChartExtractionInput): Product
     throw new Error("INVALID_SIZE_CHART");
   }
   const labels = new Set<string>();
-  const entries = input.entries.map(entry => {
+  const entries = input.entries.map((entry: ProductSizeEntry) => {
     if (!safe(entry.sizeLabel, 40) || labels.has(entry.sizeLabel.toLowerCase()) ||
         !Array.isArray(entry.measurements) || entry.measurements.length === 0 ||
         !Array.isArray(entry.availableVariantIds)) throw new Error("INVALID_SIZE_CHART_ENTRY");
     labels.add(entry.sizeLabel.toLowerCase());
     const keys = new Set<string>();
-    const measurements = entry.measurements.map(m => {
+    const measurements = entry.measurements.map((m: SizeMeasurement) => {
       if (!/^[a-z][a-z0-9_]{0,39}$/.test(m.key) || !safe(m.label, 80) ||
           keys.has(m.key) || !Number.isFinite(m.value) || m.value <= 0 || m.value > 1000 ||
           !SIZE_MEASUREMENT_UNITS.includes(m.unit)) throw new Error("INVALID_SIZE_MEASUREMENT");
       keys.add(m.key);
       return { ...m };
     });
-    if (entry.availableVariantIds.some(id => !safe(id, 160)) ||
+    if (entry.availableVariantIds.some((id: string) => !safe(id, 160)) ||
         new Set(entry.availableVariantIds).size !== entry.availableVariantIds.length) {
       throw new Error("INVALID_SIZE_VARIANT_REFERENCE");
     }
