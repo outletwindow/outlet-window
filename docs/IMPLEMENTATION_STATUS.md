@@ -148,7 +148,8 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Add a durable PostgreSQL payment webhook inbox foundation: persist only SHA-256 payload digests, deduplicate provider/event IDs, detect same-ID/different-payload collisions, claim receipts once, and finalize only claimed events; unit tests cover lifecycle and validation.
 - [x] Add a raw-body Fastify webhook intake route that verifies the exact-body HMAC signature and timestamp before recording provider event IDs, and wire the durable PostgreSQL inbox into the production composition root.
 - [ ] Supply a production secret-manager resolver for each enabled provider; the endpoint intentionally returns unavailable until one is configured.
-- [ ] Reconcile adjustment state and inbox terminal state in one transaction, and add provider-specific retry/contract tests before enabling live capture/refund.
+- [x] Add a transactional webhook reconciliation operation that locks the processing receipt and payment adjustment, conditionally updates the order total only after provider confirmation, appends immutable adjustment evidence, and finalizes the inbox receipt in the same PostgreSQL transaction; unit tests cover success, provider failure, stale order totals, duplicate state, and receipt/adjustment mismatch.
+- [ ] Implement a leased webhook consumer that claims received events, normalizes provider-specific success/failure events, calls the atomic reconciler, and retries recoverable failures without losing receipts.
 - [ ] Add an operational retry/reconciliation worker and provider-specific contract tests before enabling live capture/refund.
 
 
