@@ -42,7 +42,7 @@ export class PostgresSelfHealingStore implements RecoveryStateStore {
          ON CONFLICT (incident_id) DO UPDATE SET
            severity=EXCLUDED.severity,
            status=EXCLUDED.status,
-           automatic_attempt_count=self_healing_incidents.automatic_attempt_count + EXCLUDED.automatic_attempt_count,
+           automatic_attempt_count=LEAST(10, self_healing_incidents.automatic_attempt_count + EXCLUDED.automatic_attempt_count),
            last_action=EXCLUDED.last_action,
            last_attempt_at=EXCLUDED.last_attempt_at,
            last_outcome=EXCLUDED.last_outcome,
