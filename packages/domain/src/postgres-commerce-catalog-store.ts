@@ -14,13 +14,15 @@ export class PostgresCommerceCatalogStore implements CommerceCatalogImportStore 
         input.products.length > 2000) {
       throw new Error("INVALID_CATALOG_PERSISTENCE_REQUEST");
     }
+    for (const product of input.products) {
+      if (product.tenantId !== input.tenantId || product.providerKey !== input.providerKey) {
+        throw new Error("CATALOG_TENANT_OR_PROVIDER_MISMATCH");
+      }
+    }
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
       for (const product of input.products) {
-        if (product.tenantId !== input.tenantId || product.providerKey !== input.providerKey) {
-          throw new Error("CATALOG_TENANT_OR_PROVIDER_MISMATCH");
-        }
         const result = await client.query<{ id: string }>(
           `INSERT INTO commerce_catalog_products
            (id,tenant_id,integration_id,provider_key,external_product_id,canonical_url,title,
