@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { PostgresPool } from "./postgres-iam-store.js";
+import type { PostgresClient, PostgresPool } from "./postgres-iam-store.js";
 
 type AdjustmentRow = {
   id: string; tenant_id: string; order_id: string; customer_id: string;
@@ -153,7 +153,7 @@ export class PostgresPaymentAdjustmentStore {
     }catch(error){await client.query("ROLLBACK").catch(()=>undefined);throw error;}finally{client.release();}
   }
 
-  private async appendEvent(client:{query:(sql:string,values?:unknown[])=>Promise<unknown>},row:AdjustmentRow,actorId:string,eventType:string,occurredAt:string){
+  private async appendEvent(client:PostgresClient,row:AdjustmentRow,actorId:string,eventType:string,occurredAt:string):Promise<void>{
     await client.query(
       "INSERT INTO customer_payment_adjustment_events (id,tenant_id,adjustment_id,actor_id,event_type,occurred_at,snapshot) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb)",
       [randomUUID(),row.tenant_id,row.id,actorId,eventType,occurredAt,JSON.stringify({status:eventType})]);
