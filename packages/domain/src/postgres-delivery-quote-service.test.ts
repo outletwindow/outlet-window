@@ -18,9 +18,6 @@ class FakeDatabase implements PostgresQueryable {
     if (sql.includes("branch.latitude")) return this.mode === "no_branch"
       ? { rows: [], rowCount: 0 }
       : { rows: [{ merchant_id: "merchant-1", branch_id: "branch-1", latitude: 27.005, longitude: 49.646 } as Row], rowCount: 1 };
-    if (sql.includes("branch.latitude")) return this.mode === "no_branch"
-      ? { rows: [], rowCount: 0 }
-      : { rows: [{ merchant_id: "merchant-1", branch_id: "branch-1", latitude: 27.005, longitude: 49.646 } as Row], rowCount: 1 };
     if (sql.includes("FROM delivery_service_area_branches")) return this.mode === "no_branch"
       ? { rows: [], rowCount: 0 }
       : { rows: [{ merchant_id: "merchant-1", branch_id: "branch-1" } as Row], rowCount: 1 };
