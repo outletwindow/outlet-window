@@ -482,6 +482,32 @@ app.patch<{
     return reply.code(200).send({ integrations });
   });
 
+  app.put<{
+    Params: { merchantId: string; integrationId: string };
+    Body: { secretReference: string };
+  }>("/api/v1/merchants/:merchantId/integrations/:integrationId/secret-reference", async (request, reply) => {
+    const { merchantId, integrationId } = request.params;
+    const result = await authorizeRequest(request, options, {
+      resource: "merchant.integration", action: "update", scope: { merchantId }
+    });
+    if (!result.actor) return sendAuthorizationFailure(reply, result.statusCode, result.decision.reason);
+    if (!["merchant_owner", "merchant_admin"].includes(result.actor.role)) {
+      return reply.code(403).send({ error: "merchant_admin_only" });
+    }
+    if (!options.integrationHub) return reply.code(503).send({ error: "service_unavailable" });
+    const body = request.body;
+    if (!body || typeof body.secretReference !== "string") {
+      return reply.code(400).send({ error: "invalid_secret_reference" });
+    }
+    const outcome = await options.integrationHub.rotateSecretReference(
+      merchantId, integrationId, body.secretReference, new Date().toISOString()
+    );
+    if (outcome === "not_found") return reply.code(404).send({ error: "integration_not_found" });
+    if (outcome === "validator_not_configured") return reply.code(503).send({ error: "secret_manager_not_configured" });
+    if (outcome === "invalid_reference") return reply.code(400).send({ error: "secret_reference_not_authorized" });
+    return reply.code(200).send({ outcome: "rotated", integrationId });
+  });
+
   app.post<{
     Params: { merchantId: string; integrationId: string };
   }>("/api/v1/merchants/:merchantId/integrations/:integrationId/reconnect", async (request, reply) => {
