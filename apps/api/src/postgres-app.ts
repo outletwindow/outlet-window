@@ -59,7 +59,8 @@ export function buildPostgresApp(options: PostgresApiOptions) {
         "0011_service_areas_and_pricing_rules",
         "0012_branch_geolocation",
         "0013_payment_adjustment_consents",
-        "0014_payment_provider_webhook_inbox"
+        "0014_payment_provider_webhook_inbox",
+        "0015_multi_provider_integration_hub"
       ];
       const result = await options.pool.query<{ version: string }>(
         "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",
