@@ -135,3 +135,15 @@ A checkbox is marked complete only when code is present and automated checks or 
 
 - [x] Customer API explicitly returns HTTP 409 with `payment_adjustment_required` and a clear explanation when a destination quote changes the payable total; this avoids silently accepting a changed amount.
 - [x] API test covers the payment-adjustment conflict response.
+
+
+## Payment adjustment gateway and webhook safety (development branch)
+- [x] Added a provider-neutral HTTPS payment adjustment adapter with bearer credentials supplied by deployment configuration, redirect blocking, bounded timeouts, idempotency keys, and strict accepted-response validation.
+- [x] Added HMAC-SHA256 webhook signature verification over the exact raw request body, constant-time signature comparison, and a bounded timestamp tolerance.
+- [x] Added migration `0014_payment_provider_webhook_inbox` with unique provider/event identity, payload digest, processing state, and terminal processing timestamp constraints.
+- [x] Added SQL acceptance coverage for duplicate webhook rejection and valid/invalid receipt states; CI now runs this test.
+- [x] Added unit tests for HTTPS enforcement, idempotent request headers, malformed provider responses, tampered webhook bodies, and stale signatures.
+- [ ] Select and configure the actual payment service provider and its sandbox credentials; no production payment provider is connected.
+- [ ] Implement the authenticated customer flow that creates an adjustment intent directly from a trusted fresh delivery quote, then invokes the provider only after explicit consent.
+- [ ] Add a raw-body webhook API endpoint that verifies provider signatures, persists/deduplicates the provider event, reconciles adjustment state transactionally, and safely handles retries.
+- [ ] Add an operational retry/reconciliation worker and provider-specific contract tests before enabling live capture/refund.
