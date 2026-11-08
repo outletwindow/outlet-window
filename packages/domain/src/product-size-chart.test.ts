@@ -24,11 +24,13 @@ const validEntry = input.entries[0]!;
 
 describe("product size chart", () => {
   it("stores source-attributed size entries and measurement type", () => {
-    expect(createProductSizeChart(input)).toMatchObject({
+    const chart = createProductSizeChart(input);
+    expect(chart).toMatchObject({
       tenantId: "tenant-1", productId: "product-1",
       measurementKind: "garment", sourceUrl: input.sourceUrl,
-      entries: [{ sizeLabel: "M", measurements: [{ key: "chest", value: 52, unit: "cm" }] }]
+      entries: [{ sizeLabel: "M" }]
     });
+    expect(chart.entries[0]?.measurements).toEqual(input.entries[0]?.measurements);
   });
   it("rejects insecure source URLs and mixed or invalid measurements", () => {
     expect(() => createProductSizeChart({ ...input, sourceUrl: "http://shop.example/item" }))
