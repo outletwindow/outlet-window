@@ -67,14 +67,15 @@ export function createHttpDeliveryRoutingProvider(
       }
       if (typeof payload !== "object" || payload === null) return null;
       const data = payload as Record<string, unknown>;
-      const timestamp = typeof data.estimatedAtUtc === "string"
-        ? Date.parse(data.estimatedAtUtc) : Number.NaN;
+      const estimatedAtUtc = typeof data.estimatedAtUtc === "string"
+        ? data.estimatedAtUtc : null;
+      const timestamp = estimatedAtUtc === null ? Number.NaN : Date.parse(estimatedAtUtc);
       const canonicalTimestamp = Number.isFinite(timestamp)
         ? new Date(timestamp).toISOString() : "";
-      const isUtcTimestamp = typeof data.estimatedAtUtc === "string" &&
-        data.estimatedAtUtc.endsWith("Z") &&
-        (data.estimatedAtUtc === canonicalTimestamp ||
-          data.estimatedAtUtc === canonicalTimestamp.replace(".000Z", "Z"));
+      const isUtcTimestamp = estimatedAtUtc !== null &&
+        estimatedAtUtc.endsWith("Z") &&
+        (estimatedAtUtc === canonicalTimestamp ||
+          estimatedAtUtc === canonicalTimestamp.replace(".000Z", "Z"));
       if (!Number.isSafeInteger(data.distanceMeters) || (data.distanceMeters as number) < 0 ||
           !Number.isSafeInteger(data.durationSeconds) || (data.durationSeconds as number) < 0 ||
           typeof data.providerReference !== "string" || !data.providerReference.trim() ||
@@ -83,7 +84,7 @@ export function createHttpDeliveryRoutingProvider(
         distanceMeters: data.distanceMeters as number,
         durationSeconds: data.durationSeconds as number,
         providerReference: data.providerReference,
-        estimatedAtUtc: data.estimatedAtUtc
+        estimatedAtUtc
       };
     }
   };
