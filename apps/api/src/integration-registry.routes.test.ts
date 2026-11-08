@@ -3,7 +3,8 @@ import type { Actor } from "../../../packages/domain/src/authorization.js";
 import {
   InMemoryIntegrationRegistryStore,
   IntegrationHub,
-  type IntegrationConnectionVerifier
+  type IntegrationConnectionVerifier,
+  type IntegrationSecretReferenceValidator
 } from "../../../packages/domain/src/integration-hub.js";
 import { buildApp } from "./app.js";
 
@@ -24,8 +25,8 @@ describe("merchant integration registry API", () => {
     await Promise.all(apps.splice(0).map((app) => app.close()));
   });
 
-  function createApp(actor: Actor | null = owner, verifiers: ReadonlyMap<string, IntegrationConnectionVerifier> = new Map()) {
-    const hub = new IntegrationHub(new InMemoryIntegrationRegistryStore(), verifiers);
+  function createApp(actor: Actor | null = owner, verifiers: ReadonlyMap<string, IntegrationConnectionVerifier> = new Map(), validator?: IntegrationSecretReferenceValidator) {
+    const hub = new IntegrationHub(new InMemoryIntegrationRegistryStore(), verifiers, validator);
     const app = buildApp({
       resolveActor: async () => actor,
       integrationHub: hub
@@ -91,6 +92,25 @@ describe("merchant integration registry API", () => {
       url: "/api/v1/merchants/merchant-1/integrations"
     });
     expect(response.statusCode).toBe(401);
+  });
+
+  it("rotates an opaque secret reference only after tenant-scoped secret-manager authorization", async () => {
+    const validator = { isAuthorizedReference: async (tenantId: string, reference: string) =>
+      tenantId === "merchant-1" && reference === "vault://merchant-1/pos-main-v2" };
+    const { app, hub } = createApp(owner, new Map(), validator);
+    await hub.register({
+      id: "pos-main", tenantId: "merchant-1", family: "pos", providerKey: "generic-pos",
+      displayName: "Main POS", status: "pending", secretReference: "vault://merchant-1/pos-main-v1",
+      capabilities: ["inventory.read"], createdAtUtc: "2026-11-08T12:00:00.000Z",
+      updatedAtUtc: "2026-11-08T12:00:00.000Z"
+    });
+    const response = await app.inject({
+      method: "PUT", url: "/api/v1/merchants/merchant-1/integrations/pos-main/secret-reference",
+      payload: { secretReference: "vault://merchant-1/pos-main-v2" }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ outcome: "rotated", integrationId: "pos-main" });
+    expect((await hub.list("merchant-1"))[0]?.secretReference).toBe("vault://merchant-1/pos-main-v2");
   });
 
   it("reconnects a suspended merchant integration into pending and requires fresh verification", async () => {
