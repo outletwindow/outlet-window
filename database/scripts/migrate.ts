@@ -33,7 +33,8 @@ async function main(): Promise<void> {
       { version: "0014_payment_provider_webhook_inbox", file: "0014_payment_provider_webhook_inbox.sql" },
       { version: "0015_multi_provider_integration_hub", file: "0015_multi_provider_integration_hub.sql" },
       { version: "0016_payment_webhook_worker_envelope", file: "0016_payment_webhook_worker_envelope.sql" },
-      { version: "0017_self_healing_incidents", file: "0017_self_healing_incidents.sql" }
+      { version: "0017_self_healing_incidents", file: "0017_self_healing_incidents.sql" },
+      { version: "0018_commerce_catalog", file: "0018_commerce_catalog.sql" }
     ].map(async migration => ({
       version: migration.version,
       sql: await readFile(resolve(process.cwd(), `../../database/migrations/${migration.file}`), "utf8")
