@@ -48,3 +48,4 @@ export * from "./http-delivery-routing-provider.js";
 export * from "./postgres-payment-adjustment-store.js";
 
 export * from "./payment-adjustment-provider.js";
+export * from "./integration-hub.js";
