@@ -1,6 +1,7 @@
 import type { PostgresQueryable } from "./postgres-iam-store.js";
 import { calculatePricingQuote, type PricingQuote } from "./order-pricing.js";
 import { distanceBetweenCoordinatesMeters } from "./order-editing.js";
+import { rankEligibleBranchesByRoadEta, type DeliveryRoutingProvider, type RankedBranchRoute } from "./delivery-routing.js";
 
 export interface DeliveryQuoteRequest {
   tenantId: string;
@@ -23,6 +24,7 @@ type AreaRow = {
 };
 type RuleRow = { id: string; version: number; currency: string; calculation_config: Record<string, unknown> };
 type BranchRow = { merchant_id: string; branch_id: string };
+type GeocodedBranchRow = { merchant_id: string; branch_id: string; latitude: string | number; longitude: string | number };
 
 /**
  * Resolves a tenant-scoped, currently active service area and approved pricing rule.
@@ -31,6 +33,36 @@ type BranchRow = { merchant_id: string; branch_id: string };
  */
 export class PostgresDeliveryQuoteService {
   constructor(private readonly database: PostgresQueryable) {}
+
+  async quoteWithRoadEta(input: {
+    request: DeliveryQuoteRequest;
+    routingProvider: DeliveryRoutingProvider;
+  }): Promise<DeliveryQuoteResult | { status: "quoted"; serviceAreaId: string; currency: string; distanceFromZoneCenterMeters: number; eligibleBranches: readonly { merchantId: string; branchId: string }[]; rankedBranches: readonly RankedBranchRoute[]; quote: PricingQuote }> {
+    const result = await this.quote(input.request);
+    if (result.status !== "quoted") return result;
+    const branches = await this.database.query<GeocodedBranchRow>(
+      `SELECT branch.merchant_id, branch.id AS branch_id, branch.latitude, branch.longitude
+       FROM delivery_service_area_branches link
+       JOIN merchant_branches branch
+         ON branch.merchant_id = link.merchant_id AND branch.id = link.branch_id
+       JOIN merchants merchant ON merchant.id = branch.merchant_id
+       WHERE link.tenant_id = $1 AND link.service_area_id = $2
+         AND branch.status = 'active' AND merchant.status = 'active'
+         AND branch.latitude IS NOT NULL AND branch.longitude IS NOT NULL
+       ORDER BY branch.merchant_id, branch.id`,
+      [input.request.tenantId, result.serviceAreaId]
+    );
+    const rankedBranches = await rankEligibleBranchesByRoadEta({
+      candidates: branches.rows.map(row => ({
+        merchantId: row.merchant_id, branchId: row.branch_id,
+        location: { latitude: Number(row.latitude), longitude: Number(row.longitude) }
+      })),
+      destination: input.request.destination,
+      provider: input.routingProvider,
+      nowUtc: input.request.nowUtc
+    });
+    return { ...result, rankedBranches };
+  }
 
   async quote(request: DeliveryQuoteRequest): Promise<DeliveryQuoteResult> {
     const { latitude, longitude } = request.destination;
