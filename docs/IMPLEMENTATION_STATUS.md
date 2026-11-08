@@ -147,3 +147,15 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [ ] Implement the authenticated customer flow that creates an adjustment intent directly from a trusted fresh delivery quote, then invokes the provider only after explicit consent.
 - [ ] Add a raw-body webhook API endpoint that verifies provider signatures, persists/deduplicates the provider event, reconciles adjustment state transactionally, and safely handles retries.
 - [ ] Add an operational retry/reconciliation worker and provider-specific contract tests before enabling live capture/refund.
+
+
+## Multi-provider Integration Hub foundation
+- [x] Added provider-neutral integration registry for payments, commerce, POS, ERP, carriers, and maps.
+- [x] Added tenant-scoped registration metadata, explicit lifecycle status, capability declarations, and secret-manager references (no raw credentials stored in the registry).
+- [x] Added event intake contract with tenant ownership checks, connected-state gating, UTC timestamp validation, and duplicate provider-event detection.
+- [x] Added PostgreSQL migration `0015_multi_provider_integration_hub` with tenant-scoped foreign keys, unique provider event/idempotency keys, payload digest, and durable inbox state.
+- [x] Added unit and SQL acceptance tests and included the SQL test in CI.
+- [ ] Implement PostgreSQL-backed `IntegrationRegistryStore` and authenticated admin APIs for registering, rotating, suspending, and testing connections.
+- [ ] Implement provider-specific adapters and sandbox contract tests for each selected POS, ERP, commerce, carrier, maps, and payment provider.
+- [ ] Add durable inbox worker with bounded retries, dead-letter handling, event normalization, and reconciliation.
+- [ ] Add operational integration health dashboard, secret-manager deployment wiring, and per-provider rate limits.
