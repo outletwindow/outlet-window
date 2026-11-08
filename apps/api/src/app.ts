@@ -484,6 +484,28 @@ app.patch<{
 
   app.post<{
     Params: { merchantId: string; integrationId: string };
+  }>("/api/v1/merchants/:merchantId/integrations/:integrationId/verify", async (request, reply) => {
+    const { merchantId, integrationId } = request.params;
+    const result = await authorizeRequest(request, options, {
+      resource: "merchant.integration", action: "update", scope: { merchantId }
+    });
+    if (!result.actor) return sendAuthorizationFailure(reply, result.statusCode, result.decision.reason);
+    if (!["merchant_owner", "merchant_admin"].includes(result.actor.role)) {
+      return reply.code(403).send({ error: "merchant_admin_only" });
+    }
+    if (!options.integrationHub) return reply.code(503).send({ error: "service_unavailable" });
+    const outcome = await options.integrationHub.verifyConnection(
+      merchantId, integrationId, new Date().toISOString()
+    );
+    if (outcome === "not_found") return reply.code(404).send({ error: "integration_not_found" });
+    if (outcome === "provider_not_configured") return reply.code(503).send({ error: "provider_not_configured" });
+    if (outcome === "invalid_transition") return reply.code(409).send({ error: "integration_cannot_be_verified" });
+    if (outcome === "verification_failed") return reply.code(502).send({ outcome, status: "degraded" });
+    return reply.code(200).send({ outcome, status: "connected", integrationId });
+  });
+
+  app.post<{
+    Params: { merchantId: string; integrationId: string };
   }>("/api/v1/merchants/:merchantId/integrations/:integrationId/suspend", async (request, reply) => {
     const { merchantId, integrationId } = request.params;
     const result = await authorizeRequest(request, options, {
