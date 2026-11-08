@@ -20,6 +20,7 @@ CREATE TABLE commerce_catalog_products (
   updated_at timestamptz NOT NULL DEFAULT now(),
   FOREIGN KEY (tenant_id, integration_id)
     REFERENCES tenant_integrations (tenant_id, id) ON DELETE RESTRICT,
+  UNIQUE (tenant_id, id),
   UNIQUE (tenant_id, integration_id, provider_key, external_product_id)
 );
 CREATE INDEX commerce_catalog_products_tenant_updated_idx
