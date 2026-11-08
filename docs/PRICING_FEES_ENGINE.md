@@ -183,3 +183,8 @@ Specification only. No final prices, commercial rates, tax treatment or live pri
 - Negative distances and durations, missing/invalid timestamps, empty references and malformed payloads are rejected as unavailable.
 - Unit tests cover provider timestamp preservation and missing timestamp rejection.
 - The gateway contract must return UTC ISO-8601 timestamps for when the route was calculated, not when the response was relayed.
+
+## 22. Routing gateway response hardening
+- Response bodies are capped at 16 KiB and malformed JSON is treated as an unavailable route rather than bubbling a parser exception into the API.
+- Measurement timestamps must be explicit UTC ISO-8601 values ending in `Z`; offset-local timestamps are rejected.
+- Unit tests cover malformed JSON, oversized responses and non-UTC timestamps.
