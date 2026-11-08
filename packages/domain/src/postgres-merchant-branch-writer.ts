@@ -6,6 +6,8 @@ export interface CreateMerchantBranchInput {
   displayName: string;
   cityCode: string;
   address?: Readonly<Record<string, unknown>>;
+  latitude?: number;
+  longitude?: number;
 }
 
 export type CreateMerchantBranchResult = "created" | "already_exists" | "merchant_not_found" | "merchant_inactive";
@@ -19,6 +21,8 @@ export interface MerchantBranchWriter {
     displayName: string;
     cityCode: string;
     address?: Readonly<Record<string, unknown>>;
+    latitude?: number;
+    longitude?: number;
     status: "active" | "inactive";
   }): Promise<UpdateMerchantBranchResult>;
 }
@@ -30,14 +34,14 @@ export class PostgresMerchantBranchWriter implements MerchantBranchWriter {
   async createBranch(input: CreateMerchantBranchInput): Promise<CreateMerchantBranchResult> {
     const result = await this.database.query<{ id: string }>(
       `INSERT INTO merchant_branches
-         (id, merchant_id, display_name, city_code, address, status)
-       SELECT $1, m.id, $3, $4, $5::jsonb, 'active'
+         (id, merchant_id, display_name, city_code, address, latitude, longitude, status)
+       SELECT $1, m.id, $3, $4, $5::jsonb, $6, $7, 'active'
        FROM merchants m
        WHERE m.id = $2 AND m.status = 'active'
        ON CONFLICT (merchant_id, id) DO NOTHING
        RETURNING id`,
       [input.branchId, input.merchantId, input.displayName, input.cityCode,
-        JSON.stringify(input.address ?? {})]
+        JSON.stringify(input.address ?? {}), input.latitude ?? null, input.longitude ?? null]
     );
     if (result.rowCount === 1) return "created";
     const merchant = await this.database.query<{ id: string; status: string }>(
@@ -60,13 +64,15 @@ export class PostgresMerchantBranchWriter implements MerchantBranchWriter {
       `UPDATE merchant_branches AS b
        SET display_name = $3, city_code = $4,
            address = COALESCE($5::jsonb, b.address),
-           status = $6, updated_at = now()
+           latitude = COALESCE($6, b.latitude), longitude = COALESCE($7, b.longitude),
+           status = $8, updated_at = now()
        FROM merchants AS m
        WHERE b.merchant_id = $1 AND b.id = $2
          AND m.id = b.merchant_id AND m.status = 'active'
        RETURNING b.id`,
       [input.merchantId, input.branchId, input.displayName, input.cityCode,
-        input.address === undefined ? null : JSON.stringify(input.address), input.status]
+        input.address === undefined ? null : JSON.stringify(input.address),
+        input.latitude ?? null, input.longitude ?? null, input.status]
     );
     if (result.rowCount === 1) return "updated";
     const merchant = await this.database.query<{ status: string }>(
