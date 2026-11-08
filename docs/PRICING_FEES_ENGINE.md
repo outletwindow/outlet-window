@@ -160,3 +160,11 @@ Specification only. No final prices, commercial rates, tax treatment or live pri
 - `PostgresDeliveryQuoteService.quoteWithRoadEta` resolves the quote, loads only geocoded active branches assigned to the selected service area, and ranks them through the injected routing provider.
 - API readiness now requires migrations 0011 and 0012.
 - No routing provider is configured by the production composition root yet. Branches without coordinates are excluded from ETA ranking; a quote may still be returned with no ranked route. Before launch, enforce at least one ranked branch and configure a trusted routing provider.
+
+## 19. Road-distance-based branch selection and delivery pricing
+- `quoteWithRoadEta` now requires a fresh road route for at least one geocoded eligible branch.
+- Selects the lowest-ETA branch (road distance and stable IDs break ties) and returns the selected merchant/branch identifiers.
+- Recalculates the delivery fee from the selected branch's provider-reported road distance using the approved versioned fixed-plus-distance rule, rather than using the service-area center estimate.
+- The final quote retains the original quote expiry and rule version; if no valid route or valid pricing rule exists, the operation fails closed.
+- Unit tests assert the selected branch, road distance and recalculated integer fee.
+- A production routing provider is still not configured. Do not expose this as a customer quote until a trusted provider is wired and its route freshness, coverage, rate limits and service terms are verified.
