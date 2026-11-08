@@ -82,32 +82,32 @@ export class PostgresPaymentAdjustmentStore {
     } finally { client.release(); }
   }
 
-  async consent(input: { tenantId:string; adjustmentId:string; customerId:string; nowUtc?:string }): Promise<PaymentAdjustmentOutcome> {
+  async consent(input: { adjustmentId:string; customerId:string; nowUtc?:string }): Promise<PaymentAdjustmentOutcome> {
     return this.transitionCustomer(input,"consented");
   }
-  async decline(input: { tenantId:string; adjustmentId:string; customerId:string; nowUtc?:string }): Promise<PaymentAdjustmentOutcome> {
+  async decline(input: { adjustmentId:string; customerId:string; nowUtc?:string }): Promise<PaymentAdjustmentOutcome> {
     return this.transitionCustomer(input,"declined");
   }
-  private async transitionCustomer(input:{tenantId:string;adjustmentId:string;customerId:string;nowUtc?:string}, action:"consented"|"declined"):Promise<PaymentAdjustmentOutcome>{
+  private async transitionCustomer(input:{adjustmentId:string;customerId:string;nowUtc?:string}, action:"consented"|"declined"):Promise<PaymentAdjustmentOutcome>{
     const client=await this.pool.connect();const now=input.nowUtc??this.now().toISOString();
     try{
       await client.query("BEGIN");
       const found=await client.query<AdjustmentRow>(
-        "SELECT * FROM customer_payment_adjustments WHERE tenant_id=$1 AND id=$2 AND customer_id=$3 FOR UPDATE",
-        [input.tenantId,input.adjustmentId,input.customerId]);
+        "SELECT * FROM customer_payment_adjustments WHERE id=$1 AND customer_id=$2 FOR UPDATE",
+        [input.adjustmentId,input.customerId]);
       if(found.rowCount!==1){await client.query("ROLLBACK");return{outcome:"not_found"};}
       const row=found.rows[0]!;
       if(row.status!=="awaiting_customer_consent"){await client.query("ROLLBACK");return{outcome:"conflict"};}
       if(Date.parse(String(row.expires_at))<=Date.parse(now)){
-        await client.query("UPDATE customer_payment_adjustments SET status='expired',updated_at=$3 WHERE tenant_id=$1 AND id=$2",
-          [input.tenantId,input.adjustmentId,now]);
+        await client.query("UPDATE customer_payment_adjustments SET status='expired',updated_at=$2 WHERE id=$1",
+          [input.adjustmentId,now]);
         await this.appendEvent(client,row,input.customerId,"expired",now);
         await client.query("COMMIT");return{outcome:"expired"};
       }
       const status=action==="consented"?"consented":"declined";
       await client.query(
-        "UPDATE customer_payment_adjustments SET status=$3,consented_at=CASE WHEN $3='consented' THEN $4 ELSE NULL END,consent_actor_id=CASE WHEN $3='consented' THEN $5 ELSE NULL END,updated_at=$4 WHERE tenant_id=$1 AND id=$2",
-        [input.tenantId,input.adjustmentId,status,now,input.customerId]);
+        "UPDATE customer_payment_adjustments SET status=$2,consented_at=CASE WHEN $2='consented' THEN $3 ELSE NULL END,consent_actor_id=CASE WHEN $2='consented' THEN $4 ELSE NULL END,updated_at=$3 WHERE id=$1",
+        [input.adjustmentId,status,now,input.customerId]);
       await this.appendEvent(client,row,input.customerId,action==="consented"?"customer_consented":"customer_declined",now);
       await client.query("COMMIT");return{outcome:action};
     }catch(error){await client.query("ROLLBACK").catch(()=>undefined);throw error;}finally{client.release();}
