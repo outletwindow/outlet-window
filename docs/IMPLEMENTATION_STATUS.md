@@ -161,7 +161,8 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Add authenticated merchant-owner/admin connection-verification API backed by an injected provider verifier; successful checks persist `connected`, failed checks persist `degraded`, and missing provider adapters return 503 without falsely marking a connection active. Domain and route tests cover these outcomes.
 - [x] Add authorized suspension lifecycle with tenant-scoped compare-and-set persistence and idempotent behavior.
 - [x] Add an authorized reconnect workflow for suspended/disconnected integrations; it returns the integration to `pending` and requires a fresh provider verification before event intake is accepted.
-- [ ] Add secure secret-manager-backed credential rotation; no raw provider credentials are accepted or stored by the registry.
+- [x] Add an admin-only secret-reference rotation API that accepts opaque `vault://` references only, validates the reference through an injected tenant-scoped secret-manager authorization contract, and persists only the reference (never raw credentials); domain, API, and PostgreSQL adapter tests added.
+- [ ] Connect the reference validator to the selected production secret manager and perform provider credential rotation/revocation drills.
 - [ ] Implement provider-specific adapters and sandbox contract tests for each selected POS, ERP, commerce, carrier, maps, and payment provider; the verification interface is injectable but no live provider adapter is configured.
 - [ ] Add durable inbox worker with bounded retries, dead-letter handling, event normalization, and reconciliation.
 - [ ] Add operational integration health dashboard, secret-manager deployment wiring, and per-provider rate limits.
