@@ -5,7 +5,7 @@ const options = {
   endpoint: "https://routing-gateway.example/v1/route",
   bearerToken: "test-secret",
   fetchImpl: vi.fn(async () => new Response(JSON.stringify({
-    distanceMeters: 2400, durationSeconds: 480, providerReference: "route-123"
+    distanceMeters: 2400, durationSeconds: 480, providerReference: "route-123", estimatedAtUtc: "2026-11-08T12:00:00.000Z"
   }), { status: 200, headers: { "content-type": "application/json" } }))
 };
 
@@ -52,10 +52,23 @@ describe("HTTP delivery routing gateway", () => {
     const malformed = createHttpDeliveryRoutingProvider({
       endpoint: options.endpoint, bearerToken: "x",
       fetchImpl: vi.fn(async () => new Response(JSON.stringify({
-        distanceMeters: -1, durationSeconds: 10, providerReference: ""
+        distanceMeters: -1, durationSeconds: 10, providerReference: "", estimatedAtUtc: "2026-11-08T12:00:00.000Z"
       }), { status: 200 }))
     });
     await expect(malformed.estimateRoute({
+      origin: { latitude: 27, longitude: 49 }, destination: { latitude: 27.1, longitude: 49.1 }
+    })).resolves.toBeNull();
+  });
+
+
+  it("rejects provider estimates without a timestamp instead of marking them fresh", async () => {
+    const missingTimestamp = createHttpDeliveryRoutingProvider({
+      endpoint: options.endpoint, bearerToken: "x",
+      fetchImpl: vi.fn(async () => new Response(JSON.stringify({
+        distanceMeters: 1000, durationSeconds: 120, providerReference: "route-old"
+      }), { status: 200 }))
+    });
+    await expect(missingTimestamp.estimateRoute({
       origin: { latitude: 27, longitude: 49 }, destination: { latitude: 27.1, longitude: 49.1 }
     })).resolves.toBeNull();
   });
