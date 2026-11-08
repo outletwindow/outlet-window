@@ -30,7 +30,8 @@ async function main(): Promise<void> {
       { version: "0011_service_areas_and_pricing_rules", file: "0011_service_areas_and_pricing_rules.sql" },
       { version: "0012_branch_geolocation", file: "0012_branch_geolocation.sql" },
       { version: "0013_payment_adjustment_consents", file: "0013_payment_adjustment_consents.sql" },
-      { version: "0014_payment_provider_webhook_inbox", file: "0014_payment_provider_webhook_inbox.sql" }
+      { version: "0014_payment_provider_webhook_inbox", file: "0014_payment_provider_webhook_inbox.sql" },
+      { version: "0015_multi_provider_integration_hub", file: "0015_multi_provider_integration_hub.sql" }
     ].map(async migration => ({
       version: migration.version,
       sql: await readFile(resolve(process.cwd(), `../../database/migrations/${migration.file}`), "utf8")
