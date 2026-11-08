@@ -82,19 +82,19 @@ export class PostgresPaymentAdjustmentStore {
     } finally { client.release(); }
   }
 
-  async consent(input: { adjustmentId:string; customerId:string; nowUtc?:string }): Promise<PaymentAdjustmentOutcome> {
+  async consent(input: { adjustmentId:string; orderId:string; customerId:string; nowUtc?:string }): Promise<PaymentAdjustmentOutcome> {
     return this.transitionCustomer(input,"consented");
   }
-  async decline(input: { adjustmentId:string; customerId:string; nowUtc?:string }): Promise<PaymentAdjustmentOutcome> {
+  async decline(input: { adjustmentId:string; orderId:string; customerId:string; nowUtc?:string }): Promise<PaymentAdjustmentOutcome> {
     return this.transitionCustomer(input,"declined");
   }
-  private async transitionCustomer(input:{adjustmentId:string;customerId:string;nowUtc?:string}, action:"consented"|"declined"):Promise<PaymentAdjustmentOutcome>{
+  private async transitionCustomer(input:{adjustmentId:string;orderId:string;customerId:string;nowUtc?:string}, action:"consented"|"declined"):Promise<PaymentAdjustmentOutcome>{
     const client=await this.pool.connect();const now=input.nowUtc??this.now().toISOString();
     try{
       await client.query("BEGIN");
       const found=await client.query<AdjustmentRow>(
-        "SELECT * FROM customer_payment_adjustments WHERE id=$1 AND customer_id=$2 FOR UPDATE",
-        [input.adjustmentId,input.customerId]);
+        "SELECT * FROM customer_payment_adjustments WHERE id=$1 AND order_id=$2 AND customer_id=$3 FOR UPDATE",
+        [input.adjustmentId,input.orderId,input.customerId]);
       if(found.rowCount!==1){await client.query("ROLLBACK");return{outcome:"not_found"};}
       const row=found.rows[0]!;
       if(row.status!=="awaiting_customer_consent"){await client.query("ROLLBACK");return{outcome:"conflict"};}
