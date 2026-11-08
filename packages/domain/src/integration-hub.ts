@@ -52,8 +52,9 @@ function nonEmpty(value: unknown, max = 200): value is string {
 
 function validUtc(value: string): boolean {
   const time = Date.parse(value);
-  return Number.isFinite(time) && value.endsWith("Z") &&
-    new Date(time).toISOString() === value.replace(/\.000Z$/, "Z");
+  if (!Number.isFinite(time) || !value.endsWith("Z")) return false;
+  const canonical = new Date(time).toISOString();
+  return value === canonical || value === canonical.replace(/\.000Z$/, "Z");
 }
 
 export class IntegrationHub {
