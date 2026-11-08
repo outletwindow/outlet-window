@@ -37,6 +37,10 @@ Last updated: 2026-11-08
 - [x] Concrete provider-dispatch handler boundary for merchant preparation, shopper collection, and courier dispatch; validates merchant/branch target, requires provider idempotency and durable acceptance reference, and classifies transient/permanent failures.
 - [x] Separate PostgreSQL inbox fulfillment worker process with lease recovery, bounded retry/dead-letter, graceful shutdown, HTTPS-only bearer-authenticated provider adapter, redirect blocking, and required connector configuration checks.
 - [x] Persist provider acceptance references atomically with inbox completion under the active lease; receipt validation and PostgreSQL migration/CI integration checks added. This is provider acknowledgement evidence, not yet a customer-facing live tracking timeline.
+- [x] Five-second paid-order edit policy measured from provider-confirmed payment capture; rejects edits after fulfillment starts or task dispatch.
+- [x] Delivery destination policy validates the agreed service-area radius, requires a fresh trusted server quote, and returns recalculated delivery fee/total/ETA and selected branch.
+- [x] PostgreSQL delivery-destination updater locks order and payment evidence, rechecks the five-second window and dispatched-task state, then persists destination, quote, zone, branch, revised total, and append-only edit evidence atomically. PostgreSQL integration and SQL acceptance tests added.
+- [ ] Customer-facing edit UI/API route, trusted geospatial service-area resolver, live pricing/ETA/branch quote provider, and payment-difference authorization/collection remain pending; the domain and persistence adapter are not yet exposed as a live customer feature.
 - [ ] Configure and validate real merchant, shopper, and courier provider endpoints/tokens in each deployment environment; run provider sandbox contract tests and operational alert delivery.
 - [ ] Scheduled-task reconciliation reader, recurring worker, alert delivery and authorized remediation workflow.
 - [ ] Production transaction adapter and payment-to-order reconciliation/compensation workflow.
