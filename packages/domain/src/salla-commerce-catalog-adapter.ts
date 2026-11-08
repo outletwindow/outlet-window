@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   type CommerceCatalogAdapter,
   type CommerceCatalogImportPage,
@@ -26,6 +27,7 @@ export interface SallaAccessTokenProvider {
 type Obj = Record<string, unknown>;
 const object = (v: unknown): Obj | null => v !== null && typeof v === "object" && !Array.isArray(v) ? v as Obj : null;
 const text = (v: unknown): string | undefined => typeof v === "string" && v.trim() ? v.trim() : undefined;
+const scalarText = (v: unknown): string | undefined => typeof v === "number" && Number.isSafeInteger(v) ? String(v) : text(v);
 const number = (v: unknown): number | undefined => {
   const n = typeof v === "number" ? v : typeof v === "string" && v.trim() ? Number(v) : NaN;
   return Number.isFinite(n) && n >= 0 && n <= 1_000_000_000 ? n : undefined;
@@ -44,7 +46,7 @@ function safeHttps(raw: unknown): string | undefined {
 function mapProduct(value: unknown, tenantId: string, capturedAtUtc: string): NormalizedCommerceProduct | null {
   const p = object(value);
   if (!p) return null;
-  const externalProductId = text(p.id?.toString()) ?? text(p.sku) ?? text(p.mpn);
+  const externalProductId = scalarText(p.id) ?? text(p.sku) ?? text(p.mpn);
   const title = text(p.name);
   const urlObject = object(p.urls);
   const canonicalUrl = safeHttps(urlObject?.customer ?? p.url);
@@ -58,7 +60,7 @@ function mapProduct(value: unknown, tenantId: string, capturedAtUtc: string): No
   for (const skuValue of list(p.skus)) {
     const sku = object(skuValue);
     if (!sku) continue;
-    const id = text(sku.id?.toString()) ?? text(sku.sku);
+    const id = scalarText(sku.id) ?? text(sku.sku);
     if (!id) continue;
     const variantPrice = object(sku.price);
     variants.push({
@@ -79,7 +81,7 @@ function mapProduct(value: unknown, tenantId: string, capturedAtUtc: string): No
     ...(minor(price?.amount) !== undefined ? { priceMinor: minor(price?.amount)! } : {}),
     imageUrls: [...new Set(images)], variants,
     sourceType: "official_api", sourceCapturedAtUtc,
-    sourceContentSha256: "0".repeat(64)
+    sourceContentSha256: createHash("sha256").update(JSON.stringify(p), "utf8").digest("hex")
   };
 }
 
