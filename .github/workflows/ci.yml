@@ -106,6 +106,10 @@ jobs:
         env:
           PGPASSWORD: ci_only_password
         run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0015_multi_provider_integration_hub.integration.sql
+      - name: Verify normalized payment webhook worker envelope and lease constraints
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0016_payment_webhook_worker_envelope.integration.sql
       - name: Typecheck
         run: pnpm typecheck
       - name: Test
