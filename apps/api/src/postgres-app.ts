@@ -23,7 +23,8 @@ export interface PostgresApiOptions {
   serviceName?: string;
   version?: string;
   customerDeliveryDestinations?: CustomerDeliveryDestinationService;
-  customerPaymentAdjustments?: CustomerPaymentAdjustmentActions;\n  paymentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
+  customerPaymentAdjustments?: CustomerPaymentAdjustmentActions;
+  paymentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
 }
 
 /**
