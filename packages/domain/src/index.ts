@@ -57,3 +57,5 @@ export * from "./payment-webhook-worker.js";
 export * from "./self-healing.js";
 
 export * from "./postgres-self-healing-store.js";
+
+export * from "./virtual-try-on.js";
