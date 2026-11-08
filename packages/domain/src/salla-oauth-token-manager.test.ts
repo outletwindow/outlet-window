@@ -4,9 +4,9 @@ import { SallaOAuthTokenManager, type SallaOAuthTokenSet } from "./salla-oauth-t
 const now = new Date("2026-11-08T10:00:00.000Z");
 const initial: SallaOAuthTokenSet = {
   accessToken: "old-access", refreshToken: "single-use-refresh",
-  expiresAtUtc: "2026-11-08T10:01:00.000Z"
+  expiresAtUtc
 };
-function setup() {
+function setup(expiresAtUtc = "2026-11-08T10:01:00.000Z") {
   let tokens: SallaOAuthTokenSet | null = { ...initial };
   let refreshCalls = 0;
   let writes = 0;
@@ -27,7 +27,7 @@ function setup() {
 }
 describe("Salla OAuth token manager", () => {
   it("returns a valid token without refreshing", async () => {
-    const { manager, counts } = setup();
+    const { manager, counts } = setup("2026-11-08T10:10:00.000Z");
     expect(await manager.getAccessToken("t1", "i1")).toBe("old-access");
     expect(counts()).toEqual({ refreshCalls: 0, writes: 0 });
   });
