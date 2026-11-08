@@ -17,9 +17,10 @@ describe("HTTP delivery routing gateway", () => {
       destination: { latitude: 27.01, longitude: 49.01 }
     });
     expect(estimate).toMatchObject({
-      distanceMeters: 2400, durationSeconds: 480, providerReference: "route-123"
+      distanceMeters: 2400, durationSeconds: 480, providerReference: "route-123",
+      estimatedAtUtc: "2026-11-08T12:00:00.000Z"
     });
-    expect(Date.parse(estimate!.estimatedAtUtc)).toBeGreaterThan(0);
+    expect(estimate!.estimatedAtUtc).toBe("2026-11-08T12:00:00.000Z");
     expect(options.fetchImpl).toHaveBeenCalledWith(
       new URL(options.endpoint),
       expect.objectContaining({
