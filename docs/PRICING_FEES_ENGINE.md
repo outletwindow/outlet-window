@@ -159,7 +159,7 @@ Specification only. No final prices, commercial rates, tax treatment or live pri
 - Merchant branch create/update writes accept optional coordinates and validate the pair and ranges before SQL.
 - `PostgresDeliveryQuoteService.quoteWithRoadEta` resolves the quote, loads only geocoded active branches assigned to the selected service area, and ranks them through the injected routing provider.
 - API readiness now requires migrations 0011 and 0012.
-- No routing provider is configured by the production composition root yet. Branches without coordinates are excluded from ETA ranking; a quote may still be returned with no ranked route. Before launch, enforce at least one ranked branch and configure a trusted routing provider.
+- Historical note superseded by section 19: the road-ETA quote path now fails closed unless at least one branch has a fresh valid route. Branches without coordinates are excluded from ETA ranking. A production routing provider is still not configured.
 
 ## 19. Road-distance-based branch selection and delivery pricing
 - `quoteWithRoadEta` now requires a fresh road route for at least one geocoded eligible branch.
