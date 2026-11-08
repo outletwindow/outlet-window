@@ -21,6 +21,7 @@ export interface RecoveryRecord {
 }
 export interface RecoveryStateStore {
   wasRecentlyAttempted(service: string, action: RecoveryAction, cooldownSeconds: number): Promise<boolean>;
+  getAutomaticAttemptCount?(incidentId: string): Promise<number>;
   record(record: RecoveryRecord): Promise<void>;
 }
 export interface RecoveryExecutor {
@@ -68,7 +69,9 @@ export class SelfHealingController {
       return this.persist(incident, action, "approval_required", "SENSITIVE_OR_UNCLASSIFIED_INCIDENT");
     }
 
-    const count = this.attempts.get(incident.incidentId) ?? 0;
+    const count = this.state.getAutomaticAttemptCount
+      ? await this.state.getAutomaticAttemptCount(incident.incidentId)
+      : (this.attempts.get(incident.incidentId) ?? 0);
     if (count >= this.maxAttempts) {
       return this.persist(incident, action, "blocked", "AUTOMATIC_ATTEMPT_LIMIT_REACHED");
     }
