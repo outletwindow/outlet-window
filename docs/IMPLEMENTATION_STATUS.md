@@ -43,6 +43,8 @@ Last updated: 2026-11-08
 - [ ] Customer-facing edit UI/API route, trusted geospatial service-area resolver, live pricing/ETA/branch quote provider, and payment-difference authorization/collection remain pending; the domain and persistence adapter are not yet exposed as a live customer feature.
 - [ ] Configure and validate real merchant, shopper, and courier provider endpoints/tokens in each deployment environment; run provider sandbox contract tests and operational alert delivery.
 - [ ] Scheduled-task reconciliation reader, recurring worker, alert delivery and authorized remediation workflow.
+- [x] Self-healing policy engine with fail-closed classification, idempotent retry and explicitly expired-lease recovery rules, bounded attempts, cooldown, and human-review routing for security/data-integrity/unknown incidents.
+- [x] PostgreSQL self-healing incident and recovery-event persistence migration, structured reason codes, durable attempt-count lookup, and migration-runner registration. Automated recovery executor wiring, incident producers across services, lease-claim concurrency hardening, operational alerts/dashboard, and end-to-end PostgreSQL acceptance tests remain pending.
 - [ ] Production transaction adapter and payment-to-order reconciliation/compensation workflow.
 - [ ] Payment provider capture/void/refund integration.
 - [x] Branch-level inventory ledger, customer order item lines, merchant/branch-scoped reservation records, and PostgreSQL transaction adapter for atomic platform-side stock allocation; integration tests cover idempotency, exact order-line matching, and concurrent final-unit contention.
