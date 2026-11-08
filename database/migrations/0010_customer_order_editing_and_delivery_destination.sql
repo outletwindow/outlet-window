@@ -1,8 +1,29 @@
 -- Customer order edit window and bounded delivery destination snapshots.
 -- The five-second edit deadline is derived only from provider-confirmed payment capture.
 ALTER TABLE scheduled_order_confirmations
-  ADD COLUMN IF NOT EXISTS customer_edit_until timestamptz
-  GENERATED ALWAYS AS (payment_captured_at + interval '5 seconds') STORED;
+  ADD COLUMN IF NOT EXISTS customer_edit_until timestamptz;
+
+UPDATE scheduled_order_confirmations
+SET customer_edit_until = payment_captured_at + interval '5 seconds'
+WHERE customer_edit_until IS NULL;
+
+CREATE OR REPLACE FUNCTION set_scheduled_order_customer_edit_deadline()
+RETURNS trigger LANGUAGE plpgsql AS $function$
+BEGIN
+  NEW.customer_edit_until := NEW.payment_captured_at + interval '5 seconds';
+  RETURN NEW;
+END;
+$function$;
+
+DROP TRIGGER IF EXISTS scheduled_order_confirmation_edit_deadline ON scheduled_order_confirmations;
+CREATE TRIGGER scheduled_order_confirmation_edit_deadline
+BEFORE INSERT OR UPDATE OF payment_captured_at ON scheduled_order_confirmations
+FOR EACH ROW EXECUTE FUNCTION set_scheduled_order_customer_edit_deadline();
+
+ALTER TABLE scheduled_order_confirmations
+  ALTER COLUMN customer_edit_until SET NOT NULL,
+  ADD CONSTRAINT scheduled_order_confirmation_edit_deadline_check
+  CHECK (customer_edit_until = payment_captured_at + interval '5 seconds');
 
 ALTER TABLE customer_orders
   ADD COLUMN IF NOT EXISTS delivery_destination jsonb,
