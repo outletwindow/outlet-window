@@ -130,11 +130,11 @@ export class InMemoryIntegrationRegistryStore implements IntegrationRegistryStor
     if (this.integrations.has(key)) throw new Error("INTEGRATION_ALREADY_EXISTS");
     this.integrations.set(key, registration);
   }
-  async updateStatus(tenantId: string, integrationId: string, expectedStatus: IntegrationStatus, nextStatus: IntegrationStatus): Promise<"updated" | "conflict"> {
+  async updateStatus(tenantId: string, integrationId: string, expectedStatus: IntegrationStatus, nextStatus: IntegrationStatus, updatedAtUtc: string): Promise<"updated" | "conflict"> {
     const key = this.key(tenantId, integrationId);
     const current = this.integrations.get(key);
     if (!current || current.status !== expectedStatus) return "conflict";
-    this.integrations.set(key, { ...current, status: nextStatus, updatedAtUtc: new Date().toISOString() });
+    this.integrations.set(key, { ...current, status: nextStatus, updatedAtUtc });
     return "updated";
   }
   async recordEvent(event: IntegrationEvent): Promise<"inserted" | "duplicate"> {
