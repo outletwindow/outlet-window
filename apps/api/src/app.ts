@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import type { DeliveryCoordinate, RepricedDeliveryQuote } from "../../../packages/domain/src/order-editing.js";
+import type { UpdateDeliveryDestinationResult } from "../../../packages/domain/src/postgres-customer-order-delivery-updater.js";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { createAuditEvent, type AuditEvent } from "../../../packages/domain/src/audit.js";
 import {
@@ -33,6 +35,11 @@ export interface MerchantBranchWriter {
   updateBranch(input: { merchantId: string; branchId: string; displayName: string; cityCode: string; address?: Readonly<Record<string, unknown>>; status: "active" | "inactive" }): Promise<"updated" | "not_found" | "merchant_not_found" | "merchant_inactive">;
 }
 
+export interface CustomerDeliveryDestinationService {
+  /** Must resolve the service area and a fresh quote server-side; never accept pricing/zone/branch from the client. */
+  update(input: { customerId: string; orderId: string; actorId: string; destination: DeliveryCoordinate }): Promise<UpdateDeliveryDestinationResult>;
+}
+
 export interface AuditEventWriter { append(event: AuditEvent): Promise<"inserted" | "already_exists">; }
 export interface OrderTransitionWriter {
   transitionSuborder(input: { tenantId: string; orderId: string; suborderId: string; nextStatus: OrderStatus; context: OrderTransitionContext; auditEvent: AuditEvent }): Promise<
@@ -58,6 +65,7 @@ export interface AppOptions {
   /** Durable audit writer. Protected operations are not executed if their audit write fails. */
   auditEvents?: AuditEventWriter;
   orderTransitions?: OrderTransitionWriter;
+  customerDeliveryDestinations?: CustomerDeliveryDestinationService;
 }
 
 type AuthorizationResult =
@@ -341,6 +349,44 @@ app.patch<{
     return reply.code(200).send({
       suborder: { id: suborderId, status: persisted.transition.order.status, version: persisted.transition.order.version },
       previousStatus: persisted.transition.previousStatus, parentStatus: persisted.parentStatus
+    });
+  });
+
+  app.patch<{
+    Params: { orderId: string };
+    Body: { latitude: number; longitude: number };
+  }>("/api/v1/customer/orders/:orderId/delivery-destination", async (request, reply) => {
+    const result = await authorizeRequest(request, options, {
+      resource: "customer.order", action: "update", scope: { orderId: request.params.orderId }
+    });
+    if (!result.actor) return sendAuthorizationFailure(reply, result.statusCode, result.decision.reason);
+    if (result.actor.role !== "customer") return reply.code(403).send({ error: "customer_only" });
+    if (!options.customerDeliveryDestinations) return reply.code(503).send({ error: "service_unavailable" });
+    const body = request.body;
+    if (!body || typeof body.latitude !== "number" || !Number.isFinite(body.latitude) ||
+        body.latitude < -90 || body.latitude > 90 || typeof body.longitude !== "number" ||
+        !Number.isFinite(body.longitude) || body.longitude < -180 || body.longitude > 180) {
+      return reply.code(400).send({ error: "invalid_request" });
+    }
+    const updated = await options.customerDeliveryDestinations.update({
+      customerId: result.actor.id, actorId: result.actor.id, orderId: request.params.orderId,
+      destination: { latitude: body.latitude, longitude: body.longitude }
+    });
+    if (updated.outcome === "not_found") return reply.code(404).send({ error: "not_found" });
+    if (updated.outcome === "edit_window_expired") return reply.code(409).send({ error: "edit_window_expired" });
+    if (updated.outcome === "fulfillment_already_started") return reply.code(409).send({ error: "fulfillment_already_started" });
+    if (updated.outcome === "outside_service_area") return reply.code(422).send({ error: "outside_service_area" });
+    if (updated.outcome === "invalid_destination") return reply.code(400).send({ error: "invalid_destination" });
+    if (updated.outcome === "invalid_service_area" || updated.outcome === "invalid_quote") return reply.code(503).send({ error: "delivery_quote_unavailable" });
+    if (updated.outcome === "version_conflict") return reply.code(409).send({ error: "version_conflict" });
+    return reply.code(200).send({
+      outcome: "updated", branchChanged: updated.branchChanged,
+      delivery: {
+        branchId: updated.quote.branchId, deliveryFeeMinor: updated.quote.deliveryFeeMinor,
+        totalMinor: updated.quote.totalMinor, currency: updated.quote.currency,
+        estimatedDeliveryAtUtc: updated.quote.estimatedDeliveryAtUtc,
+        quoteReference: updated.quote.quoteReference, expiresAtUtc: updated.quote.expiresAtUtc
+      }
     });
   });
 
