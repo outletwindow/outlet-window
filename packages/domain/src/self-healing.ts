@@ -13,6 +13,7 @@ export interface RecoveryIncident {
 export interface RecoveryRecord {
   incidentId: string;
   service: string;
+  severity: RecoverySeverity;
   action: RecoveryAction;
   outcome: RecoveryOutcome;
   reason: string;
@@ -103,6 +104,7 @@ export class SelfHealingController {
     const record: RecoveryRecord = {
       incidentId: incident.incidentId,
       service: incident.service,
+      severity: incident.severity,
       action,
       outcome,
       reason,
