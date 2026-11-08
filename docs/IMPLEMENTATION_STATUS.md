@@ -36,6 +36,7 @@ Last updated: 2026-11-08
 - [x] Durable scheduled task inbox lease store and generic at-least-once consumer worker: SKIP LOCKED claims, expired lease recovery, idempotency-key handler contract, bounded retry, dead-letter, and lease-CAS completion.
 - [x] Concrete provider-dispatch handler boundary for merchant preparation, shopper collection, and courier dispatch; validates merchant/branch target, requires provider idempotency and durable acceptance reference, and classifies transient/permanent failures.
 - [x] Separate PostgreSQL inbox fulfillment worker process with lease recovery, bounded retry/dead-letter, graceful shutdown, HTTPS-only bearer-authenticated provider adapter, redirect blocking, and required connector configuration checks.
+- [x] Persist provider acceptance references atomically with inbox completion under the active lease; receipt validation and PostgreSQL migration/CI integration checks added. This is provider acknowledgement evidence, not yet a customer-facing live tracking timeline.
 - [ ] Configure and validate real merchant, shopper, and courier provider endpoints/tokens in each deployment environment; run provider sandbox contract tests and operational alert delivery.
 - [ ] Scheduled-task reconciliation reader, recurring worker, alert delivery and authorized remediation workflow.
 - [ ] Production transaction adapter and payment-to-order reconciliation/compensation workflow.
