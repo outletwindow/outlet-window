@@ -45,3 +45,17 @@ describe("merchant order permissions", () => {
     expect(grants.some(grant => grant.resource === "merchant.order" && grant.actions.includes("update"))).toBe(false);
   });
 });
+
+describe("customer order permissions", () => {
+  it("grants a customer access only to the exact order in the IAM assignment", () => {
+    const customer = { ...assignment("customer"), scope: { orderId: "order-7" } };
+    expect(grantsForAssignments([customer])).toEqual([{
+      resource: "customer.order", actions: ["read", "update"], scope: { orderId: "order-7" }
+    }]);
+  });
+
+  it("does not grant customer order access when the assignment has no order scope", () => {
+    const customer = { ...assignment("customer"), scope: {} };
+    expect(grantsForAssignments([customer])).toEqual([]);
+  });
+});
