@@ -12,6 +12,7 @@ import { PostgresOrderTransitionStore } from "../../../packages/domain/src/postg
 import { PostgresPaymentAdjustmentStore } from "../../../packages/domain/src/postgres-payment-adjustment-store.js";
 import { IntegrationHub } from "../../../packages/domain/src/integration-hub.js";
 import { PostgresIntegrationRegistryStore } from "../../../packages/domain/src/postgres-integration-registry-store.js";
+import { PostgresPaymentWebhookInbox } from "../../../packages/domain/src/postgres-payment-webhook-inbox.js";
 
 export interface PostgresApiOptions {
   pool: PostgresPool;
@@ -22,7 +23,7 @@ export interface PostgresApiOptions {
   serviceName?: string;
   version?: string;
   customerDeliveryDestinations?: CustomerDeliveryDestinationService;
-  customerPaymentAdjustments?: CustomerPaymentAdjustmentActions;
+  customerPaymentAdjustments?: CustomerPaymentAdjustmentActions;\n  paymentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
 }
 
 /**
@@ -38,6 +39,10 @@ export function buildPostgresApp(options: PostgresApiOptions) {
     merchantBranchWriter: new PostgresMerchantBranchWriter(options.pool),
     auditEvents: new PostgresAuditEventStore(options.pool),
     integrationHub: new IntegrationHub(new PostgresIntegrationRegistryStore(options.pool)),
+    paymentWebhookInbox: new PostgresPaymentWebhookInbox(options.pool),
+    ...(options.paymentWebhookSecretResolver === undefined ? {} : {
+      paymentWebhookSecretResolver: options.paymentWebhookSecretResolver
+    }),
     orderTransitions: new PostgresOrderTransitionStore(options.pool),
     customerPaymentAdjustments: options.customerPaymentAdjustments ?? (() => {
       const store = new PostgresPaymentAdjustmentStore(options.pool, options.now);
