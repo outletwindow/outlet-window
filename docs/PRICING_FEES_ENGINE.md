@@ -127,3 +127,11 @@ Simulations are advisory and never modify live pricing automatically.
 
 ## 14. Implementation Status
 Specification only. No final prices, commercial rates, tax treatment or live pricing rules have been approved or deployed.
+
+## 15. Implemented quote calculation foundation
+- Deterministic pure quote calculator uses integer minor currency units and never invents tax, delivery or commission rates.
+- Each quote carries a rule ID/version, currency, component breakdown, creation time and expiry.
+- Rejects invalid currencies, fractional/negative component amounts, unsafe integer overflow, invalid quote windows and discounts exceeding the component sum.
+- Quote usability is bounded by its original validity window; expiry cannot be extended by the client.
+- Unit tests cover arithmetic, validation, overflow and expiry.
+- Still not a live pricing service: market-specific rules, road-distance provider, tax configuration, merchant contracts, approval workflow, persistence and customer checkout integration remain to be implemented and reviewed.
