@@ -31,8 +31,10 @@ export interface MerchantBranchWriter {
     displayName: string;
     cityCode: string;
     address?: Readonly<Record<string, unknown>>;
+    latitude?: number;
+    longitude?: number;
   }): Promise<"created" | "already_exists" | "merchant_not_found" | "merchant_inactive">;
-  updateBranch(input: { merchantId: string; branchId: string; displayName: string; cityCode: string; address?: Readonly<Record<string, unknown>>; status: "active" | "inactive" }): Promise<"updated" | "not_found" | "merchant_not_found" | "merchant_inactive">;
+  updateBranch(input: { merchantId: string; branchId: string; displayName: string; cityCode: string; address?: Readonly<Record<string, unknown>>; latitude?: number; longitude?: number; status: "active" | "inactive" }): Promise<"updated" | "not_found" | "merchant_not_found" | "merchant_inactive">;
 }
 
 export interface CustomerDeliveryDestinationService {
@@ -222,6 +224,8 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       displayName: string;
       cityCode: string;
       address?: Record<string, unknown>;
+      latitude?: number;
+      longitude?: number;
     };
   }>("/api/v1/merchants/:merchantId/branches", async (request, reply) => {
     const result = await authorizeRequest(request, options, {
@@ -237,7 +241,10 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
         typeof body.displayName !== "string" || body.displayName.trim().length < 2 ||
         body.displayName.trim().length > 120 ||
         typeof body.cityCode !== "string" || !/^[A-Z0-9_-]{2,12}$/.test(body.cityCode) ||
-        (body.address !== undefined && (typeof body.address !== "object" || body.address === null || Array.isArray(body.address)))) {
+        (body.address !== undefined && (typeof body.address !== "object" || body.address === null || Array.isArray(body.address))) ||
+        ((body.latitude === undefined) !== (body.longitude === undefined)) ||
+        (body.latitude !== undefined && (!Number.isFinite(body.latitude) || body.latitude < -90 || body.latitude > 90)) ||
+        (body.longitude !== undefined && (!Number.isFinite(body.longitude) || body.longitude < -180 || body.longitude > 180))) {
       return reply.code(400).send({ error: "invalid_request" });
     }
 
@@ -246,7 +253,9 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       branchId: body.branchId,
       displayName: body.displayName.trim(),
       cityCode: body.cityCode,
-      ...(body.address === undefined ? {} : { address: body.address })
+      ...(body.address === undefined ? {} : { address: body.address }),
+      ...(body.latitude === undefined ? {} : { latitude: body.latitude }),
+      ...(body.longitude === undefined ? {} : { longitude: body.longitude })
     });
     if (created === "merchant_not_found") return reply.code(404).send({ error: "merchant_not_found" });
     if (created === "merchant_inactive") return reply.code(409).send({ error: "merchant_inactive" });
@@ -268,6 +277,8 @@ app.patch<{
       displayName: string;
       cityCode: string;
       address?: Record<string, unknown>;
+      latitude?: number;
+      longitude?: number;
       status: "active" | "inactive";
     };
   }>("/api/v1/merchants/:merchantId/branches/:branchId", async (request, reply) => {
@@ -283,7 +294,10 @@ app.patch<{
         body.displayName.trim().length > 120 ||
         typeof body.cityCode !== "string" || !/^[A-Z0-9_-]{2,12}$/.test(body.cityCode) ||
         !["active", "inactive"].includes(body.status) ||
-        (body.address !== undefined && (typeof body.address !== "object" || body.address === null || Array.isArray(body.address)))) {
+        (body.address !== undefined && (typeof body.address !== "object" || body.address === null || Array.isArray(body.address))) ||
+        ((body.latitude === undefined) !== (body.longitude === undefined)) ||
+        (body.latitude !== undefined && (!Number.isFinite(body.latitude) || body.latitude < -90 || body.latitude > 90)) ||
+        (body.longitude !== undefined && (!Number.isFinite(body.longitude) || body.longitude < -180 || body.longitude > 180))) {
       return reply.code(400).send({ error: "invalid_request" });
     }
     const updated = await options.merchantBranchWriter.updateBranch({
@@ -292,7 +306,9 @@ app.patch<{
       displayName: body.displayName.trim(),
       cityCode: body.cityCode,
       status: body.status,
-      ...(body.address === undefined ? {} : { address: body.address })
+      ...(body.address === undefined ? {} : { address: body.address }),
+      ...(body.latitude === undefined ? {} : { latitude: body.latitude }),
+      ...(body.longitude === undefined ? {} : { longitude: body.longitude })
     });
     if (updated === "merchant_not_found") return reply.code(404).send({ error: "merchant_not_found" });
     if (updated === "merchant_inactive") return reply.code(409).send({ error: "merchant_inactive" });
