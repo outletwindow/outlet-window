@@ -10,6 +10,8 @@ export interface VirtualTryOnRequest {
   customerId: string;
   productId: string;
   productVariantId: string;
+  /** Exact, source-attributed chart for this product/variant; used for size guidance, not a fit guarantee. */
+  sizeChartId: string;
   mode: VirtualTryOnMode;
   /** References to private media assets; raw image/video bytes must not be stored in this record. */
   customerMediaAssetId: string;
@@ -43,7 +45,7 @@ export function validateVirtualTryOnRequest(
   nowUtc: string
 ): boolean {
   if (!safeId(request.id) || !safeId(request.tenantId) || !safeId(request.customerId) ||
-      !safeId(request.productId) || !safeId(request.productVariantId) ||
+      !safeId(request.productId) || !safeId(request.productVariantId) || !safeId(request.sizeChartId) ||
       !safeId(request.customerMediaAssetId)) return false;
   if (!VIRTUAL_TRY_ON_MODES.includes(request.mode)) return false;
   if (request.mode === "live_camera" && !safeId(request.liveSessionId ?? "")) return false;
