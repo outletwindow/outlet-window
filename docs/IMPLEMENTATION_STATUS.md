@@ -10,6 +10,13 @@ Last updated: 2026-11-08
 - [x] Domain package with deny-by-default authorization.
 - [x] Authorization tests for tenant and branch isolation.
 
+## Merchant catalog adapter progress
+- [x] Added a provider-neutral JSON-LD product-page adapter for Schema.org Product/ProductGroup data, offers, image URLs, explicit variants/sizes, source timestamps, and SHA-256 provenance.
+- [x] Adapter validates HTTPS source and final redirect hosts against the provider allowlist, caps HTML response size, rejects unsupported cursor pagination, and never fabricates missing product fields.
+- [x] Added unit tests for ProductGroup extraction, prices/currency, sizes, malformed structured data, off-domain redirects, oversized responses, and cursor rejection.
+- [ ] The adapter is not a live Centrepoint connector yet: the merchant page fetcher must be supplied with DNS/IP SSRF protection, redirect revalidation, timeout, rate limiting, and response limits. Centrepoint's API portal requires login and API access approval; no API credentials or approved plan are configured.
+- [ ] Category/product discovery, official API/feed contract, real product page verification, size-chart table extraction, scheduled refresh, and live PostgreSQL end-to-end sync remain pending.
+
 ## Implemented domain contracts (not yet connected to live services)
 - [x] PostgreSQL commerce catalog repository: atomic page persistence for products and variants, tenant/provider checks, stale-snapshot protection, and rollback on partial failure. Verified by unit tests; live Centrepoint synchronization remains pending.
 - [x] Added PostgreSQL migration `0018_commerce_catalog` for tenant/integration-bound normalized catalog products and variants, with external identity uniqueness, source provenance, HTTPS source checks, and tenant-scoped foreign keys. CI SQL acceptance covers insert, duplicate identity rejection, and cross-tenant variant rejection. A production catalog repository and live provider sync are still pending.
