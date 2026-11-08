@@ -372,13 +372,15 @@ app.patch<{
       customerId: result.actor.id, actorId: result.actor.id, orderId: request.params.orderId,
       destination: { latitude: body.latitude, longitude: body.longitude }
     });
-    if (updated.outcome === "not_found") return reply.code(404).send({ error: "not_found" });
-    if (updated.outcome === "edit_window_expired") return reply.code(409).send({ error: "edit_window_expired" });
-    if (updated.outcome === "fulfillment_already_started") return reply.code(409).send({ error: "fulfillment_already_started" });
-    if (updated.outcome === "outside_service_area") return reply.code(422).send({ error: "outside_service_area" });
-    if (updated.outcome === "invalid_destination") return reply.code(400).send({ error: "invalid_destination" });
-    if (updated.outcome === "invalid_service_area" || updated.outcome === "invalid_quote") return reply.code(503).send({ error: "delivery_quote_unavailable" });
-    if (updated.outcome === "version_conflict") return reply.code(409).send({ error: "version_conflict" });
+    if (updated.outcome !== "updated") {
+      const statusCode = updated.outcome === "not_found" ? 404 :
+        updated.outcome === "outside_service_area" ? 422 :
+        updated.outcome === "invalid_destination" ? 400 :
+        updated.outcome === "invalid_service_area" || updated.outcome === "invalid_quote" ? 503 : 409;
+      const error = updated.outcome === "invalid_service_area" || updated.outcome === "invalid_quote"
+        ? "delivery_quote_unavailable" : updated.outcome;
+      return reply.code(statusCode).send({ error });
+    }
     return reply.code(200).send({
       outcome: "updated", branchChanged: updated.branchChanged,
       delivery: {
