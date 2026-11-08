@@ -13,7 +13,7 @@ const product: NormalizedCommerceProduct = {
 function setup(returnId = "product-id") {
  const calls:{sql:string,values?:readonly unknown[]}[]=[];
  const query=vi.fn(async (sql:string,values?:readonly unknown[]):Promise<PostgresQueryResult<any>>=>{
-  calls.push({sql,values});
+  calls.push({sql,...(values !== undefined ? { values } : {})});
   if(sql.includes("INSERT INTO commerce_catalog_products")) return {rows:returnId?[{id:returnId}]:[],rowCount:returnId?1:0};
   return {rows:[],rowCount:1};
  });
