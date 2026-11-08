@@ -15,6 +15,10 @@ Last updated: 2026-11-08
 - [x] Added tenant/integration-scoped access-token injection; the adapter never persists or embeds access tokens.
 - [x] Normalizes product IDs, names, customer URLs, prices/currencies, images, SKU/variant identifiers, and stock signals when the API response includes them.
 - [x] Added unit tests for product mapping, page pagination, tenant-scoped token lookup, invalid store host, invalid cursor, unavailable token, and malformed API response.
+- [x] Added an OAuth token lifecycle manager with injected encrypted-vault storage, single-use refresh-token rotation, lock/re-read protection against parallel refreshes, and atomic persistence of replacement access/refresh tokens.
+- [x] Added unit tests for valid-token reuse, expiry-window refresh, rotation persistence, malformed responses, and missing token state.
+- [ ] Production must provide a distributed lock and encrypted secret-vault adapter; process-local locking or plain database token storage is not acceptable.
+- [ ] Implement and test the Salla `app.store.authorize` webhook receiver to bootstrap token storage, including Salla signature verification and replay protection.
 - [ ] Live OAuth installation, secure token refresh/rotation, Salla webhook signature verification and durable event intake, actual Salla sandbox account, and end-to-end sync remain pending.
 - [ ] Salla product quantity endpoint supports branch filtering; implement and test a separate branch inventory sync before claiming branch-level live stock availability. Product-level quantity must not be treated as branch-specific stock.
 - [ ] Merchant must authorize the `products.read` scope; no real credentials or store connection are configured.
