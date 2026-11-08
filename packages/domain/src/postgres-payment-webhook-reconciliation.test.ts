@@ -7,7 +7,7 @@ function makePool(options: { receiptStatus?: string; receiptAdjustmentId?: strin
   const query = vi.fn(async (sql: string, values?: readonly unknown[]) => {
     calls.push({ sql, ...(values === undefined ? {} : { values }) });
     if (sql.includes("SELECT id,adjustment_id,status FROM payment_provider_webhook_events")) {
-      return { rows: [{ id: "receipt-1", adjustment_id: options.receiptAdjustmentId ?? "adjustment-1", status: options.receiptStatus ?? "processing" }], rowCount: 1 };
+      return { rows: [{ id: "receipt-1", adjustment_id: options.receiptAdjustmentId ?? "adjustment-1", status: options.receiptStatus ?? "processing", lease_owner: "worker-1" }], rowCount: 1 };
     }
     if (sql.includes("SELECT id,tenant_id,order_id,customer_id,currency,previous_total_minor,proposed_total_minor,status FROM customer_payment_adjustments")) {
       return { rows: [{
@@ -31,7 +31,7 @@ describe("atomic payment webhook reconciliation", () => {
     const mock = makePool();
     const inbox = new PostgresPaymentWebhookInbox(mock.pool);
     await expect(inbox.reconcileAdjustment({
-      receiptId: "receipt-1", adjustmentId: "adjustment-1", actorId: "payment-worker",
+      receiptId: "receipt-1", adjustmentId: "adjustment-1", actorId: "payment-worker", workerId: "worker-1",
       confirmed: true, providerReference: "psp-ref-123"
     })).resolves.toBe("applied");
     expect(mock.calls[0]?.sql).toBe("BEGIN");
