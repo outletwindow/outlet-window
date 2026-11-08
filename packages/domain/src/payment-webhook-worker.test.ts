@@ -33,7 +33,7 @@ describe("payment webhook worker", () => {
 
   it("records provider-declined adjustment events without changing the order total", async () => {
     const store = makeStore({
-      claimNext: vi.fn(async () => ({ ...event, normalizedStatus: "failed", providerReference: null }))
+      claimNext: vi.fn(async (): Promise<ClaimedPaymentWebhook> => ({ ...event, normalizedStatus: "failed", providerReference: null }))
     });
     const worker = new PaymentWebhookWorker(store, "worker-1");
     await expect(worker.runOnce()).resolves.toEqual({ outcome: "failed", receiptId: "receipt-1" });
@@ -44,14 +44,14 @@ describe("payment webhook worker", () => {
 
   it("finalizes ignored and unsupported provider events without adjustment writes", async () => {
     const ignoredStore = makeStore({
-      claimNext: vi.fn(async () => ({ ...event, adjustmentId: null, normalizedStatus: "ignored" }))
+      claimNext: vi.fn(async (): Promise<ClaimedPaymentWebhook> => ({ ...event, adjustmentId: null, normalizedStatus: "ignored" }))
     });
     await expect(new PaymentWebhookWorker(ignoredStore, "worker-1").runOnce())
       .resolves.toEqual({ outcome: "ignored", receiptId: "receipt-1" });
     expect(ignoredStore.reconcileAdjustment).not.toHaveBeenCalled();
 
     const unsupportedStore = makeStore({
-      claimNext: vi.fn(async () => ({ ...event, normalizedStatus: "unsupported" }))
+      claimNext: vi.fn(async (): Promise<ClaimedPaymentWebhook> => ({ ...event, normalizedStatus: "unsupported" }))
     });
     await expect(new PaymentWebhookWorker(unsupportedStore, "worker-1").runOnce())
       .resolves.toEqual({ outcome: "failed", receiptId: "receipt-1" });
@@ -70,7 +70,7 @@ describe("payment webhook worker", () => {
 
     const deadStore = makeStore({
       reconcileAdjustment: vi.fn(async () => "conflict" as const),
-      claimNext: vi.fn(async () => ({ ...event, attemptCount: 20 })),
+      claimNext: vi.fn(async (): Promise<ClaimedPaymentWebhook> => ({ ...event, attemptCount: 20 })),
       releaseForRetry: vi.fn(async () => "dead_lettered" as const)
     });
     await expect(new PaymentWebhookWorker(deadStore, "worker-1").runOnce())
