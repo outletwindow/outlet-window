@@ -63,6 +63,22 @@ export class PostgresIntegrationRegistryStore implements IntegrationRegistryStor
     if (result.rowCount !== 1) throw new Error("INTEGRATION_ALREADY_EXISTS");
   }
 
+  async updateSecretReference(
+    tenantId: string,
+    integrationId: string,
+    secretReference: string,
+    updatedAtUtc: string
+  ): Promise<"updated" | "not_found"> {
+    const result = await this.db.query<{ id: string }>(
+      `UPDATE tenant_integrations
+       SET secret_reference = $3, updated_at = $4
+       WHERE tenant_id = $1 AND id = $2
+       RETURNING id`,
+      [tenantId, integrationId, secretReference, updatedAtUtc]
+    );
+    return result.rowCount === 1 ? "updated" : "not_found";
+  }
+
   async updateStatus(
     tenantId: string,
     integrationId: string,
