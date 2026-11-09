@@ -15,7 +15,10 @@ function fakePool(options: { version?: number; missing?: boolean; statuses?: str
         merchant_id: "merchant-1", branch_id: "branch-1"
       }];
       rowCount = rows.length;
-    } else if (sql.includes("COUNT(i.id)::int AS item_count")) {\n      rows = [{ item_count: options.itemCount ?? 0, verified_count: options.verifiedCount ?? 0 }];\n      rowCount = 1;\n    } else if (sql.includes("SELECT status FROM merchant_suborders")) {
+    } else if (sql.includes("COUNT(i.id)::int AS item_count")) {
+      rows = [{ item_count: options.itemCount ?? 0, verified_count: options.verifiedCount ?? 0 }];
+      rowCount = 1;
+    } else if (sql.includes("SELECT status FROM merchant_suborders")) {
       rows = (options.statuses ?? ["awaiting_payment"]).map(status => ({ status }));
       rowCount = rows.length;
     }
