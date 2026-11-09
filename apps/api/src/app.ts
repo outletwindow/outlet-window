@@ -107,9 +107,9 @@ export interface AppOptions {
   sallaOAuthFlow?: SallaOAuthFlow;
   branchInventorySync?: { sync(input: BranchInventorySyncRequest): Promise<BranchInventorySyncResult> };
   inventoryReservationLifecycle?: {
-    release(input: { tenantId: string; reservationId: string; nowUtc: string; reason: string }): Promise<InventoryReservationFinalizeResult>;
-    expire(input: { tenantId: string; reservationId: string; nowUtc: string }): Promise<InventoryReservationFinalizeResult>;
-    consume(input: { tenantId: string; reservationId: string; nowUtc: string; handoverVerified: boolean; handoverReference: string }): Promise<InventoryReservationFinalizeResult>;
+    release(input: { tenantId: string; merchantId: string; branchId: string; reservationId: string; nowUtc: string; reason: string }): Promise<InventoryReservationFinalizeResult>;
+    expire(input: { tenantId: string; merchantId: string; branchId: string; reservationId: string; nowUtc: string }): Promise<InventoryReservationFinalizeResult>;
+    consume(input: { tenantId: string; merchantId: string; branchId: string; reservationId: string; nowUtc: string; handoverVerified: boolean; handoverReference: string }): Promise<InventoryReservationFinalizeResult>;
   };
 }
 
@@ -987,12 +987,12 @@ app.patch<{
 
 
   app.post<{
-    Params: { merchantId: string; reservationId: string };
+    Params: { merchantId: string; branchId: string; reservationId: string };
     Body: { action: "release" | "expire" | "consume"; reason?: string; handoverVerified?: boolean; handoverReference?: string };
-  }>("/api/v1/merchants/:merchantId/inventory/reservations/:reservationId/finalize", async (request, reply) => {
-    const { merchantId, reservationId } = request.params;
+  }>("/api/v1/merchants/:merchantId/branches/:branchId/inventory/reservations/:reservationId/finalize", async (request, reply) => {
+    const { merchantId, branchId, reservationId } = request.params;
     const access = await authorizeRequest(request, options, {
-      resource: "merchant.branch.inventory_reservation", action: "execute", scope: { merchantId }
+      resource: "merchant.branch.inventory_reservation", action: "execute", scope: { merchantId, branchId }
     });
     if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
     const lifecycle = options.inventoryReservationLifecycle;
@@ -1011,8 +1011,8 @@ app.patch<{
     try {
       const nowUtc = new Date().toISOString();
       const result = body.action === "release"
-        ? await lifecycle.release({ tenantId, reservationId, nowUtc, reason: body.reason ?? "" })
-        : await lifecycle.expire({ tenantId, reservationId, nowUtc });
+        ? await lifecycle.release({ tenantId, merchantId, branchId, reservationId, nowUtc, reason: body.reason ?? "" })
+        : await lifecycle.expire({ tenantId, merchantId, branchId, reservationId, nowUtc });
       return reply.code(result.outcome === "not_found" ? 404 : 200).send({ result });
     } catch (error) {
       const code = error instanceof Error ? error.message : "";
