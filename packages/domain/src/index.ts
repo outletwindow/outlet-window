@@ -30,6 +30,7 @@ export * from "./postgres-order-transition-store.js";
 export * from "./postgres-scheduled-task-store.js";
 export * from "./postgres-branch-inventory-reservation.js";
 export * from "./postgres-branch-inventory-reservation-lifecycle.js";
+export * from "./postgres-inventory-reservation-expiry-worker.js";
 export * from "./postgres-scheduled-task-inbox-store.js";
 export * from "./postgres-fulfillment-receipt-reader.js";
 export * from "./postgres-customer-order-delivery-updater.js";
