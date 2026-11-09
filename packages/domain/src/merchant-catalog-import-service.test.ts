@@ -23,13 +23,13 @@ const adapter: CommerceCatalogAdapter = {
 };
 
 describe("MerchantCatalogImportService", () => {
-  async function setup(status: "connected" | "pending" = "connected") {
+  async function setup(status: "connected" | "pending" = "connected", capabilities = ["catalog_read"]) {
     const store = new InMemoryIntegrationRegistryStore();
     const hub = new IntegrationHub(store);
     await hub.register({
       id: "salla-main", tenantId: "tenant-a", family: "commerce",
       providerKey: "salla", displayName: "Salla", status,
-      capabilities: ["catalog_read"], createdAtUtc: now, updatedAtUtc: now
+      capabilities, createdAtUtc: now, updatedAtUtc: now
     });
     const registry = new CommerceConnectorRegistry();
     registry.register(adapter);
@@ -61,6 +61,13 @@ describe("MerchantCatalogImportService", () => {
     await expect(service.import({
       tenantId: "tenant-a", integrationId: "salla-main", sourceUrl: "https://shop.example"
     })).rejects.toThrow("CATALOG_INTEGRATION_NOT_CONNECTED");
+  });
+
+  it("requires the integration to grant catalog_read", async () => {
+    const { service } = await setup("connected", []);
+    await expect(service.import({
+      tenantId: "tenant-a", integrationId: "salla-main", sourceUrl: "https://shop.example"
+    })).rejects.toThrow("CATALOG_CAPABILITY_NOT_GRANTED");
   });
 
   it("rejects untrusted provider hosts before importing", async () => {
