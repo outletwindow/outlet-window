@@ -60,6 +60,38 @@ describe("merchant catalog import route", () => {
     expect(response.statusCode).toBe(503);
   });
 
+  it("returns a conflict when the connected integration lacks catalog_read", async () => {
+    const service = {
+      async import() { throw new Error("CATALOG_CAPABILITY_NOT_GRANTED"); }
+    } as unknown as MerchantCatalogImportService;
+    const app = buildApp({ resolveActor: async () => owner, merchantCatalogImport: service });
+    apps.push(app);
+    await app.ready();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/merchants/merchant-1/integrations/salla-main/catalog/import",
+      payload: { sourceUrl: "https://shop.example" }
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error).toBe("catalog_read_capability_not_granted");
+  });
+
+  it("does not expose provider credential failures as internal errors", async () => {
+    const service = {
+      async import() { throw new Error("SALLA_ACCESS_TOKEN_UNAVAILABLE"); }
+    } as unknown as MerchantCatalogImportService;
+    const app = buildApp({ resolveActor: async () => owner, merchantCatalogImport: service });
+    apps.push(app);
+    await app.ready();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/merchants/merchant-1/integrations/salla-main/catalog/import",
+      payload: { sourceUrl: "https://shop.example" }
+    });
+    expect(response.statusCode).toBe(503);
+    expect(response.json().error).toBe("provider_credentials_unavailable");
+  });
+
   it("rejects malformed cursors and timestamps", async () => {
     const service = { async import() { throw new Error("must-not-run"); } } as unknown as MerchantCatalogImportService;
     const app = buildApp({ resolveActor: async () => owner, merchantCatalogImport: service });
