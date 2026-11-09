@@ -107,7 +107,10 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Added a PostgreSQL transaction adapter that locks branch stock rows, validates exact merchant suborder lines, reserves all lines or none, and safely returns unavailable variants when stock is missing/insufficient.
 - [x] Added idempotency replay/conflict handling and integration tests for simultaneous requests competing for the final unit.
 - [ ] Wire checkout to call this adapter after confirmed payment capture; no customer API route or merchant connector is claimed live.
-- [ ] Implement stock sync, scheduled expiry worker, reconciliation, and merchant external hard-reservation acknowledgements.
+- [x] Added a standalone PostgreSQL inventory reservation expiry worker with configurable polling/batch limits, branch-aware lifecycle calls, structured outcomes, and graceful shutdown.
+- [x] Added Docker Compose service and package scripts for the inventory expiry worker; Compose configuration is validated in CI.
+- [x] Added unit and PostgreSQL integration tests proving due reservations expire and reserved stock returns to availability; CI run 42610230116 passed typecheck, lint, tests, and build.
+- [ ] Stock reconciliation against POS/ERP and merchant external hard-reservation acknowledgements remain pending.
 
 
 ## Reservation lifecycle progress (development branch)
