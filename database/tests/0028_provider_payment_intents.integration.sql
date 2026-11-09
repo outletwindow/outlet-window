@@ -1,5 +1,7 @@
 \set ON_ERROR_STOP on
 BEGIN;
+INSERT INTO tenants (id,tenant_type,display_name,status)
+VALUES ('pi-tenant','platform','Payment Intent Test Tenant','active');
 INSERT INTO customer_orders (id,tenant_id,customer_id,idempotency_key,status,currency,total_minor)
 VALUES ('pi-order','pi-tenant','pi-customer','pi-order-idem','awaiting_payment','SAR',12500);
 INSERT INTO provider_payment_intents
