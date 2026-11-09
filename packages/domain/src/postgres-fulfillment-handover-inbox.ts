@@ -40,6 +40,30 @@ export class PostgresFulfillmentHandoverInbox {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
+      // Re-check and lock the provider grant inside the same transaction that
+      // consumes stock. This closes the revoke-after-HTTP-check race.
+      const providerScope = await client.query<{ integration_id: string }>(
+        `SELECT i.id AS integration_id
+         FROM tenant_integrations i
+         JOIN fulfillment_provider_branch_scopes s
+           ON s.tenant_id=i.tenant_id AND s.integration_id=i.id
+         JOIN merchants m
+           ON m.tenant_id=i.tenant_id AND m.id=s.merchant_id
+         JOIN merchant_branches b
+           ON b.merchant_id=s.merchant_id AND b.id=s.branch_id
+         WHERE i.tenant_id=$1 AND i.provider_key=$2
+           AND i.family='carriers' AND i.status='connected'
+           AND s.active=true AND s.merchant_id=$3 AND s.branch_id=$4
+           AND m.status='active' AND b.status='active'
+           AND (SELECT COUNT(*) FROM tenant_integrations candidate
+                WHERE candidate.tenant_id=$1 AND candidate.provider_key=$2
+                  AND candidate.family='carriers' AND candidate.status='connected')=1
+         FOR SHARE OF i,s,m,b`,
+        [event.tenantId,event.providerKey,event.merchantId,event.branchId]
+      );
+      if (providerScope.rowCount !== 1) {
+        throw new Error("FULFILLMENT_PROVIDER_SCOPE_NOT_AUTHORIZED");
+      }
       const inserted = await client.query<{ id: string }>(
         `INSERT INTO fulfillment_handover_events
          (id,provider_key,provider_event_id,payload_sha256,tenant_id,merchant_id,
