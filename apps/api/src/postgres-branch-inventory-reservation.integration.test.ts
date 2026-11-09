@@ -169,12 +169,12 @@ integration("PostgreSQL branch inventory reservations", () => {
     const reservation = await adapter.reserveExactVariants(request);
     if (reservation.outcome !== "reserved") throw new Error("expected reservation");
     const released = await lifecycle.release({
-      tenantId, reservationId: reservation.reservationReference,
+      tenantId, merchantId, branchId, reservationId: reservation.reservationReference,
       nowUtc: new Date().toISOString(), reason: "customer_cancelled"
     });
     expect(released).toEqual({ outcome: "updated", status: "released" });
     await expect(lifecycle.release({
-      tenantId, reservationId: reservation.reservationReference,
+      tenantId, merchantId, branchId, reservationId: reservation.reservationReference,
       nowUtc: new Date().toISOString(), reason: "customer_cancelled"
     })).resolves.toEqual({ outcome: "already_finalized", status: "released" });
     const stock = await pool.query<{ available_quantity: number; reserved_quantity: number }>(
@@ -189,17 +189,17 @@ integration("PostgreSQL branch inventory reservations", () => {
     const reservation = await adapter.reserveExactVariants(request);
     if (reservation.outcome !== "reserved") throw new Error("expected reservation");
     await expect(lifecycle.consume({
-      tenantId, reservationId: reservation.reservationReference,
+      tenantId, merchantId, branchId, reservationId: reservation.reservationReference,
       nowUtc: new Date().toISOString(), handoverVerified: false, handoverReference: ""
     })).rejects.toThrow("inventory_reservation_handover_proof_required");
     const consumed = await lifecycle.consume({
-      tenantId, reservationId: reservation.reservationReference,
+      tenantId, merchantId, branchId, reservationId: reservation.reservationReference,
       nowUtc: new Date().toISOString(), handoverVerified: true,
       handoverReference: "handover-proof-" + randomUUID()
     });
     expect(consumed).toEqual({ outcome: "updated", status: "consumed" });
     await expect(lifecycle.consume({
-      tenantId, reservationId: reservation.reservationReference,
+      tenantId, merchantId, branchId, reservationId: reservation.reservationReference,
       nowUtc: new Date().toISOString(), handoverVerified: true,
       handoverReference: "handover-proof-" + randomUUID()
     })).resolves.toEqual({ outcome: "already_finalized", status: "consumed" });
@@ -219,11 +219,11 @@ integration("PostgreSQL branch inventory reservations", () => {
     });
     if (reservation.outcome !== "reserved") throw new Error("expected reservation");
     await expect(lifecycle.expire({
-      tenantId, reservationId: reservation.reservationReference,
+      tenantId, merchantId, branchId, reservationId: reservation.reservationReference,
       nowUtc: "2026-11-08T00:00:30.000Z"
     })).rejects.toThrow("inventory_reservation_not_expired");
     await expect(lifecycle.expire({
-      tenantId, reservationId: reservation.reservationReference,
+      tenantId, merchantId, branchId, reservationId: reservation.reservationReference,
       nowUtc: "2026-11-08T00:02:00.000Z"
     })).resolves.toEqual({ outcome: "updated", status: "expired" });
   });
