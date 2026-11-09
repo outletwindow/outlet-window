@@ -37,6 +37,7 @@ export interface PostgresApiOptions {
   commerceConnectors?: CommerceConnectorRegistry;
   paymentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
   fulfillmentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
+  fulfillmentWebhookAuthorizationResolver?: NonNullable<AppOptions["fulfillmentWebhookAuthorizationResolver"]>;
   sallaOAuthFlow?: SallaOAuthFlow;
 }
 
@@ -76,6 +77,9 @@ export function buildPostgresApp(options: PostgresApiOptions) {
     fulfillmentHandoverInbox: new PostgresFulfillmentHandoverInbox(options.pool),
     ...(options.fulfillmentWebhookSecretResolver === undefined ? {} : {
       fulfillmentWebhookSecretResolver: options.fulfillmentWebhookSecretResolver
+    }),
+    ...(options.fulfillmentWebhookAuthorizationResolver === undefined ? {} : {
+      fulfillmentWebhookAuthorizationResolver: options.fulfillmentWebhookAuthorizationResolver
     }),
     merchantCatalog: options.merchantCatalog ?? new PostgresMerchantCatalog(options.pool),
     ...(catalogImport === undefined ? {} : { merchantCatalogImport: catalogImport }),
