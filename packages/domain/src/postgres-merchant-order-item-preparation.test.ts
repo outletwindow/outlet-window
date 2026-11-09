@@ -68,11 +68,11 @@ describe("PostgresMerchantOrderItemPreparationStore", () => {
     const db = fakePool({ existing: true });
     const store = new PostgresMerchantOrderItemPreparationStore(db.pool);
     expect(await store.record(input)).toMatchObject({ outcome: "already_recorded" });
-    expect(await store.record({ ...input, id: "check-other" })).toEqual({ outcome: "conflict" });
+    expect(await store.record({ ...input, verifiedQuantity: 1, outcome: "shortage" })).toEqual({ outcome: "conflict" });
     expect(db.statements.some(sql => sql.startsWith("INSERT"))).toBe(false);
   });
 
-  it("rejects a shortage from satisfying the successful verification outcome", async () => {
+  it("persists a shortage as a non-verified outcome", async () => {
     const db = fakePool();
     const result = await new PostgresMerchantOrderItemPreparationStore(db.pool).record({
       ...input, outcome: "shortage", verifiedQuantity: 1
