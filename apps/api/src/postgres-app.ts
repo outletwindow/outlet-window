@@ -42,7 +42,8 @@ export interface PostgresApiOptions {
   merchantCatalogImport?: MerchantCatalogImportService;
   commerceConnectors?: CommerceConnectorRegistry;
   paymentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
-  paymentCaptureWebhookHandler?: PaymentCaptureWebhookHandler;\n  paymentCaptureDecoders?: ReadonlyMap<string, PaymentCaptureEventDecoder>;
+  paymentCaptureWebhookHandler?: PaymentCaptureWebhookHandler;
+  paymentCaptureDecoders?: ReadonlyMap<string, PaymentCaptureEventDecoder>;
   fulfillmentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
   fulfillmentWebhookAuthorizationResolver?: NonNullable<AppOptions["fulfillmentWebhookAuthorizationResolver"]>;
   sallaOAuthFlow?: SallaOAuthFlow;
