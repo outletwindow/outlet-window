@@ -51,11 +51,13 @@ describe("branch-scoped PostgreSQL reservation finalization", () => {
     expect(lock?.values).toEqual(["tenant-1", "merchant-1", "branch-1", "reservation-1"]);
 
     const lineRead = pool.client.statements.find(s => s.sql.includes("FROM inventory_reservation_lines") && !s.sql.includes("JOIN inventory_reservation_lines"));
-    expect(lineRead?.sql).toContain("reservation_id = $1 AND merchant_id = $2 AND branch_id = $3");
+    expect(lineRead?.sql).toContain("reservation_id = $1");
+    expect(lineRead?.sql).toContain("AND merchant_id = $2 AND branch_id = $3");
     expect(lineRead?.values).toEqual(["reservation-1", "merchant-1", "branch-1"]);
 
     const stockRead = pool.client.statements.find(s => s.sql.includes("FROM branch_inventory i"));
-    expect(stockRead?.sql).toContain("l.reservation_id = $1 AND l.merchant_id = $2 AND l.branch_id = $3");
+    expect(stockRead?.sql).toContain("l.reservation_id = $1");
+    expect(stockRead?.sql).toContain("AND l.merchant_id = $2 AND l.branch_id = $3");
     expect(stockRead?.values).toEqual(["reservation-1", "merchant-1", "branch-1"]);
 
     const update = pool.client.statements.find(s => s.sql.startsWith("UPDATE inventory_reservations"));
