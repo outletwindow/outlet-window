@@ -18,7 +18,7 @@ export interface SallaRefreshLock {
   withLock<T>(key: string, operation: () => Promise<T>): Promise<T>;
 }
 function validOpaqueToken(value: unknown): value is string {
-  return typeof value === "string" && value.length > 0 && value.length <= 10_000 && !/\\s/.test(value);
+  return typeof value === "string" && value.length > 0 && value.length <= 10_000 && !/\s/.test(value);
 }
 
 function validTokenSet(value: SallaOAuthTokenSet): boolean {
