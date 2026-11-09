@@ -10,6 +10,7 @@
     "start:scheduled": "tsx src/scheduled-main.ts",
     "start:fulfillment": "tsx src/fulfillment-main.ts",
     "start:payment-webhooks": "tsx src/payment-webhook-main.ts",
+    "start:initial-payment-captures": "tsx src/initial-payment-capture-main.ts",
     "start:inventory-expiry": "tsx src/inventory-reservation-expiry-main.ts"
   },
   "dependencies": {
