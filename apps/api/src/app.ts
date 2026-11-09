@@ -542,6 +542,12 @@ app.patch<{
         (body.reason !== undefined && (typeof body.reason !== "string" || body.reason.trim().length > 500))) {
       return reply.code(400).send({ error: "invalid_request" });
     }
+    // Store employees may only operate the preparation lane for their assigned branch.
+    // They cannot cancel, refund, dispatch, or change delivery/custody states.
+    if (result.actor.role === "merchant_employee" &&
+        !["preparing", "ready_for_pickup", "stock_unavailable"].includes(body.nextStatus)) {
+      return reply.code(403).send({ error: "employee_preparation_transition_only" });
+    }
     const context: OrderTransitionContext = {
       actorId: result.actor.id, actorRole: result.actor.role,
       occurredAt: new Date().toISOString(), expectedVersion: body.expectedVersion,
