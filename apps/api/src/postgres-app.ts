@@ -22,6 +22,7 @@ import { PostgresBranchInventoryReader } from "../../../packages/domain/src/post
 import { PostgresBranchInventoryReservationLifecycle } from "../../../packages/domain/src/postgres-branch-inventory-reservation-lifecycle.js";
 import { PostgresFulfillmentHandoverInbox } from "../../../packages/domain/src/postgres-fulfillment-handover-inbox.js";
 import { PostgresFulfillmentProviderScopeAuthorizer } from "../../../packages/domain/src/postgres-fulfillment-provider-scope-authorizer.js";
+import { PostgresMerchantOrderItemPreparationStore } from "../../../packages/domain/src/postgres-merchant-order-item-preparation.js";
 
 export interface PostgresApiOptions {
   pool: PostgresPool;
@@ -73,6 +74,7 @@ export function buildPostgresApp(options: PostgresApiOptions) {
     branchInventorySync: new BranchInventorySyncService(new PostgresBranchInventorySyncStore(options.pool), options.now),
     branchInventoryReader: new PostgresBranchInventoryReader(options.pool),
     inventoryReservationLifecycle: new PostgresBranchInventoryReservationLifecycle(options.pool),
+    merchantOrderItemPreparation: new PostgresMerchantOrderItemPreparationStore(options.pool),
     ...(options.sallaOAuthFlow === undefined ? {} : { sallaOAuthFlow: options.sallaOAuthFlow }),
     paymentWebhookInbox: new PostgresPaymentWebhookInbox(options.pool),
     fulfillmentHandoverInbox: new PostgresFulfillmentHandoverInbox(options.pool),
