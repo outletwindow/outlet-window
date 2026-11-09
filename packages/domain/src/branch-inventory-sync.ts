@@ -53,6 +53,9 @@ export class BranchInventorySyncService {
         !Array.isArray(input.lines) || input.lines.length < 1 || input.lines.length > 5000) {
       throw new Error("INVALID_BRANCH_INVENTORY_SNAPSHOT");
     }
+    if (Date.parse(input.capturedAtUtc) > this.now().getTime()) {
+      throw new Error("FUTURE_BRANCH_INVENTORY_SNAPSHOT");
+    }
     const seen = new Set<string>();
     for (const line of input.lines) {
       if (!line.productVariantId.trim() || line.productVariantId.length > 200 ||
