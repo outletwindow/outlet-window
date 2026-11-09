@@ -113,6 +113,43 @@ describe("paid scheduled checkout orchestration", () => {
     expect(h.publishedTasks).toHaveLength(0);
   });
 
+  it("durably records a paid checkout recovery case when one merchant cannot reserve stock", async () => {
+    const h = harness("suborder-b");
+    const recorded: unknown[] = [];
+    const result = await orchestratePaidScheduledCheckout({
+      order, plan, inventoryRequests: [request("suborder-a"), request("suborder-b")],
+      ...h,
+      recoveryRecorder: { record: async input => {
+        recorded.push(input);
+        return { outcome: "recorded" as const, caseId: "recovery-1" };
+      } },
+      outboxIdForTask: (_task, index) => "outbox-recovery-" + index
+    });
+    expect(result.status).toBe("inventory_unavailable");
+    if (result.status !== "inventory_unavailable") throw new Error("expected inventory exception");
+    expect(result.recoveryCase).toEqual({ status: "recorded", caseId: "recovery-1" });
+    expect(recorded[0]).toMatchObject({
+      tenantId: order.tenantId, orderId: order.orderId,
+      failureCode: "INVENTORY_UNAVAILABLE", failedSuborderId: "suborder-b",
+      paymentReference: order.paymentReference,
+      reservationReferences: [{ suborderId: "suborder-a", reservationReference: "reservation:suborder-a" }]
+    });
+    expect(h.publishedTasks).toHaveLength(0);
+  });
+
+  it("surfaces recovery persistence failure instead of hiding an unresolved paid order", async () => {
+    const h = harness("suborder-b");
+    const result = await orchestratePaidScheduledCheckout({
+      order, plan, inventoryRequests: [request("suborder-a"), request("suborder-b")],
+      ...h,
+      recoveryRecorder: { record: async () => { throw new Error("database unavailable"); } },
+      outboxIdForTask: (_task, index) => "outbox-recovery-failed-" + index
+    });
+    expect(result.status).toBe("inventory_unavailable");
+    if (result.status !== "inventory_unavailable") throw new Error("expected inventory exception");
+    expect(result.recoveryCase).toEqual({ status: "persistence_failed" });
+  });
+
   it("rejects mixed-parent and duplicate-suborder requests before payment evidence", async () => {
     const h = harness();
     const invalid = { ...request("suborder-a"), orderId: "another-order" };
