@@ -310,7 +310,8 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Added a dedicated initial-capture inbox writer with raw-body digest deduplication, server-owned payment-intent binding, and same-event/different-payload collision detection.
 - [x] Added a leased initial-capture worker that revalidates the persisted payment intent and payable order, inserts immutable capture evidence, and finalizes the inbox receipt in one PostgreSQL transaction.
 - [x] Added bounded exponential retry/dead-letter handling and a standalone worker process/Compose service; the existing payment webhook worker remains adjustment-only.
-- [ ] Wire the API's signed capture processor to this inbox in the production composition root after provider-specific decoder and secret-manager configuration; no live PSP is enabled.
+- [x] Production composition root now constructs the capture processor with the PostgreSQL payment-intent resolver, immutable capture store, and durable inbox whenever a provider decoder registry and secret resolver are supplied.
+- [ ] Supply the selected PSP's provider-specific decoder registry and secret-manager resolver in deployment configuration; no live PSP is enabled by default.
 - [ ] Wire the signed capture route to this durable inbox after provider-specific decoder and secret-manager verification; no live PSP is enabled.
 
 ## Server-owned provider payment intent mapping — development foundation
