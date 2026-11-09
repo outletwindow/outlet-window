@@ -41,7 +41,8 @@ async function main(): Promise<void> {
       { version: "0022_fulfillment_handover_event_inbox", file: "0022_fulfillment_handover_event_inbox.sql" },
       { version: "0023_fulfillment_provider_branch_scopes", file: "0023_fulfillment_provider_branch_scopes.sql" },
       { version: "0024_merchant_order_item_preparation_checks", file: "0024_merchant_order_item_preparation_checks.sql" },
-      { version: "0025_immutable_preparation_check_evidence", file: "0025_immutable_preparation_check_evidence.sql" }
+      { version: "0025_immutable_preparation_check_evidence", file: "0025_immutable_preparation_check_evidence.sql" },
+      { version: "0026_block_preparation_evidence_truncate", file: "0026_block_preparation_evidence_truncate.sql" }
     ].map(async migration => ({
       version: migration.version,
       sql: await readFile(resolve(process.cwd(), `../../database/migrations/${migration.file}`), "utf8")
