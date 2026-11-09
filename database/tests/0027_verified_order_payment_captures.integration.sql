@@ -20,6 +20,24 @@ BEGIN
   END;
 
   BEGIN
+    INSERT INTO verified_order_payment_captures
+    (id,tenant_id,order_id,provider_key,provider_event_id,provider_payment_reference,amount_minor,currency,captured_at,idempotency_key)
+    VALUES
+    ('payment-ci-duplicate-event','platform','payment-ci-order','test_psp','evt-payment-ci-001','pay-payment-ci-duplicate',12500,'SAR',now(),'payment-ci-idempotency-003');
+    RAISE EXCEPTION 'duplicate provider event unexpectedly accepted';
+  EXCEPTION WHEN unique_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO verified_order_payment_captures
+    (id,tenant_id,order_id,provider_key,provider_event_id,provider_payment_reference,amount_minor,currency,captured_at,idempotency_key)
+    VALUES
+    ('payment-ci-duplicate-reference','platform','payment-ci-order','test_psp','evt-payment-ci-003','pay-payment-ci-001',12500,'SAR',now(),'payment-ci-idempotency-004');
+    RAISE EXCEPTION 'duplicate provider payment reference unexpectedly accepted';
+  EXCEPTION WHEN unique_violation THEN NULL;
+  END;
+
+  BEGIN
     UPDATE verified_order_payment_captures SET amount_minor=1 WHERE id='payment-ci-capture';
     RAISE EXCEPTION 'capture mutation unexpectedly accepted';
   EXCEPTION WHEN object_not_in_prerequisite_state THEN NULL;
