@@ -18,6 +18,7 @@ describe("PostgresFulfillmentProviderScopeAuthorizer", () => {
     expect(query).toHaveBeenCalledOnce();
     expect(query.mock.calls[0]?.[1]).toEqual(["tenant-1", "carrier-a", "merchant-1", "branch-1"]);
     expect(String(query.mock.calls[0]?.[0])).toContain("i.status = 'connected'");
+    expect(String(query.mock.calls[0]?.[0])).toContain("SELECT COUNT(*) = 1");
     expect(String(query.mock.calls[0]?.[0])).toContain("s.active = true");
   });
 
