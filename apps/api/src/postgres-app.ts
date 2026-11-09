@@ -64,7 +64,7 @@ export function buildPostgresApp(options: PostgresApiOptions) {
           orderResolver: new PostgresPaymentIntentStore(options.pool),
           captureStore: new PostgresVerifiedOrderPaymentCaptureStore(options.pool),
           inboxStore: new PostgresInitialPaymentCaptureInbox(options.pool),
-          now: options.now
+          ...(options.now === undefined ? {} : { now: options.now })
         })
       : undefined);
   const catalogImport = options.merchantCatalogImport ?? (options.commerceConnectors
