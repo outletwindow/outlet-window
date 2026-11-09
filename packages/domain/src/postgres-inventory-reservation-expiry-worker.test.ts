@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { PostgresPool, PostgresQueryResult } from "./postgres-iam-store.js";
+import type { PostgresClient, PostgresPool, PostgresQueryResult } from "./postgres-iam-store.js";
 import { PostgresInventoryReservationExpiryWorker } from "./postgres-inventory-reservation-expiry-worker.js";
 
 class DueReservationPool implements PostgresPool {
@@ -14,7 +14,7 @@ class DueReservationPool implements PostgresPool {
       { tenant_id: "tenant-2", merchant_id: "merchant-2", branch_id: "branch-3", id: "reservation-3" }
     ] as Row[], rowCount: 3 };
   }
-  async connect() { throw new Error("not_used"); }
+  async connect(): Promise<PostgresClient> { throw new Error("not_used"); }
 }
 
 describe("PostgreSQL inventory reservation expiry worker", () => {
