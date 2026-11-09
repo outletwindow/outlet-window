@@ -15,6 +15,11 @@ import { INTEGRATION_FAMILIES, IntegrationHub } from "../../../packages/domain/s
 import { verifyPaymentProviderWebhook } from "../../../packages/domain/src/payment-adjustment-provider.js";
 import type { CatalogProductInput, CatalogProductRecord } from "../../../packages/domain/src/postgres-merchant-catalog.js";
 import type { MerchantCatalogImportService } from "../../../packages/domain/src/merchant-catalog-import-service.js";
+
+export interface SallaOAuthFlow {
+  begin(input: { tenantId: string; integrationId: string }): Promise<{ authorizationUrl: string }>;
+  complete(input: { code: string; state: string }): Promise<{ tenantId: string; integrationId: string }>;
+}
 import {
   resolveActorFromBearerToken,
   type ActorResolutionDependencies
@@ -95,6 +100,7 @@ export interface AppOptions {
   merchantCatalogImport?: MerchantCatalogImportService;
   paymentWebhookInbox?: PaymentWebhookInboxWriter;
   paymentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
+  sallaOAuthFlow?: SallaOAuthFlow;
 }
 
 const paymentWebhookRawBodies = new WeakMap<FastifyRequest, string>();
@@ -558,6 +564,52 @@ app.patch<{
     return reply.code(200).send({ outcome: "declined", orderUnchanged: true });
   });
 
+
+  app.post<{
+    Params: { merchantId: string; integrationId: string };
+  }>("/api/v1/merchants/:merchantId/integrations/:integrationId/salla/oauth/start", async (request, reply) => {
+    const { merchantId, integrationId } = request.params;
+    const result = await authorizeRequest(request, options, {
+      resource: "merchant.integration", action: "update", scope: { merchantId }
+    });
+    if (!result.actor) return sendAuthorizationFailure(reply, result.statusCode, result.decision.reason);
+    if (!["merchant_owner", "merchant_admin"].includes(result.actor.role)) {
+      return reply.code(403).send({ error: "merchant_admin_only" });
+    }
+    if (!options.sallaOAuthFlow) return reply.code(503).send({ error: "salla_oauth_not_configured" });
+    if (!/^[a-zA-Z0-9_-]{2,80}$/.test(integrationId)) return reply.code(400).send({ error: "invalid_integration_id" });
+    const integration = await options.integrationHub?.get(merchantId, integrationId);
+    if (!integration) return reply.code(404).send({ error: "integration_not_found" });
+    if (integration.providerKey !== "salla" || integration.family !== "commerce") {
+      return reply.code(409).send({ error: "integration_provider_mismatch" });
+    }
+    const started = await options.sallaOAuthFlow.begin({ tenantId: merchantId, integrationId });
+    let url: URL;
+    try { url = new URL(started.authorizationUrl); } catch { return reply.code(502).send({ error: "invalid_provider_authorization_url" }); }
+    if (url.protocol !== "https:" || url.hostname !== "accounts.salla.sa" || url.username || url.password) {
+      return reply.code(502).send({ error: "invalid_provider_authorization_url" });
+    }
+    return reply.code(200).send({ authorizationUrl: url.toString() });
+  });
+
+  // Public callback: the injected flow service must consume and validate one-time state before storing tokens.
+  app.get<{
+    Querystring: { code?: string; state?: string; error?: string };
+  }>("/api/v1/integrations/salla/oauth/callback", async (request, reply) => {
+    if (!options.sallaOAuthFlow) return reply.code(503).send({ error: "salla_oauth_not_configured" });
+    const { code, state, error } = request.query;
+    if (error) return reply.code(400).send({ error: "salla_authorization_denied" });
+    if (typeof code !== "string" || code.length < 1 || code.length > 4096 ||
+        typeof state !== "string" || !/^[A-Za-z0-9_-]{32,256}$/.test(state)) {
+      return reply.code(400).send({ error: "invalid_oauth_callback" });
+    }
+    try {
+      const completed = await options.sallaOAuthFlow.complete({ code, state });
+      return reply.code(200).send({ outcome: "authorized", integrationId: completed.integrationId });
+    } catch {
+      return reply.code(400).send({ error: "oauth_callback_rejected" });
+    }
+  });
 
   app.get<{
     Params: { merchantId: string };
