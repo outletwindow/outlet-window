@@ -74,7 +74,7 @@ export class PostgresVerifiedOrderPaymentCaptureStore {
       row.provider_key === input.providerKey && row.provider_event_id === input.providerEventId &&
       row.provider_payment_reference === input.providerPaymentReference &&
       Number(row.amount_minor) === input.amountMinor && row.currency === input.currency &&
-      new Date(row.captured_at).toISOString() === new Date(input.capturedAtUtc).toISOString() &&
+      (row.captured_at instanceof Date ? row.captured_at.toISOString() : new Date(row.captured_at).toISOString()) === new Date(input.capturedAtUtc).toISOString() &&
       row.idempotency_key === input.idempotencyKey;
     return same ? { outcome: "duplicate", captureId: row.id } : { outcome: "identity_collision" };
   }
