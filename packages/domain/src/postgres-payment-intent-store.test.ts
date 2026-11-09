@@ -19,11 +19,11 @@ describe("PostgreSQL server-owned payment intents",()=>{
   });
 
   it("resolves only exact provider reference, amount and currency while payable and unexpired",async()=>{
-    const query=vi.fn(async(_sql:string,_values?:readonly unknown[])=>({rows:[{tenant_id:"tenant-1",order_id:"order-1"}],rowCount:1}));
+    const query=vi.fn(async(_sql:string,_values?:readonly unknown[])=>({rows:[{id:"intent-1",tenant_id:"tenant-1",order_id:"order-1"}],rowCount:1}));
     const store=new PostgresPaymentIntentStore({query,connect:vi.fn()} as unknown as PostgresPool,undefined,now);
     await expect(store.findExpectedOrder({
       providerKey:"psp-a",providerPaymentReference:"provider-ref-1",amountMinor:12500,currency:"SAR"
-    })).resolves.toEqual({tenantId:"tenant-1",orderId:"order-1"});
+    })).resolves.toEqual({tenantId:"tenant-1",orderId:"order-1",paymentIntentId:"intent-1"});
     expect(query.mock.calls[0]?.[0]).toContain("i.amount_minor=$3 AND i.currency=$4");
   });
 
