@@ -23,6 +23,10 @@ import { PostgresBranchInventoryReservationLifecycle } from "../../../packages/d
 import { PostgresFulfillmentHandoverInbox } from "../../../packages/domain/src/postgres-fulfillment-handover-inbox.js";
 import { PostgresFulfillmentProviderScopeAuthorizer } from "../../../packages/domain/src/postgres-fulfillment-provider-scope-authorizer.js";
 import { PostgresMerchantOrderItemPreparationStore } from "../../../packages/domain/src/postgres-merchant-order-item-preparation.js";
+import { PostgresPaymentIntentStore } from "../../../packages/domain/src/postgres-payment-intent-store.js";
+import { PostgresVerifiedOrderPaymentCaptureStore } from "../../../packages/domain/src/postgres-verified-order-payment-capture.js";
+import { PostgresInitialPaymentCaptureInbox } from "../../../packages/domain/src/postgres-initial-payment-capture-inbox.js";
+import { VerifiedOrderPaymentCaptureWebhookProcessor, type PaymentCaptureEventDecoder } from "../../../packages/domain/src/verified-order-payment-capture-webhook.js";
 
 export interface PostgresApiOptions {
   pool: PostgresPool;
@@ -38,7 +42,7 @@ export interface PostgresApiOptions {
   merchantCatalogImport?: MerchantCatalogImportService;
   commerceConnectors?: CommerceConnectorRegistry;
   paymentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
-  paymentCaptureWebhookHandler?: PaymentCaptureWebhookHandler;
+  paymentCaptureWebhookHandler?: PaymentCaptureWebhookHandler;\n  paymentCaptureDecoders?: ReadonlyMap<string, PaymentCaptureEventDecoder>;
   fulfillmentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
   fulfillmentWebhookAuthorizationResolver?: NonNullable<AppOptions["fulfillmentWebhookAuthorizationResolver"]>;
   sallaOAuthFlow?: SallaOAuthFlow;
@@ -51,6 +55,17 @@ export interface PostgresApiOptions {
 export function buildPostgresApp(options: PostgresApiOptions) {
   const iam = new PostgresIamStore(options.pool);
   const integrationHub = new IntegrationHub(new PostgresIntegrationRegistryStore(options.pool));
+  const paymentCaptureWebhookHandler = options.paymentCaptureWebhookHandler ??
+    (options.paymentWebhookSecretResolver && options.paymentCaptureDecoders
+      ? new VerifiedOrderPaymentCaptureWebhookProcessor({
+          secretResolver: options.paymentWebhookSecretResolver,
+          decoders: options.paymentCaptureDecoders,
+          orderResolver: new PostgresPaymentIntentStore(options.pool),
+          captureStore: new PostgresVerifiedOrderPaymentCaptureStore(options.pool),
+          inboxStore: new PostgresInitialPaymentCaptureInbox(options.pool),
+          now: options.now
+        })
+      : undefined);
   const catalogImport = options.merchantCatalogImport ?? (options.commerceConnectors
     ? new MerchantCatalogImportService(
         integrationHub,
