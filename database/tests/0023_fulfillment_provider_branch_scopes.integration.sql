@@ -53,14 +53,26 @@ INSERT INTO tenant_integrations
 (id,tenant_id,family,provider_key,display_name,status,capabilities,created_at,updated_at)
 VALUES ('scope-carrier-duplicate','scope-tenant','carriers','carrier-a','Carrier A duplicate','connected','[]',now(),now());
 
-DO $$
+DO $
 BEGIN
-  IF (SELECT COUNT(*) = 1 FROM tenant_integrations
-      WHERE tenant_id='scope-tenant' AND provider_key='carrier-a'
-        AND family='carriers' AND status='connected') THEN
+  IF EXISTS (
+    SELECT 1
+    FROM tenant_integrations i
+    JOIN fulfillment_provider_branch_scopes s
+      ON s.tenant_id=i.tenant_id AND s.integration_id=i.id
+    JOIN merchants m ON m.tenant_id=i.tenant_id AND m.id=s.merchant_id
+    JOIN merchant_branches b ON b.merchant_id=s.merchant_id AND b.id=s.branch_id
+    WHERE i.tenant_id='scope-tenant' AND i.provider_key='carrier-a'
+      AND i.family='carriers' AND i.status='connected'
+      AND s.active AND s.merchant_id='scope-merchant' AND s.branch_id='scope-branch'
+      AND m.status='active' AND b.status='active'
+      AND (SELECT COUNT(*) FROM tenant_integrations candidate
+           WHERE candidate.tenant_id='scope-tenant' AND candidate.provider_key='carrier-a'
+             AND candidate.family='carriers' AND candidate.status='connected')=1
+  ) THEN
     RAISE EXCEPTION 'ambiguous connected provider identity was accepted';
   END IF;
-END $$;
+END $;
 
 DO $$
 BEGIN
