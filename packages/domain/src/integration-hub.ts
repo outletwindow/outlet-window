@@ -89,6 +89,11 @@ export class IntegrationHub {
     await this.store.put({ ...input, capabilities: [...new Set(input.capabilities)] });
   }
 
+  async get(tenantId: string, integrationId: string): Promise<IntegrationRegistration | null> {
+    if (!nonEmpty(tenantId) || !nonEmpty(integrationId)) throw new Error("INVALID_INTEGRATION_LOOKUP");
+    return this.store.get(tenantId, integrationId);
+  }
+
   async list(tenantId: string, family?: IntegrationFamily): Promise<IntegrationRegistration[]> {
     if (!nonEmpty(tenantId)) throw new Error("INVALID_TENANT_ID");
     return this.store.list(tenantId, family);
