@@ -45,7 +45,6 @@ export function buildPostgresApp(options: PostgresApiOptions) {
   const catalogImport = options.merchantCatalogImport ?? (options.commerceConnectors
     ? new MerchantCatalogImportService(
         integrationHub,
-    ...(options.sallaOAuthFlow === undefined ? {} : { sallaOAuthFlow: options.sallaOAuthFlow }),
         options.commerceConnectors,
         new PostgresCommerceCatalogStore(options.pool)
       )
@@ -57,6 +56,7 @@ export function buildPostgresApp(options: PostgresApiOptions) {
     merchantBranchWriter: new PostgresMerchantBranchWriter(options.pool),
     auditEvents: new PostgresAuditEventStore(options.pool),
     integrationHub,
+    ...(options.sallaOAuthFlow === undefined ? {} : { sallaOAuthFlow: options.sallaOAuthFlow }),
     paymentWebhookInbox: new PostgresPaymentWebhookInbox(options.pool),
     merchantCatalog: options.merchantCatalog ?? new PostgresMerchantCatalog(options.pool),
     ...(catalogImport === undefined ? {} : { merchantCatalogImport: catalogImport }),
