@@ -51,7 +51,7 @@ describe("verified initial order payment capture webhook processor", () => {
     expect(recordVerifiedCapture).toHaveBeenCalledWith(expect.objectContaining({
       tenantId: "tenant-1", orderId: "order-1", providerKey: "psp-a",
       providerEventId: "evt-capture-1", amountMinor: 12500, currency: "SAR",
-      idempotencyKey: "psp-a:evt-capture-1"
+      idempotencyKey: "payment-capture:psp-a:evt-capture-1"
     }));
   });
 
