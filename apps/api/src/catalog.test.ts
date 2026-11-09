@@ -38,8 +38,9 @@ describe("merchant catalog API", () => {
     apps = [];
   });
 
-  function makeApp(repository: MerchantCatalogRepository, actor: Actor | null = merchantOwner) {
-    const app = buildApp({ resolveActor: async () => actor, merchantCatalog: repository });
+  function makeApp(repository: MerchantCatalogRepository, actor: Actor | null = merchantOwner, tenantId: string | null = "merchant-1") {
+    const app = buildApp({ resolveActor: async () => actor, merchantCatalog: repository,
+      resolveMerchantTenantId: async () => tenantId });
     apps.push(app);
     return app.ready().then(() => app);
   }
