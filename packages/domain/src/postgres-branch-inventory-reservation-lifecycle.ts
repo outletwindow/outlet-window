@@ -16,6 +16,8 @@ export class PostgresBranchInventoryReservationLifecycle {
 
   release(input: {
     tenantId: string;
+    merchantId: string;
+    branchId: string;
     reservationId: string;
     nowUtc: string;
     reason: string;
@@ -25,6 +27,8 @@ export class PostgresBranchInventoryReservationLifecycle {
 
   expire(input: {
     tenantId: string;
+    merchantId: string;
+    branchId: string;
     reservationId: string;
     nowUtc: string;
   }): Promise<InventoryReservationFinalizeResult> {
@@ -33,13 +37,16 @@ export class PostgresBranchInventoryReservationLifecycle {
 
   consume(input: {
     tenantId: string;
+    merchantId: string;
+    branchId: string;
     reservationId: string;
     nowUtc: string;
     handoverVerified: boolean;
     handoverReference: string;
   }): Promise<InventoryReservationFinalizeResult> {
     return this.finalize({
-      tenantId: input.tenantId, reservationId: input.reservationId, nowUtc: input.nowUtc,
+      tenantId: input.tenantId, merchantId: input.merchantId, branchId: input.branchId,
+      reservationId: input.reservationId, nowUtc: input.nowUtc,
       nextStatus: "consumed", handoverVerified: input.handoverVerified,
       handoverReference: input.handoverReference
     });
@@ -47,6 +54,8 @@ export class PostgresBranchInventoryReservationLifecycle {
 
   private async finalize(input: {
     tenantId: string;
+    merchantId: string;
+    branchId: string;
     reservationId: string;
     nowUtc: string;
     nextStatus: InventoryReservationFinalState;
@@ -55,7 +64,8 @@ export class PostgresBranchInventoryReservationLifecycle {
     handoverReference?: string;
   }): Promise<InventoryReservationFinalizeResult> {
     const now = Date.parse(input.nowUtc);
-    if (!input.tenantId.trim() || !input.reservationId.trim() || !Number.isFinite(now)) {
+    if (!input.tenantId.trim() || !input.merchantId.trim() || !input.branchId.trim() ||
+        !input.reservationId.trim() || !Number.isFinite(now)) {
       throw new Error("inventory_reservation_finalize_invalid_input");
     }
     if (input.nextStatus === "released" &&
@@ -77,9 +87,9 @@ export class PostgresBranchInventoryReservationLifecycle {
       }>(
         `SELECT id, status, expires_at
          FROM inventory_reservations
-         WHERE tenant_id = $1 AND id = $2
+         WHERE tenant_id = $1 AND merchant_id = $2 AND branch_id = $3 AND id = $4
          FOR UPDATE`,
-        [input.tenantId, input.reservationId]
+        [input.tenantId, input.merchantId, input.branchId, input.reservationId]
       );
       if (!locked.rowCount) {
         await client.query("ROLLBACK");
@@ -150,8 +160,8 @@ export class PostgresBranchInventoryReservationLifecycle {
       }
 
       await client.query(
-        "UPDATE inventory_reservations SET status = $3, updated_at = $4, finalization_reason = $5, handover_reference = $6 WHERE tenant_id = $1 AND id = $2 AND status = 'reserved'",
-        [input.tenantId, input.reservationId, input.nextStatus, nowUtc,
+        "UPDATE inventory_reservations SET status = $3, updated_at = $4, finalization_reason = $5, handover_reference = $6 WHERE tenant_id = $1 AND merchant_id = $2 AND branch_id = $3 AND id = $4 AND status = 'reserved'",
+        [input.tenantId, input.merchantId, input.branchId, input.reservationId, input.nextStatus, nowUtc,
           input.finalizationReason ?? null, input.handoverReference ?? null]
       );
       await client.query("COMMIT");
