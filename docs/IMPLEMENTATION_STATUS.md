@@ -126,6 +126,7 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Reservation finalization schema enforces a release reason or verified handover reference for consumed stock; SQL acceptance tests cover invalid final states.
 - [x] Reservation release/expiry API now requires merchant and branch path scope; authorization checks the exact branch assignment before calling the lifecycle adapter.
 - [x] PostgreSQL reservation lifecycle locks and updates the reservation using tenant, merchant, branch, and reservation identifiers together; a reservation from another branch is indistinguishable from not found.
+- [x] Reservation-line and stock-row reads are additionally filtered by the requested merchant and branch; finalization now requires the reservation status compare-and-swap to update exactly one row or the entire stock transaction rolls back. Tests cover scoped SQL predicates and a zero-row finalization conflict.
 - [x] Owner/admin and branch-manager role mappings grant only branch-scoped reservation execution; ordinary merchant employees receive no reservation-finalization grant.
 - [x] Route and PostgreSQL adapter tests cover cross-branch denial, trusted scope derivation, one-time release, and rejection of client-asserted handover proof.
 - [ ] Verified fulfillment receipt-to-reservation consumption wiring and scheduled reservation expiry worker remain pending; the public API deliberately cannot consume stock from client-supplied handover fields.
