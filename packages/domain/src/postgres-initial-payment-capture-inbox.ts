@@ -117,7 +117,7 @@ export class PostgresInitialPaymentCaptureInbox {
          payment.provider_payment_reference!==event.provider_payment_reference ||
          Number(payment.amount_minor)!==Number(event.amount_minor) ||
          payment.currency!==event.currency || dateMillis(event.captured_at)<dateMillis(payment.created_at) ||
-         dateMillis(event.captured_at)>dateMillis(payment.expires_at) || event.order_status!=="awaiting_payment") {
+         dateMillis(event.captured_at)>dateMillis(payment.expires_at) || payment.order_status!=="awaiting_payment") {
         await this.failLocked(client,input.receiptId,"PAYMENT_INTENT_MISMATCH");
         await client.query("COMMIT"); return "conflict";
       }
