@@ -586,6 +586,9 @@ app.patch<{
         !["preparing", "ready_for_pickup", "stock_unavailable"].includes(body.nextStatus)) {
       return reply.code(403).send({ error: "employee_preparation_transition_only" });
     }
+    // Resolve the merchant's tenant from trusted persistence; merchantId is not tenantId.
+    const tenantId = await options.resolveMerchantTenantId?.(merchantId);
+    if (!tenantId) return reply.code(404).send({ error: "merchant_not_found" });
     const context: OrderTransitionContext = {
       actorId: result.actor.id, actorRole: result.actor.role,
       occurredAt: new Date().toISOString(), expectedVersion: body.expectedVersion,
@@ -602,12 +605,12 @@ app.patch<{
       occurredAt: context.occurredAt, actor: { id: result.actor.id, type: actorType, role: result.actor.role },
       action: "order.suborder.transition", outcome: "success",
       resourceType: "merchant_suborder", resourceId: suborderId,
-      tenantId: merchantId, merchantId, branchId, correlationId: request.id,
+      tenantId, merchantId, branchId, correlationId: request.id,
       source: "api", severity: "info",
       metadata: { orderId, nextStatus: body.nextStatus, expectedVersion: body.expectedVersion }
     });
     const persisted = await options.orderTransitions.transitionSuborder({
-      tenantId: merchantId, orderId, suborderId, nextStatus: body.nextStatus, context, auditEvent
+      tenantId, orderId, suborderId, nextStatus: body.nextStatus, context, auditEvent
     });
     if (persisted.outcome === "not_found") return reply.code(404).send({ error: "not_found" });
     if (persisted.outcome === "conflict") return reply.code(409).send({ error: "version_conflict" });
