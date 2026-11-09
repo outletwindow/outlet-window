@@ -26,7 +26,8 @@ export function grantsForAssignments(assignments: readonly RoleAssignment[]): re
     ];
     if (readRoles.has(assignment.role)) return [
       { resource: "merchant.branch", actions: ["read"] as const, scope: assignment.scope },
-      { resource: "merchant.order", actions: ["read"] as const, scope: assignment.scope }
+      { resource: "merchant.order", actions: ["read"] as const, scope: assignment.scope },
+      { resource: "merchant.branch.inventory", actions: ["read"] as const, scope: assignment.scope }
     ];
     return [];
   });
