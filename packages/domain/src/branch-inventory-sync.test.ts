@@ -11,14 +11,15 @@ const base: BranchInventorySyncRequest = {
 };
 
 describe("branch inventory snapshot sync", () => {
-  it("accepts a valid branch snapshot and reports freshness confidence", async () => {
-    let received: BranchInventorySyncRequest | undefined;
+  it("persists freshness confidence with the branch snapshot", async () => {
+    let received: (BranchInventorySyncRequest & { confidence: string }) | undefined;
     const store: BranchInventorySyncStore = { async applySnapshot(input) {
       received = input; return { accepted: 1, stale: 0 };
     }};
     const service = new BranchInventorySyncService(store, () => new Date("2026-11-09T10:03:00.000Z"));
     const result = await service.sync(base);
     expect(received?.branchId).toBe("branch-1");
+    expect(received?.confidence).toBe("high");
     expect(result).toEqual({ accepted: 1, stale: 0, confidence: "high", capturedAtUtc: base.capturedAtUtc });
   });
 
