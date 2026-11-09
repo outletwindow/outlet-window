@@ -2,16 +2,15 @@ import type { PostgresQueryable } from "./postgres-iam-store.js";
 import type { VerifiedFulfillmentHandoverEvent } from "./fulfillment-handover-provider.js";
 
 /**
- * Resolves carrier authority from durable tenant integration and explicit
- * merchant/branch grants. Missing, suspended, or ambiguous integrations fail closed.
+ * Resolves carrier authority from exactly one connected tenant integration
+ * and its explicit merchant/branch grant. Missing or ambiguous matches fail closed.
  */
 export class PostgresFulfillmentProviderScopeAuthorizer {
   constructor(private readonly db: PostgresQueryable) {}
 
   async isAuthorized(providerKey: string, event: VerifiedFulfillmentHandoverEvent): Promise<boolean> {
     const result = await this.db.query<{ authorized: boolean }>(
-      `SELECT EXISTS (
-         SELECT 1
+      `SELECT COUNT(DISTINCT i.id) = 1 AS authorized
          FROM tenant_integrations i
          JOIN fulfillment_provider_branch_scopes s
            ON s.tenant_id = i.tenant_id AND s.integration_id = i.id
@@ -28,7 +27,7 @@ export class PostgresFulfillmentProviderScopeAuthorizer {
            AND s.branch_id = $4
            AND m.status = 'active'
            AND b.status = 'active'
-       ) AS authorized`,
+       `,
       [event.tenantId, providerKey, event.merchantId, event.branchId]
     );
     return result.rows[0]?.authorized === true;
