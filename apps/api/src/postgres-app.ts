@@ -4,7 +4,7 @@ import {
   PostgresIamStore,
   type PostgresPool
 } from "../../../packages/domain/src/postgres-iam-store.js";
-import { buildApp, type AppOptions, type MerchantBranchReader, type CustomerDeliveryDestinationService, type CustomerPaymentAdjustmentActions, MerchantCatalogRepository } from "./app.js";
+import { buildApp, type AppOptions, type MerchantBranchReader, type CustomerDeliveryDestinationService, type CustomerPaymentAdjustmentActions, type MerchantCatalogRepository } from "./app.js";
 import { PostgresMerchantBranchReader } from "../../../packages/domain/src/postgres-merchant-branch-reader.js";
 import { PostgresMerchantBranchWriter } from "../../../packages/domain/src/postgres-merchant-branch-writer.js";
 import { PostgresAuditEventStore } from "../../../packages/domain/src/postgres-audit-event-store.js";
