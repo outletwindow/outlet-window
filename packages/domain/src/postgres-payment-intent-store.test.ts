@@ -19,7 +19,7 @@ describe("PostgreSQL server-owned payment intents",()=>{
   });
 
   it("resolves only exact provider reference, amount and currency while payable and unexpired",async()=>{
-    const query=vi.fn(async()=>({rows:[{tenant_id:"tenant-1",order_id:"order-1"}],rowCount:1}));
+    const query=vi.fn(async(_sql:string,_values?:readonly unknown[])=>({rows:[{tenant_id:"tenant-1",order_id:"order-1"}],rowCount:1}));
     const store=new PostgresPaymentIntentStore({query,connect:vi.fn()} as unknown as PostgresPool,undefined,now);
     await expect(store.findExpectedOrder({
       providerKey:"psp-a",providerPaymentReference:"provider-ref-1",amountMinor:12500,currency:"SAR"
@@ -28,7 +28,7 @@ describe("PostgreSQL server-owned payment intents",()=>{
   });
 
   it("fails closed when no exact mapping exists",async()=>{
-    const query=vi.fn(async()=>({rows:[],rowCount:0}));
+    const query=vi.fn(async(_sql:string,_values?:readonly unknown[])=>({rows:[],rowCount:0}));
     const store=new PostgresPaymentIntentStore({query,connect:vi.fn()} as unknown as PostgresPool,undefined,now);
     await expect(store.findExpectedOrder({
       providerKey:"psp-a",providerPaymentReference:"wrong-ref",amountMinor:12500,currency:"SAR"
@@ -36,7 +36,7 @@ describe("PostgreSQL server-owned payment intents",()=>{
   });
 
   it("rejects malformed or expired intent input before database access",async()=>{
-    const query=vi.fn();
+    const query=vi.fn(async(_sql:string,_values?:readonly unknown[])=>({rows:[],rowCount:0}));
     const store=new PostgresPaymentIntentStore({query,connect:vi.fn()} as unknown as PostgresPool,undefined,now);
     await expect(store.recordCreatedIntent({...input,amountMinor:0})).rejects.toThrow("INVALID_PROVIDER_PAYMENT_INTENT");
     await expect(store.recordCreatedIntent({...input,expiresAtUtc:"2026-11-08T12:00:00.000Z"}))
