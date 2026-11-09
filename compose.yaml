@@ -68,6 +68,16 @@ services:
       PAYMENT_WEBHOOK_WORKER_BATCH_SIZE: ${PAYMENT_WEBHOOK_WORKER_BATCH_SIZE:-10}
       PAYMENT_WEBHOOK_WORKER_LEASE_SECONDS: ${PAYMENT_WEBHOOK_WORKER_LEASE_SECONDS:-30}
 
+  initial-payment-capture-worker:
+    <<: *runtime
+    command: ["node", "apps/worker/dist/apps/worker/src/initial-payment-capture-main.js"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
+      INITIAL_CAPTURE_WORKER_POLL_MS: ${INITIAL_CAPTURE_WORKER_POLL_MS:-1000}
+      INITIAL_CAPTURE_WORKER_BATCH_SIZE: ${INITIAL_CAPTURE_WORKER_BATCH_SIZE:-10}
+      INITIAL_CAPTURE_WORKER_LEASE_SECONDS: ${INITIAL_CAPTURE_WORKER_LEASE_SECONDS:-30}
+
   inventory-expiry-worker:
     <<: *runtime
     command: ["node", "apps/worker/dist/apps/worker/src/inventory-reservation-expiry-main.js"]
