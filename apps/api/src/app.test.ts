@@ -28,6 +28,60 @@ describe("Outlet Window API foundation", () => {
     await app.close();
   });
 
+  it("verifies and atomically records a signed fulfillment handover webhook", async () => {
+    const secret = "fulfillment-test-secret-with-at-least-32-characters";
+    const recordAndApply = vi.fn(async () => ({ outcome: "applied" as const, receiptId: "receipt-1" }));
+    const webhookApp = buildApp({
+      fulfillmentHandoverInbox: { recordAndApply },
+      fulfillmentWebhookSecretResolver: async key => key === "carrier-a" ? secret : null
+    });
+    await webhookApp.ready();
+    try {
+      const rawBody = JSON.stringify({
+        eventType: "handover.completed", providerEventId: "event-1",
+        tenantId: "tenant-1", merchantId: "merchant-1", branchId: "branch-1",
+        reservationId: "reservation-1", handoverReference: "handover-1",
+        occurredAtUtc: new Date().toISOString()
+      });
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      const signature = createHmac("sha256", secret).update(timestamp + "." + rawBody).digest("hex");
+      const response = await webhookApp.inject({
+        method: "POST", url: "/api/v1/webhooks/fulfillment/carrier-a",
+        headers: { "content-type": "application/json", "x-fulfillment-signature": `t=${timestamp},v1=${signature}` },
+        payload: rawBody
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({ outcome: "applied", receiptId: "receipt-1" });
+      expect(recordAndApply).toHaveBeenCalledOnce();
+      expect(recordAndApply.mock.calls[0]![0].event).toMatchObject({
+        providerKey: "carrier-a", providerEventId: "event-1",
+        handoverReference: "carrier-a:handover-1"
+      });
+    } finally {
+      await webhookApp.close();
+    }
+  });
+
+  it("rejects unsigned fulfillment handover events before persistence", async () => {
+    const recordAndApply = vi.fn();
+    const webhookApp = buildApp({
+      fulfillmentHandoverInbox: { recordAndApply },
+      fulfillmentWebhookSecretResolver: async () => "fulfillment-test-secret-with-at-least-32-characters"
+    });
+    await webhookApp.ready();
+    try {
+      const response = await webhookApp.inject({
+        method: "POST", url: "/api/v1/webhooks/fulfillment/carrier-a",
+        headers: { "content-type": "application/json" },
+        payload: JSON.stringify({ eventType: "handover.completed" })
+      });
+      expect(response.statusCode).toBe(401);
+      expect(recordAndApply).not.toHaveBeenCalled();
+    } finally {
+      await webhookApp.close();
+    }
+  });
+
   it("exposes a health endpoint", async () => {
     const response = await app.inject({ method: "GET", url: "/health" });
     expect(response.statusCode).toBe(200);
