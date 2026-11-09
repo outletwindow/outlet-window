@@ -107,7 +107,8 @@ export function buildPostgresApp(options: PostgresApiOptions) {
         "0018_commerce_catalog",
         "0019_salla_oauth_vault",
         "0020_inventory_reservation_line_scope",
-        "0021_unique_inventory_handover_evidence"
+        "0021_unique_inventory_handover_evidence",
+        "0022_fulfillment_handover_event_inbox"
       ];
       const result = await options.pool.query<{ version: string }>(
         "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",
