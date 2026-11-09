@@ -583,6 +583,9 @@ app.patch<{
     if (integration.providerKey !== "salla" || integration.family !== "commerce") {
       return reply.code(409).send({ error: "integration_provider_mismatch" });
     }
+    if (integration.status !== "pending") {
+      return reply.code(409).send({ error: "integration_must_be_pending_before_authorization" });
+    }
     const started = await options.sallaOAuthFlow.begin({ tenantId: merchantId, integrationId });
     let url: URL;
     try { url = new URL(started.authorizationUrl); } catch { return reply.code(502).send({ error: "invalid_provider_authorization_url" }); }
