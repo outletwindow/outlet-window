@@ -102,7 +102,7 @@ export class PostgresMerchantOrderItemPreparationStore {
       );
       if (existing.rowCount) {
         const row = existing.rows[0]!;
-        const same = row.id === input.id && row.actor_id === input.actorId &&
+        const same = row.actor_id === input.actorId &&
           row.scanned_sku === scannedSku && row.verified_quantity === input.verifiedQuantity &&
           row.outcome === input.outcome && row.note === (input.note ?? null);
         await client.query("COMMIT");
