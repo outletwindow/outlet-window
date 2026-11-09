@@ -82,3 +82,5 @@ export * from "./salla-oauth-http-client.js";
 export * from "./postgres-salla-oauth.js";
 
 export * from "./postgres-fulfillment-handover-inbox.js";
+
+export * from "./postgres-fulfillment-provider-scope-authorizer.js";
