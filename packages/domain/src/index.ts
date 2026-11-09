@@ -36,6 +36,7 @@ export * from "./postgres-fulfillment-receipt-reader.js";
 export * from "./postgres-customer-order-delivery-updater.js";
 export * from "./scheduled-task-worker.js";
 export * from "./fulfillment-dispatch-handlers.js";
+export * from "./fulfillment-handover-provider.js";
 export * from "./http-fulfillment-provider.js";
 
 export * from "./order-pricing.js";
