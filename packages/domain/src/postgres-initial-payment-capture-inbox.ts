@@ -115,7 +115,7 @@ export class PostgresInitialPaymentCaptureInbox {
       if(payment.provider_key!==event.provider_key ||
          payment.provider_payment_reference!==event.provider_payment_reference ||
          Number(payment.amount_minor)!==Number(event.amount_minor) ||
-         payment.currency!==event.currency || new Date(payment.expires_at).getTime()<=Date.now() ||
+         payment.currency!==event.currency || dateMillis(payment.expires_at)<=Date.now() ||
          event.order_status!=="awaiting_payment") {
         await this.failLocked(client,input.receiptId,"PAYMENT_INTENT_MISMATCH");
         await client.query("COMMIT"); return "conflict";
@@ -150,7 +150,7 @@ export class PostgresInitialPaymentCaptureInbox {
           p.provider_key===event.provider_key && p.provider_event_id===event.provider_event_id &&
           p.provider_payment_reference===event.provider_payment_reference &&
           Number(p.amount_minor)===Number(event.amount_minor) && p.currency===event.currency &&
-          new Date(p.captured_at).toISOString()===new Date(event.captured_at).toISOString() &&
+          dateIso(p.captured_at)===dateIso(event.captured_at) &&
           p.idempotency_key===`payment-capture:${event.provider_key}:${event.provider_event_id}`;
         if(!same) {
           await this.failLocked(client,input.receiptId,"CAPTURE_IDENTITY_COLLISION");
@@ -202,11 +202,13 @@ type InitialCaptureRow={id:string;provider_key:string;provider_event_id:string;p
   provider_payment_reference:string;amount_minor:string|number;currency:string;captured_at:Date|string;attempt_count:number};
 export type ClaimedInitialCapture={receiptId:string;providerKey:string;providerEventId:string;paymentIntentId:string;
   providerPaymentReference:string;amountMinor:number;currency:string;capturedAtUtc:string;attemptCount:number};
+function dateMillis(value:Date|string):number { return value instanceof Date ? value.getTime() : Date.parse(value); }
+function dateIso(value:Date|string):string { return value instanceof Date ? value.toISOString() : new Date(value).toISOString(); }
 function mapClaim(r:InitialCaptureRow):ClaimedInitialCapture {
   return {receiptId:r.id,providerKey:r.provider_key,providerEventId:r.provider_event_id,
     paymentIntentId:r.payment_intent_id,providerPaymentReference:r.provider_payment_reference,
     amountMinor:Number(r.amount_minor),currency:r.currency,
-    capturedAtUtc:new Date(r.captured_at).toISOString(),attemptCount:Number(r.attempt_count)};
+    capturedAtUtc:dateIso(r.captured_at),attemptCount:Number(r.attempt_count)};
 }
 
 export class InitialPaymentCaptureWebhookWorker {
