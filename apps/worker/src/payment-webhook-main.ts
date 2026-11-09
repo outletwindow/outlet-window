@@ -86,9 +86,9 @@ try {
   await pool.query("SELECT 1");
   const migration = await pool.query(
     "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",
-    [["0014_payment_provider_webhook_inbox", "0016_payment_webhook_worker_envelope"]]
+    [["0014_payment_provider_webhook_inbox", "0016_payment_webhook_worker_envelope", "0029_initial_payment_capture_webhook_inbox"]]
   );
-  if (migration.rowCount !== 2) throw new Error("payment_webhook_worker_migration_required");
+  if (migration.rowCount !== 3) throw new Error("payment_webhook_worker_migration_required");
   process.stdout.write(JSON.stringify({
     event: "payment_webhook_worker_started", pollMs, batchSize, leaseSeconds, workerId
   }) + "\n");
