@@ -73,7 +73,7 @@ export class VerifiedOrderPaymentCaptureWebhookProcessor {
     if (!decoded ||
         !/^[a-zA-Z0-9._:-]{1,240}$/.test(decoded.providerEventId) ||
         !decoded.providerPaymentReference.trim() || decoded.providerPaymentReference.length > 240 ||
-        !Number.isSafeInteger(decoded.amountMinor) || decoded.amountMinor < 0 ||
+        !Number.isSafeInteger(decoded.amountMinor) || decoded.amountMinor <= 0 ||
         !/^[A-Z]{3}$/.test(decoded.currency) ||
         !Number.isFinite(Date.parse(decoded.capturedAtUtc)) ||
         Date.parse(decoded.capturedAtUtc) > (this.dependencies.now?.() ?? new Date()).getTime() + 300_000) {
@@ -95,7 +95,7 @@ export class VerifiedOrderPaymentCaptureWebhookProcessor {
       amountMinor: decoded.amountMinor,
       currency: decoded.currency,
       capturedAtUtc: new Date(decoded.capturedAtUtc).toISOString(),
-      idempotencyKey: `${input.providerKey}:${decoded.providerEventId}`
+      idempotencyKey: `payment-capture:${input.providerKey}:${decoded.providerEventId}`
     });
     if (stored.outcome === "identity_collision") return { outcome: "identity_collision" };
     return stored.outcome === "inserted"
