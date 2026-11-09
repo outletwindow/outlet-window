@@ -731,7 +731,7 @@ app.patch<{
   }>("/api/v1/merchants/:merchantId/catalog/products", async (request, reply) => {
     const { merchantId } = request.params;
     const result = await authorizeRequest(request, options, {
-      resource: "merchant.catalog", action: "read", scope: { merchantId }
+      resource: "merchant.integration", action: "read", scope: { merchantId }
     });
     if (!result.actor) return sendAuthorizationFailure(reply, result.statusCode, result.decision.reason);
     if (!["merchant_owner", "merchant_admin"].includes(result.actor.role)) {
@@ -760,7 +760,7 @@ app.patch<{
   }>("/api/v1/merchants/:merchantId/catalog/products", async (request, reply) => {
     const { merchantId } = request.params;
     const result = await authorizeRequest(request, options, {
-      resource: "merchant.catalog", action: "create", scope: { merchantId }
+      resource: "merchant.integration", action: "create", scope: { merchantId }
     });
     if (!result.actor) return sendAuthorizationFailure(reply, result.statusCode, result.decision.reason);
     if (!["merchant_owner", "merchant_admin"].includes(result.actor.role)) {
