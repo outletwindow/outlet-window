@@ -855,7 +855,9 @@ app.patch<{
     if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
       return reply.code(400).send({ error: "invalid_limit" });
     }
-    const products = await options.merchantCatalog.listProducts(merchantId, limit);
+    const tenantId = await options.resolveMerchantTenantId?.(merchantId);
+    if (!tenantId) return reply.code(404).send({ error: "merchant_not_found" });
+    const products = await options.merchantCatalog.listProducts(tenantId, limit);
     return reply.code(200).send({ products });
   });
 
