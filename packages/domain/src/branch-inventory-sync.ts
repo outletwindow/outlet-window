@@ -100,10 +100,25 @@ export class PostgresBranchInventorySyncStore implements BranchInventorySyncStor
              source=EXCLUDED.source, last_synced_at=EXCLUDED.last_synced_at,
              availability_confidence=EXCLUDED.availability_confidence, updated_at=now()
            WHERE branch_inventory.last_synced_at <= EXCLUDED.last_synced_at
+             AND EXCLUDED.available_quantity >= branch_inventory.reserved_quantity
            RETURNING product_variant_id`,
           [input.merchantId,input.branchId,line.productVariantId,line.sku,line.availableQuantity,input.source,input.capturedAtUtc,input.confidence]
         );
-        if (result.rowCount === 1) accepted++; else stale++;
+        if (result.rowCount === 1) {
+          accepted++;
+        } else {
+          const current = await client.query<{ last_synced_at: Date | string; reserved_quantity: number }>(
+            `SELECT last_synced_at, reserved_quantity FROM branch_inventory
+             WHERE merchant_id = $1 AND branch_id = $2 AND product_variant_id = $3`,
+            [input.merchantId, input.branchId, line.productVariantId]
+          );
+          const row = current.rows[0];
+          if (row && Date.parse(input.capturedAtUtc) >= new Date(row.last_synced_at).getTime() &&
+              line.availableQuantity < row.reserved_quantity) {
+            throw new Error("BRANCH_INVENTORY_RESERVED_STOCK_CONFLICT");
+          }
+          stale++;
+        }
       }
       await client.query("COMMIT");
       return { accepted, stale };
