@@ -35,7 +35,8 @@ async function main(): Promise<void> {
       { version: "0016_payment_webhook_worker_envelope", file: "0016_payment_webhook_worker_envelope.sql" },
       { version: "0017_self_healing_incidents", file: "0017_self_healing_incidents.sql" },
       { version: "0018_commerce_catalog", file: "0018_commerce_catalog.sql" },
-      { version: "0019_salla_oauth_vault", file: "0019_salla_oauth_vault.sql" }
+      { version: "0019_salla_oauth_vault", file: "0019_salla_oauth_vault.sql" },
+      { version: "0020_inventory_reservation_line_scope", file: "0020_inventory_reservation_line_scope.sql" }
     ].map(async migration => ({
       version: migration.version,
       sql: await readFile(resolve(process.cwd(), `../../database/migrations/${migration.file}`), "utf8")
