@@ -14,6 +14,7 @@ import { IntegrationHub } from "../../../packages/domain/src/integration-hub.js"
 import { PostgresIntegrationRegistryStore } from "../../../packages/domain/src/postgres-integration-registry-store.js";
 import { PostgresPaymentWebhookInbox } from "../../../packages/domain/src/postgres-payment-webhook-inbox.js";
 import { PostgresMerchantCatalog } from "../../../packages/domain/src/postgres-merchant-catalog.js";
+import type { MerchantCatalogImportService } from "../../../packages/domain/src/merchant-catalog-import-service.js";
 
 export interface PostgresApiOptions {
   pool: PostgresPool;
@@ -26,6 +27,7 @@ export interface PostgresApiOptions {
   customerDeliveryDestinations?: CustomerDeliveryDestinationService;
   customerPaymentAdjustments?: CustomerPaymentAdjustmentActions;
   merchantCatalog?: MerchantCatalogRepository;
+  merchantCatalogImport?: MerchantCatalogImportService;
   paymentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
 }
 
@@ -44,6 +46,7 @@ export function buildPostgresApp(options: PostgresApiOptions) {
     integrationHub: new IntegrationHub(new PostgresIntegrationRegistryStore(options.pool)),
     paymentWebhookInbox: new PostgresPaymentWebhookInbox(options.pool),
     merchantCatalog: options.merchantCatalog ?? new PostgresMerchantCatalog(options.pool),
+    ...(options.merchantCatalogImport === undefined ? {} : { merchantCatalogImport: options.merchantCatalogImport }),
     ...(options.paymentWebhookSecretResolver === undefined ? {} : {
       paymentWebhookSecretResolver: options.paymentWebhookSecretResolver
     }),
