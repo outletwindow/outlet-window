@@ -21,6 +21,7 @@ import { BranchInventorySyncService, PostgresBranchInventorySyncStore } from "..
 import { PostgresBranchInventoryReader } from "../../../packages/domain/src/postgres-branch-inventory-reader.js";
 import { PostgresBranchInventoryReservationLifecycle } from "../../../packages/domain/src/postgres-branch-inventory-reservation-lifecycle.js";
 import { PostgresFulfillmentHandoverInbox } from "../../../packages/domain/src/postgres-fulfillment-handover-inbox.js";
+import { PostgresFulfillmentProviderScopeAuthorizer } from "../../../packages/domain/src/postgres-fulfillment-provider-scope-authorizer.js";
 
 export interface PostgresApiOptions {
   pool: PostgresPool;
@@ -75,6 +76,8 @@ export function buildPostgresApp(options: PostgresApiOptions) {
     ...(options.sallaOAuthFlow === undefined ? {} : { sallaOAuthFlow: options.sallaOAuthFlow }),
     paymentWebhookInbox: new PostgresPaymentWebhookInbox(options.pool),
     fulfillmentHandoverInbox: new PostgresFulfillmentHandoverInbox(options.pool),
+    fulfillmentWebhookAuthorizationResolver: options.fulfillmentWebhookAuthorizationResolver ??
+      ((providerKey, event) => new PostgresFulfillmentProviderScopeAuthorizer(options.pool).isAuthorized(providerKey, event)),
     ...(options.fulfillmentWebhookSecretResolver === undefined ? {} : {
       fulfillmentWebhookSecretResolver: options.fulfillmentWebhookSecretResolver
     }),
@@ -118,7 +121,8 @@ export function buildPostgresApp(options: PostgresApiOptions) {
         "0019_salla_oauth_vault",
         "0020_inventory_reservation_line_scope",
         "0021_unique_inventory_handover_evidence",
-        "0022_fulfillment_handover_event_inbox"
+        "0022_fulfillment_handover_event_inbox",
+        "0023_fulfillment_provider_branch_scopes"
       ];
       const result = await options.pool.query<{ version: string }>(
         "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",
