@@ -281,3 +281,13 @@ A checkbox is marked complete only when code is present and automated checks or 
 
 - [x] Additional implementation detail confirmed during follow-up: `PostgresBranchInventoryReservationAdapter` currently gates new reservations on `scheduled_order_confirmations`; it therefore cannot serve a true immediate-payment path without a generalized, trusted payment-capture evidence contract. Existing idempotent replay is checked before that gate, but that does not make first-time immediate reservations supported.
 - [x] Confirmed the merchant suborder transition API explicitly sets payment, inventory, delivery, and refund proof flags to false server-side; clients cannot assert these proofs in the transition request. Keep this fail-closed behavior.
+
+## Verified initial-order payment capture ledger — schema foundation
+- [x] Added migration `0027_verified_order_payment_captures` with tenant/order binding, provider event and payment-reference uniqueness, idempotency uniqueness, captured amount/currency/time, and immutable evidence rows.
+- [x] Database insertion trigger locks the payable order and rejects captures unless the order is awaiting payment and the captured amount/currency exactly match the current order total/currency; future capture timestamps are rejected.
+- [x] Registered migration 0027 in the explicit migration runner and API readiness gate.
+- [x] PostgreSQL CI acceptance covers exact amount/currency acceptance, amount mismatch rejection, duplicate provider event/reference rejection, and immutable evidence mutation rejection.
+- [x] Exact-variant inventory reservation now accepts a matching row from the new verified-capture ledger while retaining the legacy scheduled-confirmation path.
+- [ ] Implement the trusted provider verification adapter/worker that verifies provider signatures and canonical payment status before inserting this ledger row. No public/customer route may write verified capture evidence.
+- [ ] Add a writer-level PostgreSQL adapter with replay/collision semantics and tests for same event/same payload versus same event/different payload.
+- [ ] Connect verified capture recording to immediate multi-store checkout orchestration, order/suborder state transitions, task outbox commit, and explicit partial-reservation reconciliation. No live PSP is selected or configured.
