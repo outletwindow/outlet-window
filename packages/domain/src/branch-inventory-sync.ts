@@ -77,7 +77,7 @@ export class PostgresBranchInventorySyncStore implements BranchInventorySyncStor
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      const branch = await this.db.query<{ id: string }>(
+      const branch = await client.query<{ id: string }>(
         `SELECT b.id FROM merchant_branches b
          JOIN merchants m ON m.id = b.merchant_id
          WHERE m.tenant_id = $1 AND m.id = $2 AND b.id = $3
