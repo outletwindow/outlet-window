@@ -80,6 +80,16 @@ describe("PostgresInitialPaymentCaptureInbox", () => {
     expect(client.release).toHaveBeenCalledOnce();
   });
 
+  it("does not let an expired worker lease reschedule a receipt", async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [], rowCount: 0 });
+    const store = new PostgresInitialPaymentCaptureInbox(poolWithQuery(query));
+    await expect(store.releaseForRetry({
+      receiptId: "receipt-1", workerId: "worker-1", delaySeconds: 10,
+      failureCode: "CAPTURE_RECONCILIATION_RETRY"
+    })).resolves.toBe("lease_lost");
+    expect(query.mock.calls[0]?.[0]).toContain("lease_expires_at>now()");
+  });
+
   it("reschedules transient worker failures with bounded retry metadata", async () => {
     const store = {
       claimNext: vi.fn().mockResolvedValue({ receiptId: "receipt-1", attemptCount: 2 }),
