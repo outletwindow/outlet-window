@@ -55,14 +55,14 @@ describe("merchant order permissions", () => {
     });
   });
 
-  it("does not grant order updates to ordinary merchant employees", () => {
+  it("grants employees branch-scoped preparation updates but no inventory or reservation authority", () => {
     const grants = grantsForAssignments([assignment("merchant_employee")]);
     expect(grants).toContainEqual({
       resource: "merchant.order",
-      actions: ["read"],
+      actions: ["read", "update"],
       scope: { merchantId: "merchant-1", branchId: "branch-1" }
     });
-    expect(grants.some(grant => grant.resource === "merchant.order" && grant.actions.includes("update"))).toBe(false);
+    expect(grants.some(grant => grant.resource === "merchant.order" && grant.actions.includes("update"))).toBe(true);
     expect(grants.some(grant => grant.resource === "merchant.branch.inventory" && grant.actions.includes("update"))).toBe(false);
     expect(grants.some(grant => grant.resource === "merchant.branch.inventory_reservation" && grant.actions.includes("execute"))).toBe(false);
     expect(grants).toContainEqual({
