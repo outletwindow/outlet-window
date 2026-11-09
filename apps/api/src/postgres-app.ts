@@ -17,6 +17,7 @@ import { PostgresMerchantCatalog } from "../../../packages/domain/src/postgres-m
 import { MerchantCatalogImportService } from "../../../packages/domain/src/merchant-catalog-import-service.js";
 import type { CommerceConnectorRegistry } from "../../../packages/domain/src/commerce-connectors.js";
 import { PostgresCommerceCatalogStore } from "../../../packages/domain/src/postgres-commerce-catalog-store.js";
+import { BranchInventorySyncService, PostgresBranchInventorySyncStore } from "../../../packages/domain/src/branch-inventory-sync.js";
 
 export interface PostgresApiOptions {
   pool: PostgresPool;
@@ -45,6 +46,7 @@ export function buildPostgresApp(options: PostgresApiOptions) {
   const catalogImport = options.merchantCatalogImport ?? (options.commerceConnectors
     ? new MerchantCatalogImportService(
         integrationHub,
+    branchInventorySync: new BranchInventorySyncService(new PostgresBranchInventorySyncStore(options.pool), options.now),
         options.commerceConnectors,
         new PostgresCommerceCatalogStore(options.pool)
       )
