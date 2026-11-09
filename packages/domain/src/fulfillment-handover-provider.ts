@@ -88,7 +88,7 @@ export function verifyAndParseFulfillmentHandoverEvent(input: {
       !boundedIdentifier(event.merchantId) ||
       !boundedIdentifier(event.branchId) ||
       !boundedIdentifier(event.reservationId) ||
-      !boundedIdentifier(event.handoverReference, 240) ||
+      !boundedIdentifier(event.handoverReference, 139) ||
       !boundedIdentifier(event.occurredAtUtc, 40) ||
       !Number.isFinite(Date.parse(event.occurredAtUtc))) return null;
 
