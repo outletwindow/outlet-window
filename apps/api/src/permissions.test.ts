@@ -28,6 +28,11 @@ describe("merchant order permissions", () => {
         actions: ["read", "update"],
         scope: { merchantId: "merchant-1", branchId: "branch-1" }
       });
+      expect(grants).toContainEqual({
+        resource: "merchant.branch.inventory_reservation",
+        actions: ["execute"],
+        scope: { merchantId: "merchant-1", branchId: "branch-1" }
+      });
     }
   });
 
@@ -43,6 +48,11 @@ describe("merchant order permissions", () => {
       actions: ["read", "update"],
       scope: { merchantId: "merchant-1", branchId: "branch-1" }
     });
+    expect(grants).toContainEqual({
+      resource: "merchant.branch.inventory_reservation",
+      actions: ["execute"],
+      scope: { merchantId: "merchant-1", branchId: "branch-1" }
+    });
   });
 
   it("does not grant order updates to ordinary merchant employees", () => {
@@ -54,6 +64,7 @@ describe("merchant order permissions", () => {
     });
     expect(grants.some(grant => grant.resource === "merchant.order" && grant.actions.includes("update"))).toBe(false);
     expect(grants.some(grant => grant.resource === "merchant.branch.inventory" && grant.actions.includes("update"))).toBe(false);
+    expect(grants.some(grant => grant.resource === "merchant.branch.inventory_reservation" && grant.actions.includes("execute"))).toBe(false);
   });
 });
 
