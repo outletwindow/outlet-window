@@ -133,7 +133,8 @@ export function buildPostgresApp(options: PostgresApiOptions) {
         "0025_immutable_preparation_check_evidence",
         "0026_block_preparation_evidence_truncate",
         "0027_verified_order_payment_captures",
-        "0028_provider_payment_intents"
+        "0028_provider_payment_intents",
+        "0029_initial_payment_capture_webhook_inbox"
       ];
       const result = await options.pool.query<{ version: string }>(
         "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",
