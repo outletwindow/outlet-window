@@ -1000,14 +1000,16 @@ app.patch<{
     if (!body || !["release","expire","consume"].includes(body.action)) {
       return reply.code(400).send({ error: "invalid_reservation_action" });
     }
+    // A client-supplied boolean/reference is not trusted proof of physical handover.
+    // Consumption must be initiated by a verified fulfillment event, never this public route.
+    if (body.action === "consume") {
+      return reply.code(409).send({ error: "verified_fulfillment_event_required" });
+    }
     try {
       const nowUtc = new Date().toISOString();
       const result = body.action === "release"
         ? await lifecycle.release({ tenantId, reservationId, nowUtc, reason: body.reason ?? "" })
-        : body.action === "expire"
-          ? await lifecycle.expire({ tenantId, reservationId, nowUtc })
-          : await lifecycle.consume({ tenantId, reservationId, nowUtc,
-              handoverVerified: body.handoverVerified === true, handoverReference: body.handoverReference ?? "" });
+        : await lifecycle.expire({ tenantId, reservationId, nowUtc });
       return reply.code(result.outcome === "not_found" ? 404 : 200).send({ result });
     } catch (error) {
       const code = error instanceof Error ? error.message : "";
