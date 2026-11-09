@@ -680,8 +680,6 @@ describe("signed payment provider webhook intake", () => {
     const process = vi.fn(async () => ({ outcome: "recorded" as const, captureId: "capture-api-1" }));
     const record = vi.fn(async () => ({ outcome: "received" as const, receiptId: "wrong-path" }));
     const app = buildApp({
-      paymentWebhookSecretResolver: async () => secret,
-      paymentWebhookInbox: { record },
       paymentCaptureWebhookHandler: { process }
     });
     await app.ready();
