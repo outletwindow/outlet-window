@@ -20,6 +20,7 @@ import { PostgresCommerceCatalogStore } from "../../../packages/domain/src/postg
 import { BranchInventorySyncService, PostgresBranchInventorySyncStore } from "../../../packages/domain/src/branch-inventory-sync.js";
 import { PostgresBranchInventoryReader } from "../../../packages/domain/src/postgres-branch-inventory-reader.js";
 import { PostgresBranchInventoryReservationLifecycle } from "../../../packages/domain/src/postgres-branch-inventory-reservation-lifecycle.js";
+import { PostgresFulfillmentHandoverInbox } from "../../../packages/domain/src/postgres-fulfillment-handover-inbox.js";
 
 export interface PostgresApiOptions {
   pool: PostgresPool;
@@ -35,6 +36,7 @@ export interface PostgresApiOptions {
   merchantCatalogImport?: MerchantCatalogImportService;
   commerceConnectors?: CommerceConnectorRegistry;
   paymentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
+  fulfillmentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
   sallaOAuthFlow?: SallaOAuthFlow;
 }
 
@@ -71,6 +73,10 @@ export function buildPostgresApp(options: PostgresApiOptions) {
     inventoryReservationLifecycle: new PostgresBranchInventoryReservationLifecycle(options.pool),
     ...(options.sallaOAuthFlow === undefined ? {} : { sallaOAuthFlow: options.sallaOAuthFlow }),
     paymentWebhookInbox: new PostgresPaymentWebhookInbox(options.pool),
+    fulfillmentHandoverInbox: new PostgresFulfillmentHandoverInbox(options.pool),
+    ...(options.fulfillmentWebhookSecretResolver === undefined ? {} : {
+      fulfillmentWebhookSecretResolver: options.fulfillmentWebhookSecretResolver
+    }),
     merchantCatalog: options.merchantCatalog ?? new PostgresMerchantCatalog(options.pool),
     ...(catalogImport === undefined ? {} : { merchantCatalogImport: catalogImport }),
     ...(options.paymentWebhookSecretResolver === undefined ? {} : {
