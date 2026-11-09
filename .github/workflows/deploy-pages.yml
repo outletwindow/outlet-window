@@ -1,7 +1,7 @@
 name: Deploy Outlet Window website
 on:
   push:
-    branches: [main]
+    branches: [work/outlet-window-build]
     paths:
       - "website/**"
       - ".github/workflows/deploy-pages.yml"
