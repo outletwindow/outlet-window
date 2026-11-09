@@ -53,7 +53,7 @@ INSERT INTO tenant_integrations
 (id,tenant_id,family,provider_key,display_name,status,capabilities,created_at,updated_at)
 VALUES ('scope-carrier-duplicate','scope-tenant','carriers','carrier-a','Carrier A duplicate','connected','[]',now(),now());
 
-DO $
+DO $$
 BEGIN
   IF EXISTS (
     SELECT 1
