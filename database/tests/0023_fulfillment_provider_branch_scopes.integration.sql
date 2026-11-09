@@ -72,7 +72,7 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'ambiguous connected provider identity was accepted';
   END IF;
-END $;
+END $$;
 
 DO $$
 BEGIN
