@@ -20,6 +20,7 @@ export interface PaymentCaptureEventDecoder {
 export interface ExpectedPaymentOrder {
   tenantId: string;
   orderId: string;
+  paymentIntentId: string;
 }
 
 export interface PaymentCaptureOrderResolver {
@@ -46,6 +47,7 @@ export class VerifiedOrderPaymentCaptureWebhookProcessor {
     decoders: ReadonlyMap<string, PaymentCaptureEventDecoder>;
     orderResolver: PaymentCaptureOrderResolver;
     captureStore: Pick<PostgresVerifiedOrderPaymentCaptureStore, "recordVerifiedCapture">;
+    inboxStore?: { recordVerified(input: { providerKey:string; providerEventId:string; paymentIntentId:string; rawBody:string; providerPaymentReference:string; amountMinor:number; currency:string; capturedAtUtc:string }): Promise<{outcome:"received"|"duplicate";receiptId:string}|{outcome:"event_id_collision"}> };
     now?: () => Date;
   }) {}
 
@@ -90,20 +92,27 @@ export class VerifiedOrderPaymentCaptureWebhookProcessor {
     });
     if (!expectedOrder) return { outcome: "payment_intent_not_found" };
 
+    if (this.dependencies.inboxStore) {
+      const receipt = await this.dependencies.inboxStore.recordVerified({
+        providerKey: input.providerKey, providerEventId: decoded.providerEventId,
+        paymentIntentId: expectedOrder.paymentIntentId, rawBody: input.rawBody,
+        providerPaymentReference: decoded.providerPaymentReference, amountMinor: decoded.amountMinor,
+        currency: decoded.currency, capturedAtUtc: new Date(decoded.capturedAtUtc).toISOString()
+      });
+      if (receipt.outcome === "event_id_collision") return { outcome: "identity_collision" };
+      return receipt.outcome === "received"
+        ? { outcome: "recorded", captureId: receipt.receiptId }
+        : { outcome: "duplicate", captureId: receipt.receiptId };
+    }
     const stored: VerifiedCaptureWriteResult = await this.dependencies.captureStore.recordVerifiedCapture({
-      tenantId: expectedOrder.tenantId,
-      orderId: expectedOrder.orderId,
-      providerKey: input.providerKey,
-      providerEventId: decoded.providerEventId,
-      providerPaymentReference: decoded.providerPaymentReference,
-      amountMinor: decoded.amountMinor,
-      currency: decoded.currency,
+      tenantId: expectedOrder.tenantId, orderId: expectedOrder.orderId, providerKey: input.providerKey,
+      providerEventId: decoded.providerEventId, providerPaymentReference: decoded.providerPaymentReference,
+      amountMinor: decoded.amountMinor, currency: decoded.currency,
       capturedAtUtc: new Date(decoded.capturedAtUtc).toISOString(),
       idempotencyKey: `payment-capture:${input.providerKey}:${decoded.providerEventId}`
     });
     if (stored.outcome === "identity_collision") return { outcome: "identity_collision" };
-    return stored.outcome === "inserted"
-      ? { outcome: "recorded", captureId: stored.captureId }
-      : { outcome: "duplicate", captureId: stored.captureId };
+    return stored.outcome === "inserted" ? { outcome: "recorded", captureId: stored.captureId } :
+      { outcome: "duplicate", captureId: stored.captureId };
   }
 }
