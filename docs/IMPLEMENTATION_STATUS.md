@@ -291,3 +291,13 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [ ] Implement the trusted provider verification adapter/worker that verifies provider signatures and canonical payment status before inserting this ledger row. No public/customer route may write verified capture evidence.
 - [ ] Add a writer-level PostgreSQL adapter with replay/collision semantics and tests for same event/same payload versus same event/different payload.
 - [ ] Connect verified capture recording to immediate multi-store checkout orchestration, order/suborder state transitions, task outbox commit, and explicit partial-reservation reconciliation. No live PSP is selected or configured.
+
+## Trusted initial payment-capture webhook processing — development foundation
+- [x] Added a provider-specific capture decoder boundary: each configured provider must decode the exact signed raw body into an event ID, provider payment reference, positive amount, currency, and capture timestamp.
+- [x] Added a capture processor that verifies the timestamped HMAC over the exact raw body, rejects invalid/future capture events, and resolves the order only from a server-owned provider payment-intent reference. Webhook-supplied tenant/order identifiers are ignored.
+- [x] Added PostgreSQL persistence with server-generated capture IDs, unique provider event/reference and order idempotency identities, exact replay recognition, and identity-collision detection.
+- [x] Routed signed `payment.captured` events to the dedicated capture processor; adjustment events continue through the existing adjustment inbox path.
+- [x] Added unit tests for valid signature, invalid signature, server-owned order resolution, unknown intent, future timestamp, exact replay, identity collision, malformed evidence, and API routing.
+- [ ] The server-owned payment-intent/order resolver and provider-specific decoders still need production implementations and sandbox contract tests. No real PSP adapter or payment intent creation flow is configured.
+- [ ] Add an initial payment webhook inbox worker/retry lease flow and transactional reconciliation between receipt finalization and capture ledger insertion before enabling live traffic.
+- [ ] Do not enable checkout reservation from this processor until the payment intent resolver is backed by a persisted server-created payment intent and provider contract verification has passed.
