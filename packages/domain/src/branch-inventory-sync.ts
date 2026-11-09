@@ -1,4 +1,4 @@
-import type { PostgresQueryable } from "./postgres-iam-store.js";
+import type { PostgresPool } from "./postgres-iam-store.js";
 
 export type BranchInventorySource = "pos" | "erp" | "ecommerce" | "csv" | "merchant_portal" | "manual";
 export type InventoryConfidence = "high" | "medium" | "low" | "unknown";
@@ -71,11 +71,12 @@ export class BranchInventorySyncService {
 
 /** Tenant-checked, branch-scoped snapshot persistence. Older snapshots cannot overwrite newer stock. */
 export class PostgresBranchInventorySyncStore implements BranchInventorySyncStore {
-  constructor(private readonly db: PostgresQueryable) {}
+  constructor(private readonly pool: PostgresPool) {}
 
   async applySnapshot(input: BranchInventorySyncRequest & { confidence: InventoryConfidence }): Promise<{ accepted: number; stale: number }> {
-    await this.db.query("BEGIN");
+    const client = await this.pool.connect();
     try {
+      await client.query("BEGIN");
       const branch = await this.db.query<{ id: string }>(
         `SELECT b.id FROM merchant_branches b
          JOIN merchants m ON m.id = b.merchant_id
@@ -89,7 +90,7 @@ export class PostgresBranchInventorySyncStore implements BranchInventorySyncStor
       let accepted = 0;
       let stale = 0;
       for (const line of input.lines) {
-        const result = await this.db.query(
+        const result = await client.query(
           `INSERT INTO branch_inventory
            (merchant_id, branch_id, product_variant_id, sku, available_quantity,
             reserved_quantity, source, last_synced_at, availability_confidence, updated_at)
