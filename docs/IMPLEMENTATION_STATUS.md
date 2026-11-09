@@ -1,6 +1,6 @@
 # Outlet Window - Implementation Status
 
-Last updated: 2026-11-08
+Last updated: 2026-11-09
 
 ## Engineering foundation
 - [x] pnpm workspace and TypeScript configuration.
@@ -118,6 +118,11 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [ ] Wire the checkout saga to call payment evidence persistence, then inventory reservation, then task enqueue in that exact order.
 
 - [x] Reservation finalization schema enforces a release reason or verified handover reference for consumed stock; SQL acceptance tests cover invalid final states.
+- [x] Reservation release/expiry API now requires merchant and branch path scope; authorization checks the exact branch assignment before calling the lifecycle adapter.
+- [x] PostgreSQL reservation lifecycle locks and updates the reservation using tenant, merchant, branch, and reservation identifiers together; a reservation from another branch is indistinguishable from not found.
+- [x] Owner/admin and branch-manager role mappings grant only branch-scoped reservation execution; ordinary merchant employees receive no reservation-finalization grant.
+- [x] Route and PostgreSQL adapter tests cover cross-branch denial, trusted scope derivation, one-time release, and rejection of client-asserted handover proof.
+- [ ] Verified fulfillment receipt-to-reservation consumption wiring and scheduled reservation expiry worker remain pending; the public API deliberately cannot consume stock from client-supplied handover fields.
 
 
 ## Multi-merchant scheduled checkout progress (development branch)
