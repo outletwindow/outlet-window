@@ -19,6 +19,7 @@ import type { MerchantCatalogImportService } from "../../../packages/domain/src/
 import type { BranchInventorySyncRequest, BranchInventorySyncResult } from "../../../packages/domain/src/branch-inventory-sync.js";
 import type { BranchInventoryRecord } from "../../../packages/domain/src/postgres-branch-inventory-reader.js";
 import type { InventoryReservationFinalizeResult } from "../../../packages/domain/src/postgres-branch-inventory-reservation-lifecycle.js";
+import type { RecordPreparationCheckInput, RecordPreparationCheckResult } from "../../../packages/domain/src/postgres-merchant-order-item-preparation.js";
 
 export interface SallaOAuthFlow {
   begin(input: { tenantId: string; integrationId: string }): Promise<{ authorizationUrl: string }>;
@@ -107,6 +108,7 @@ export interface AppOptions {
   /** Durable audit writer. Protected operations are not executed if their audit write fails. */
   auditEvents?: AuditEventWriter;
   orderTransitions?: OrderTransitionWriter;
+  merchantOrderItemPreparation?: { record(input: RecordPreparationCheckInput): Promise<RecordPreparationCheckResult> };
   customerDeliveryDestinations?: CustomerDeliveryDestinationService;
   customerPaymentAdjustments?: CustomerPaymentAdjustmentActions;
   integrationHub?: IntegrationHub;
@@ -525,6 +527,42 @@ app.patch<{
     } });
   });
 
+
+  app.post<{
+    Params: { merchantId: string; branchId: string; orderId: string; suborderId: string; itemId: string };
+    Body: { scannedSku?: string; verifiedQuantity: number; outcome: "verified" | "shortage" | "damaged" | "sku_mismatch"; note?: string };
+  }>("/api/v1/merchants/:merchantId/branches/:branchId/orders/:orderId/suborders/:suborderId/items/:itemId/preparation-checks", async (request, reply) => {
+    const { merchantId, branchId, orderId, suborderId, itemId } = request.params;
+    const access = await authorizeRequest(request, options, {
+      resource: "merchant.order", action: "update", scope: { merchantId, branchId, orderId }
+    });
+    if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
+    if (!["merchant_employee", "branch_manager", "merchant_admin", "merchant_owner"].includes(access.actor.role)) {
+      return reply.code(403).send({ error: "preparation_role_required" });
+    }
+    if (!options.merchantOrderItemPreparation) return reply.code(503).send({ error: "preparation_check_unavailable" });
+    const body = request.body;
+    if (!body || !Number.isSafeInteger(body.verifiedQuantity) || body.verifiedQuantity < 0 ||
+        !["verified", "shortage", "damaged", "sku_mismatch"].includes(body.outcome) ||
+        (body.scannedSku !== undefined && (typeof body.scannedSku !== "string" || body.scannedSku.length > 120)) ||
+        (body.note !== undefined && (typeof body.note !== "string" || body.note.length > 1000))) {
+      return reply.code(400).send({ error: "invalid_preparation_check" });
+    }
+    const tenantId = await options.resolveMerchantTenantId?.(merchantId);
+    if (!tenantId) return reply.code(404).send({ error: "merchant_not_found" });
+    const input: RecordPreparationCheckInput = {
+      id: randomUUID(), tenantId, orderId, suborderId, orderItemId: itemId,
+      merchantId, branchId, actorId: access.actor.id,
+      ...(body.scannedSku === undefined ? {} : { scannedSku: body.scannedSku }),
+      verifiedQuantity: body.verifiedQuantity, outcome: body.outcome,
+      ...(body.note === undefined ? {} : { note: body.note })
+    };
+    const result = await options.merchantOrderItemPreparation.record(input);
+    if (result.outcome === "not_found") return reply.code(404).send({ error: "order_item_not_found" });
+    if (result.outcome === "conflict") return reply.code(409).send({ error: "preparation_check_conflict" });
+    if (result.outcome === "invalid_check") return reply.code(422).send({ error: result.reason });
+    return reply.code(result.outcome === "recorded" ? 201 : 200).send(result);
+  });
 
   app.post<{
     Params: { merchantId: string; branchId: string; orderId: string; suborderId: string };
