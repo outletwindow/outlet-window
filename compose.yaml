@@ -68,6 +68,15 @@ services:
       PAYMENT_WEBHOOK_WORKER_BATCH_SIZE: ${PAYMENT_WEBHOOK_WORKER_BATCH_SIZE:-10}
       PAYMENT_WEBHOOK_WORKER_LEASE_SECONDS: ${PAYMENT_WEBHOOK_WORKER_LEASE_SECONDS:-30}
 
+  inventory-expiry-worker:
+    <<: *runtime
+    command: ["node", "apps/worker/dist/apps/worker/src/inventory-reservation-expiry-main.js"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
+      INVENTORY_EXPIRY_WORKER_POLL_MS: ${INVENTORY_EXPIRY_WORKER_POLL_MS:-5000}
+      INVENTORY_EXPIRY_WORKER_BATCH_SIZE: ${INVENTORY_EXPIRY_WORKER_BATCH_SIZE:-50}
+
   fulfillment-worker:
     <<: *runtime
     profiles: ["fulfillment"]
