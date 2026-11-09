@@ -25,8 +25,14 @@ export class MerchantCatalogImportService {
     if (!["commerce", "pos", "erp"].includes(integration.family)) {
       throw new Error("CATALOG_INTEGRATION_FAMILY_UNSUPPORTED");
     }
+    if (!integration.capabilities.includes("catalog_read")) {
+      throw new Error("CATALOG_CAPABILITY_NOT_GRANTED");
+    }
     const adapter = this.connectors.get(integration.providerKey);
-    if (!adapter) throw new Error("CATALOG_PROVIDER_NOT_CONFIGURED");
+    if (!adapter || adapter.descriptor.implementationStatus === "planned" ||
+        !adapter.descriptor.capabilities.includes("catalog_read")) {
+      throw new Error("CATALOG_PROVIDER_NOT_CONFIGURED");
+    }
     const importer = new CommerceCatalogImporter(adapter, this.store, {
       maxPages: 20,
       maxProductsPerPage: 500
