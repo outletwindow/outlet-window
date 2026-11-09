@@ -114,6 +114,7 @@ export class SallaOAuthFlowService {
     private readonly vault: PostgresSallaOAuthTokenVault,
     private readonly client: SallaOAuthCodeClient,
     lock: SallaRefreshLock,
+    private readonly onAuthorized?: (tenantId: string, integrationId: string) => Promise<void>,
     private readonly scopes: readonly string[] = ["offline_access", "products.read"]
   ) {
     this.tokens = new SallaOAuthTokenManager(vault, client, lock);
@@ -134,6 +135,7 @@ export class SallaOAuthFlowService {
       refreshToken: response.refresh_token,
       expiresAtUtc: new Date(Date.now() + response.expires_in * 1000).toISOString()
     });
+    await this.onAuthorized?.(binding.tenantId, binding.integrationId);
     return binding;
   }
 
