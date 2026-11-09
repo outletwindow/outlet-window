@@ -46,7 +46,7 @@ describe("verified initial order payment capture webhook processor", () => {
       providerKey: "psp-a", rawBody, signatureHeader: signature(rawBody)
     })).resolves.toEqual({ outcome: "recorded", captureId: "capture-1" });
     expect(orderResolver.findExpectedOrder).toHaveBeenCalledWith({
-      providerKey: "psp-a", providerPaymentReference: "intent-1"
+      providerKey: "psp-a", providerPaymentReference: "intent-1", amountMinor: 12500, currency: "SAR"
     });
     expect(recordVerifiedCapture).toHaveBeenCalledWith(expect.objectContaining({
       tenantId: "tenant-1", orderId: "order-1", providerKey: "psp-a",
