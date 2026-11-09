@@ -105,11 +105,13 @@ export class PostgresBranchInventorySyncStore implements BranchInventorySyncStor
         );
         if (result.rowCount === 1) accepted++; else stale++;
       }
-      await this.db.query("COMMIT");
+      await client.query("COMMIT");
       return { accepted, stale };
     } catch (error) {
-      await this.db.query("ROLLBACK").catch(() => undefined);
+      await client.query("ROLLBACK").catch(() => undefined);
       throw error;
+    } finally {
+      client.release();
     }
   }
 }
