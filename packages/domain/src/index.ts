@@ -74,3 +74,5 @@ export * from "./salla-oauth-token-manager.js";
 export * from "./salla-http-merchant-api.js";
 
 export * from "./merchant-catalog-import-service.js";
+
+export * from "./salla-oauth-http-client.js";
