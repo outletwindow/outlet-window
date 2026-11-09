@@ -24,6 +24,11 @@ export function grantsForAssignments(assignments: readonly RoleAssignment[]): re
       { resource: "merchant.branch.inventory", actions: ["read", "update"] as const, scope: assignment.scope },
       { resource: "merchant.branch.inventory_reservation", actions: ["execute"] as const, scope: assignment.scope }
     ];
+    if (assignment.role === "merchant_employee") return [
+      { resource: "merchant.branch", actions: ["read"] as const, scope: assignment.scope },
+      { resource: "merchant.order", actions: ["read", "update"] as const, scope: assignment.scope },
+      { resource: "merchant.branch.inventory", actions: ["read"] as const, scope: assignment.scope }
+    ];
     if (readRoles.has(assignment.role)) return [
       { resource: "merchant.branch", actions: ["read"] as const, scope: assignment.scope },
       { resource: "merchant.order", actions: ["read"] as const, scope: assignment.scope },
