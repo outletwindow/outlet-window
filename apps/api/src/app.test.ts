@@ -4,6 +4,7 @@ import type { FastifyInstance } from "fastify";
 import { vi } from "vitest";
 import { buildApp } from "./app.js";
 import type { Actor } from "../../../packages/domain/src/authorization.js";
+import type { RecordPreparationCheckInput } from "../../../packages/domain/src/postgres-merchant-order-item-preparation.js";
 
 const merchantActor: Actor = {
   id: "principal-1",
@@ -474,7 +475,7 @@ describe("Outlet Window API foundation", () => {
       id: "employee-prep-1", role: "merchant_employee", active: true,
       grants: [{ resource: "merchant.order", actions: ["read", "update"], scope: { merchantId: "merchant-1", branchId: "branch-1" } }]
     };
-    const record = vi.fn(async (input: Record<string, unknown>) => ({
+    const record = vi.fn(async (_input: RecordPreparationCheckInput) => ({
       outcome: "recorded" as const, expectedSku: "SKU-DB", expectedQuantity: 2
     }));
     const prepApp = buildApp({
