@@ -249,3 +249,12 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Added PostgreSQL CI acceptance coverage for provider event deduplication and digest-based detection of same-ID/different-payload collisions.
 - [ ] Implement the PostgreSQL inbox writer and atomic receipt-to-reservation consumer; the table is currently a durable schema foundation, not yet a live webhook endpoint.
 - [ ] Add signed fulfillment webhook route, provider secret-manager wiring, route tests, and transaction-level acceptance tests before enabling external carrier events.
+
+
+## Signed fulfillment handover endpoint and atomic consumer
+- [x] Added `POST /api/v1/webhooks/fulfillment/:providerKey`; it captures the raw body, verifies the timestamped HMAC signature, and rejects malformed or untrusted events before persistence.
+- [x] Wired a PostgreSQL adapter that records provider-event identity and payload digest, locks the exact tenant/merchant/branch reservation, validates expiry and stock ledger quantities, consumes reserved and available quantities, and marks the inbox receipt applied in the same transaction.
+- [x] Duplicate event IDs with identical payloads return the existing receipt; same-ID/different-payload attempts return a collision.
+- [x] Provider handover references are length-bounded after namespacing to fit the reservation ledger.
+- [ ] Add focused API route tests and a PostgreSQL transaction-level acceptance test before enabling a real carrier provider.
+- [ ] Supply provider secrets through the host secret manager via `fulfillmentWebhookSecretResolver`; no provider secret is embedded in source.
