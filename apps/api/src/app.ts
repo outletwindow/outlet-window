@@ -118,6 +118,8 @@ export interface AppOptions {
   paymentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
   fulfillmentHandoverInbox?: FulfillmentHandoverInboxWriter;
   fulfillmentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
+  /** Must bind provider identity to the exact tenant, merchant, and branch before stock is consumed. */
+  fulfillmentWebhookAuthorizationResolver?: (providerKey: string, event: VerifiedFulfillmentHandoverEvent) => Promise<boolean>;
   sallaOAuthFlow?: SallaOAuthFlow;
   branchInventorySync?: { sync(input: BranchInventorySyncRequest): Promise<BranchInventorySyncResult> };
   branchInventoryReader?: { list(input: { tenantId: string; merchantId: string; branchId: string; limit?: number }): Promise<readonly BranchInventoryRecord[]> };
@@ -360,7 +362,8 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       if (!/^[a-zA-Z0-9._-]{1,100}$/.test(providerKey)) {
         return reply.code(400).send({ error: "invalid_provider" });
       }
-      if (!options.fulfillmentHandoverInbox || !options.fulfillmentWebhookSecretResolver) {
+      if (!options.fulfillmentHandoverInbox || !options.fulfillmentWebhookSecretResolver ||
+          !options.fulfillmentWebhookAuthorizationResolver) {
         return reply.code(503).send({ error: "webhook_service_unavailable" });
       }
       const rawBody = fulfillmentWebhookRawBodies.get(request);
@@ -373,6 +376,13 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
         providerKey, rawBody, signatureHeader: signature, secret
       });
       if (!event) return reply.code(401).send({ error: "invalid_webhook_signature_or_event" });
+      let authorized = false;
+      try {
+        authorized = await options.fulfillmentWebhookAuthorizationResolver(providerKey, event);
+      } catch {
+        authorized = false;
+      }
+      if (!authorized) return reply.code(403).send({ error: "fulfillment_provider_scope_not_authorized" });
       const result = await options.fulfillmentHandoverInbox.recordAndApply({
         event, rawBody, nowUtc: new Date().toISOString()
       });
