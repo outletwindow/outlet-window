@@ -88,14 +88,15 @@ export class PostgresInitialPaymentCaptureInbox {
     const client=await this.pool.connect();
     try {
       await client.query("BEGIN");
-      const receipt=await client.query<InitialCaptureRow & {status:string;lease_owner:string|null}>(
+      const receipt=await client.query<InitialCaptureRow & {status:string;lease_owner:string|null;lease_valid:boolean}>(
         `SELECT id,provider_key,provider_event_id,payment_intent_id,provider_payment_reference,
-          amount_minor,currency,captured_at,attempt_count,status,lease_owner
+          amount_minor,currency,captured_at,attempt_count,status,lease_owner,
+          (lease_expires_at > now()) AS lease_valid
          FROM initial_payment_capture_webhook_events WHERE id=$1 FOR UPDATE`,
         [input.receiptId]
       );
       if(receipt.rowCount!==1 || receipt.rows[0]!.status!=="processing" ||
-         receipt.rows[0]!.lease_owner!==input.workerId) {
+         receipt.rows[0]!.lease_owner!==input.workerId || !receipt.rows[0]!.lease_valid) {
         await client.query("ROLLBACK"); return "lease_lost";
       }
       const event=receipt.rows[0]!;
@@ -158,12 +159,13 @@ export class PostgresInitialPaymentCaptureInbox {
         }
         outcome="duplicate";
       }
-      await client.query(
+      const finalized=await client.query(
         `UPDATE initial_payment_capture_webhook_events
          SET status='applied',processed_at=now(),lease_owner=NULL,lease_expires_at=NULL,failure_code=NULL
-         WHERE id=$1 AND status='processing' AND lease_owner=$2`,
+         WHERE id=$1 AND status='processing' AND lease_owner=$2 AND lease_expires_at>now()`,
         [input.receiptId,input.workerId]
       );
+      if(finalized.rowCount!==1) throw new Error("INITIAL_CAPTURE_WEBHOOK_LEASE_LOST");
       await client.query("COMMIT");
       return outcome;
     } catch(error) {
