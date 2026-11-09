@@ -2,7 +2,6 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 import type { PostgresClient, PostgresPool, PostgresQueryable } from "./postgres-iam-store.js";
 import { SallaOAuthTokenManager, type SallaOAuthTokenSet, type SallaOAuthTokenVault, type SallaRefreshLock } from "./salla-oauth-token-manager.js";
 import type { SallaOAuthHttpClient, SallaOAuthTokenResponse } from "./salla-oauth-http-client.js";
-import type { SallaOAuthFlow } from "../../../apps/api/src/app.js";
 
 export interface SallaOAuthCodeClient extends SallaOAuthHttpClient {
   buildAuthorizationUrl(input: { state: string; scopes: readonly string[] }): string;
@@ -108,7 +107,7 @@ export class PostgresSallaRefreshLock implements SallaRefreshLock {
   }
 }
 
-export class SallaOAuthFlowService implements SallaOAuthFlow {
+export class SallaOAuthFlowService {
   private readonly tokens: SallaOAuthTokenManager;
   constructor(
     private readonly states: PostgresSallaOAuthStateStore,
