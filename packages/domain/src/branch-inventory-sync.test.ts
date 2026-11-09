@@ -32,6 +32,15 @@ describe("branch inventory snapshot sync", () => {
     expect(calls).toBe(0);
   });
 
+  it("rejects future-dated stock snapshots before they can poison freshness ordering", async () => {
+    let calls = 0;
+    const service = new BranchInventorySyncService({ async applySnapshot() { calls++; return { accepted: 0, stale: 0 }; } },
+      () => new Date("2026-11-09T10:00:00.000Z"));
+    await expect(service.sync({ ...base, capturedAtUtc: "2026-11-09T10:00:01.000Z" }))
+      .rejects.toThrow("FUTURE_BRANCH_INVENTORY_SNAPSHOT");
+    expect(calls).toBe(0);
+  });
+
   it("classifies stale stock conservatively", () => {
     expect(inventoryConfidence("2026-11-09T09:00:00.000Z", "2026-11-09T10:00:00.000Z")).toBe("low");
     expect(inventoryConfidence("2026-11-09T10:00:00.000Z", "2026-11-09T10:00:00.000Z")).toBe("high");
