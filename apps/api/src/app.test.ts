@@ -469,6 +469,47 @@ describe("Outlet Window API foundation", () => {
     }
   });
 
+  it("records preparation checks only for an employee's assigned branch and uses the authenticated actor", async () => {
+    const employee: Actor = {
+      id: "employee-prep-1", role: "merchant_employee", active: true,
+      grants: [{ resource: "merchant.order", actions: ["read", "update"], scope: { merchantId: "merchant-1", branchId: "branch-1" } }]
+    };
+    const record = vi.fn(async (input: Record<string, unknown>) => ({
+      outcome: "recorded" as const, expectedSku: "SKU-DB", expectedQuantity: 2
+    }));
+    const prepApp = buildApp({
+      resolveActor: async () => employee,
+      resolveMerchantTenantId: async merchantId => merchantId === "merchant-1" ? "tenant-1" : null,
+      merchantOrderItemPreparation: { record }
+    });
+    await prepApp.ready();
+    try {
+      const base = "/api/v1/merchants/merchant-1/branches/";
+      const denied = await prepApp.inject({
+        method: "POST", url: base + "branch-2/orders/order-1/suborders/sub-1/items/item-1/preparation-checks",
+        payload: { scannedSku: "SKU-DB", verifiedQuantity: 2, outcome: "verified" }
+      });
+      expect(denied.statusCode).toBe(403);
+      expect(record).not.toHaveBeenCalled();
+
+      const accepted = await prepApp.inject({
+        method: "POST", url: base + "branch-1/orders/order-1/suborders/sub-1/items/item-1/preparation-checks",
+        payload: { scannedSku: "SKU-DB", verifiedQuantity: 2, outcome: "verified", expectedSku: "CLIENT-FORGED", expectedQuantity: 999 }
+      });
+      expect(accepted.statusCode).toBe(201);
+      expect(record).toHaveBeenCalledOnce();
+      expect(record.mock.calls[0]![0]).toMatchObject({
+        tenantId: "tenant-1", merchantId: "merchant-1", branchId: "branch-1",
+        orderId: "order-1", suborderId: "sub-1", orderItemId: "item-1",
+        actorId: "employee-prep-1", scannedSku: "SKU-DB", verifiedQuantity: 2, outcome: "verified"
+      });
+      expect(record.mock.calls[0]![0]).not.toHaveProperty("expectedSku");
+      expect(record.mock.calls[0]![0]).not.toHaveProperty("expectedQuantity");
+    } finally {
+      await prepApp.close();
+    }
+  });
+
   it("rejects malformed order transition commands", async () => {
     const operator: Actor = { ...merchantActor, grants: [{ resource: "merchant.order", actions: ["update"], scope: { merchantId: "merchant-1", branchId: "branch-1" } }] };
     let writes = 0;
