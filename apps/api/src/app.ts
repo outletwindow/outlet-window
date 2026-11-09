@@ -762,6 +762,9 @@ app.patch<{
       if (code === "CATALOG_INTEGRATION_NOT_CONNECTED") return reply.code(409).send({ error: "integration_not_connected" });
       if (code === "CATALOG_PROVIDER_NOT_CONFIGURED") return reply.code(503).send({ error: "catalog_provider_not_configured" });
       if (code === "CATALOG_INTEGRATION_FAMILY_UNSUPPORTED") return reply.code(409).send({ error: "integration_family_unsupported" });
+      if (code === "CATALOG_CAPABILITY_NOT_GRANTED") return reply.code(409).send({ error: "catalog_read_capability_not_granted" });
+      if (code === "SALLA_ACCESS_TOKEN_UNAVAILABLE") return reply.code(503).send({ error: "provider_credentials_unavailable" });
+      if (code.startsWith("SALLA_")) return reply.code(502).send({ error: "catalog_provider_request_failed" });
       if (["UNTRUSTED_CATALOG_SOURCE", "INVALID_CATALOG_IMPORT_REQUEST", "INVALID_OR_REPEATED_CATALOG_CURSOR"].includes(code)) {
         return reply.code(400).send({ error: "invalid_or_untrusted_catalog_source" });
       }
