@@ -45,11 +45,11 @@ describe("merchant catalog API", () => {
     return app.ready().then(() => app);
   }
 
-  it("creates a tenant-scoped catalog product with variants", async () => {
+  it("resolves the database tenant independently from the merchant route ID", async () => {
     let received: CatalogProductInput | undefined;
     const record: CatalogProductRecord = {
       ...payload,
-      tenantId: "merchant-1",
+      tenantId: "tenant-actual",
       id: "product-1",
       variants: [{ ...payload.variants[0]!, id: "variant-1" }],
       createdAt: payload.sourceCapturedAt,
@@ -58,7 +58,7 @@ describe("merchant catalog API", () => {
     const app = await makeApp({
       createProduct: async input => { received = input; return record; },
       listProducts: async () => []
-    });
+    }, merchantOwner, "tenant-actual");
     const response = await app.inject({
       method: "POST",
       url: "/api/v1/merchants/merchant-1/catalog/products",
@@ -66,10 +66,10 @@ describe("merchant catalog API", () => {
     });
     expect(response.statusCode).toBe(201);
     expect(response.json().product).toMatchObject({
-      id: "product-1", tenantId: "merchant-1", title: "Classic Shirt",
+      id: "product-1", tenantId: "tenant-actual", title: "Classic Shirt",
       variants: [{ id: "variant-1", sizeLabel: "M", availability: "in_stock" }]
     });
-    expect(received?.tenantId).toBe("merchant-1");
+    expect(received?.tenantId).toBe("tenant-actual");
     expect(received?.integrationId).toBe("pos-main");
   });
 
@@ -128,12 +128,12 @@ describe("merchant catalog API", () => {
         expect(limit).toBe(20);
         return [{ id: "product-1", title: "Classic Shirt" }];
       }
-    });
+    }, merchantOwner, "tenant-actual");
     const response = await app.inject({
       method: "GET", url: "/api/v1/merchants/merchant-1/catalog/products?limit=20"
     });
     expect(response.statusCode).toBe(200);
-    expect(requestedTenant).toBe("merchant-1");
+    expect(requestedTenant).toBe("tenant-actual");
     expect(response.json().products).toHaveLength(1);
 
     const invalid = await app.inject({
