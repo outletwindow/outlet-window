@@ -32,10 +32,23 @@ const number = (v: unknown): number | undefined => {
   const n = typeof v === "number" ? v : typeof v === "string" && v.trim() ? Number(v) : NaN;
   return Number.isFinite(n) && n >= 0 && n <= 1_000_000_000 ? n : undefined;
 };
-const minor = (v: unknown): number | undefined => {
+
+// ISO 4217 currencies do not all use two fractional digits.
+const ZERO_DECIMAL_CURRENCIES = new Set([
+  "BIF", "CLP", "DJF", "GNF", "ISK", "JPY", "KMF", "KRW",
+  "PYG", "RWF", "UGX", "UYI", "VND", "VUV", "XAF", "XOF", "XPF"
+]);
+const THREE_DECIMAL_CURRENCIES = new Set([
+  "BHD", "IQD", "JOD", "KWD", "LYD", "OMR", "TND"
+]);
+function minor(v: unknown, currency: unknown): number | undefined {
   const n = number(v);
-  return n === undefined ? undefined : Math.round(n * 100);
-};
+  if (n === undefined) return undefined;
+  const code = typeof currency === "string" ? currency.trim().toUpperCase() : "";
+  const digits = ZERO_DECIMAL_CURRENCIES.has(code) ? 0 :
+    THREE_DECIMAL_CURRENCIES.has(code) ? 3 : 2;
+  return Math.round(n * (10 ** digits));
+}
 const list = (v: unknown): unknown[] => Array.isArray(v) ? v : [];
 function safeHttps(raw: unknown): string | undefined {
   const value = text(raw);
@@ -55,7 +68,7 @@ function mapProduct(value: unknown, tenantId: string, capturedAtUtc: string): No
   const description = text(p.description);
   const brand = text(object(p.brand)?.name);
   const currency = text(price?.currency);
-  const priceMinor = minor(price?.amount);
+  const priceMinor = minor(price?.amount, currency);
   const images = [
     safeHttps(p.thumbnail), safeHttps(p.main_image),
     ...list(p.images).map(item => safeHttps(object(item)?.url))
@@ -71,8 +84,8 @@ function mapProduct(value: unknown, tenantId: string, capturedAtUtc: string): No
     const barcode = text(sku.barcode);
     const stock = number(sku.stock_quantity);
     const sizeLabel = text(sku.name);
-    const variantPriceMinor = minor(variantPrice?.amount);
     const variantCurrency = text(variantPrice?.currency);
+    const variantPriceMinor = minor(variantPrice?.amount, variantCurrency);
     variants.push({
       externalId: id,
       ...(variantSku !== undefined ? { sku: variantSku } : {}),
@@ -103,7 +116,7 @@ export class SallaCommerceCatalogAdapter implements CommerceCatalogAdapter {
     private readonly tokens: SallaAccessTokenProvider,
     merchantHosts: readonly string[]
   ) {
-    if (merchantHosts.length === 0 || merchantHosts.some(host => !/^(?:[a-z0-9-]+\.)*[a-z0-9-]+$/i.test(host))) {
+    if (merchantHosts.length === 0 || merchantHosts.some(host => !/^(?:[a-z0-9-]+\\.)*[a-z0-9-]+$/i.test(host))) {
       throw new Error("INVALID_SALLA_MERCHANT_HOSTS");
     }
     this.descriptor = {
@@ -125,7 +138,7 @@ export class SallaCommerceCatalogAdapter implements CommerceCatalogAdapter {
     const page = request.cursor === undefined ? 1 : Number(request.cursor);
     if (!Number.isSafeInteger(page) || page < 1 || page > 100_000) throw new Error("INVALID_SALLA_PAGE_CURSOR");
     const token = await this.tokens.getAccessToken(request.tenantId, request.integrationId);
-    if (!token || token.length > 10_000 || /\s/.test(token)) throw new Error("SALLA_ACCESS_TOKEN_UNAVAILABLE");
+    if (!token || token.length > 10_000 || /\\s/.test(token)) throw new Error("SALLA_ACCESS_TOKEN_UNAVAILABLE");
     const response = await this.api.listProducts(token, page, 50);
     if (response.success !== true || !Array.isArray(response.data)) throw new Error("SALLA_PRODUCTS_API_INVALID_RESPONSE");
     const currentPage = response.pagination?.currentPage ?? page;
