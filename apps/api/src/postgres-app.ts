@@ -4,7 +4,7 @@ import {
   PostgresIamStore,
   type PostgresPool
 } from "../../../packages/domain/src/postgres-iam-store.js";
-import { buildApp, type AppOptions, type MerchantBranchReader, type CustomerDeliveryDestinationService, type CustomerPaymentAdjustmentActions, type MerchantCatalogRepository, type SallaOAuthFlow } from "./app.js";
+import { buildApp, type AppOptions, type MerchantBranchReader, type CustomerDeliveryDestinationService, type CustomerPaymentAdjustmentActions, type MerchantCatalogRepository, type SallaOAuthFlow, type PaymentCaptureWebhookHandler } from "./app.js";
 import { PostgresMerchantBranchReader } from "../../../packages/domain/src/postgres-merchant-branch-reader.js";
 import { PostgresMerchantBranchWriter } from "../../../packages/domain/src/postgres-merchant-branch-writer.js";
 import { PostgresAuditEventStore } from "../../../packages/domain/src/postgres-audit-event-store.js";
@@ -38,6 +38,7 @@ export interface PostgresApiOptions {
   merchantCatalogImport?: MerchantCatalogImportService;
   commerceConnectors?: CommerceConnectorRegistry;
   paymentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
+  paymentCaptureWebhookHandler?: PaymentCaptureWebhookHandler;
   fulfillmentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
   fulfillmentWebhookAuthorizationResolver?: NonNullable<AppOptions["fulfillmentWebhookAuthorizationResolver"]>;
   sallaOAuthFlow?: SallaOAuthFlow;
@@ -77,6 +78,9 @@ export function buildPostgresApp(options: PostgresApiOptions) {
     merchantOrderItemPreparation: new PostgresMerchantOrderItemPreparationStore(options.pool),
     ...(options.sallaOAuthFlow === undefined ? {} : { sallaOAuthFlow: options.sallaOAuthFlow }),
     paymentWebhookInbox: new PostgresPaymentWebhookInbox(options.pool),
+    ...(options.paymentCaptureWebhookHandler === undefined ? {} : {
+      paymentCaptureWebhookHandler: options.paymentCaptureWebhookHandler
+    }),
     fulfillmentHandoverInbox: new PostgresFulfillmentHandoverInbox(options.pool),
     fulfillmentWebhookAuthorizationResolver: options.fulfillmentWebhookAuthorizationResolver ??
       ((providerKey, event) => new PostgresFulfillmentProviderScopeAuthorizer(options.pool).isAuthorized(providerKey, event)),
