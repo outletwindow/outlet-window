@@ -26,6 +26,12 @@ export class PostgresFulfillmentHandoverInbox {
     const { event, rawBody } = input;
     if (!/^[a-zA-Z0-9._-]{1,100}$/.test(event.providerKey) ||
         !/^[a-zA-Z0-9._:-]{1,240}$/.test(event.providerEventId) ||
+        event.eventType !== "handover.completed" ||
+        typeof event.handoverReference !== "string" ||
+        !event.handoverReference.startsWith(event.providerKey + ":") ||
+        event.handoverReference.length > 240 ||
+        typeof event.occurredAtUtc !== "string" ||
+        !Number.isFinite(Date.parse(event.occurredAtUtc)) ||
         !rawBody || Buffer.byteLength(rawBody, "utf8") > 65_536) {
       throw new Error("INVALID_FULFILLMENT_HANDOVER_RECEIPT");
     }
@@ -128,10 +134,11 @@ export class PostgresFulfillmentHandoverInbox {
         [event.tenantId,event.merchantId,event.branchId,event.reservationId,nowUtc,event.handoverReference]
       );
       if (finalized.rowCount !== 1) throw new Error("inventory_reservation_finalize_conflict");
-      await client.query(
+      const applied = await client.query(
         "UPDATE fulfillment_handover_events SET status='applied',processed_at=$2,failure_code=NULL WHERE id=$1 AND status='received'",
         [receiptId,nowUtc]
       );
+      if (applied.rowCount !== 1) throw new Error("FULFILLMENT_HANDOVER_EVENT_STATE_CONFLICT");
       await client.query("COMMIT");
       return { outcome: "applied", receiptId };
     } catch (error) {
