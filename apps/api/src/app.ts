@@ -956,14 +956,14 @@ app.patch<{
       resource: "merchant.branch.inventory", action: "read", scope: { merchantId, branchId }
     });
     if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
-    if (!options.branchInventoryReader) return reply.code(503).send({ error: "inventory_read_unavailable" });
-    const tenantId = await options.resolveMerchantTenantId?.(merchantId);
-    if (!tenantId) return reply.code(404).send({ error: "merchant_not_found" });
     const rawLimit = request.query.limit;
     const limit = rawLimit === undefined ? 50 : Number(rawLimit);
     if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
       return reply.code(400).send({ error: "invalid_limit" });
     }
+    if (!options.branchInventoryReader) return reply.code(503).send({ error: "inventory_read_unavailable" });
+    const tenantId = await options.resolveMerchantTenantId?.(merchantId);
+    if (!tenantId) return reply.code(404).send({ error: "merchant_not_found" });
     const inventory = await options.branchInventoryReader.list({ tenantId, merchantId, branchId, limit });
     return reply.code(200).send({ inventory });
   });
