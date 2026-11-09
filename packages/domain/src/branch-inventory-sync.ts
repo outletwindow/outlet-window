@@ -23,7 +23,7 @@ export interface BranchInventorySyncResult {
   capturedAtUtc: string;
 }
 export interface BranchInventorySyncStore {
-  applySnapshot(input: BranchInventorySyncRequest): Promise<{ accepted: number; stale: number }>;
+  applySnapshot(input: BranchInventorySyncRequest & { confidence: InventoryConfidence }): Promise<{ accepted: number; stale: number }>;
 }
 
 const SOURCES: readonly BranchInventorySource[] = ["pos","erp","ecommerce","csv","merchant_portal","manual"];
@@ -63,9 +63,9 @@ export class BranchInventorySyncService {
       }
       seen.add(line.productVariantId);
     }
-    const result = await this.store.applySnapshot(input);
-    const nowUtc = this.now().toISOString();
-    return { ...result, confidence: inventoryConfidence(input.capturedAtUtc, nowUtc), capturedAtUtc: input.capturedAtUtc };
+    const confidence = inventoryConfidence(input.capturedAtUtc, this.now().toISOString());
+    const result = await this.store.applySnapshot({ ...input, confidence });
+    return { ...result, confidence, capturedAtUtc: input.capturedAtUtc };
   }
 }
 
@@ -73,7 +73,7 @@ export class BranchInventorySyncService {
 export class PostgresBranchInventorySyncStore implements BranchInventorySyncStore {
   constructor(private readonly db: PostgresQueryable) {}
 
-  async applySnapshot(input: BranchInventorySyncRequest): Promise<{ accepted: number; stale: number }> {
+  async applySnapshot(input: BranchInventorySyncRequest & { confidence: InventoryConfidence }): Promise<{ accepted: number; stale: number }> {
     await this.db.query("BEGIN");
     try {
       const branch = await this.db.query<{ id: string }>(
@@ -93,14 +93,14 @@ export class PostgresBranchInventorySyncStore implements BranchInventorySyncStor
           `INSERT INTO branch_inventory
            (merchant_id, branch_id, product_variant_id, sku, available_quantity,
             reserved_quantity, source, last_synced_at, availability_confidence, updated_at)
-           VALUES ($1,$2,$3,$4,$5,0,$6,$7,'unknown',now())
+           VALUES ($1,$2,$3,$4,$5,0,$6,$7,$8,now())
            ON CONFLICT (merchant_id, branch_id, product_variant_id)
            DO UPDATE SET sku=EXCLUDED.sku, available_quantity=EXCLUDED.available_quantity,
              source=EXCLUDED.source, last_synced_at=EXCLUDED.last_synced_at,
-             availability_confidence='unknown', updated_at=now()
+             availability_confidence=EXCLUDED.availability_confidence, updated_at=now()
            WHERE branch_inventory.last_synced_at <= EXCLUDED.last_synced_at
            RETURNING product_variant_id`,
-          [input.merchantId,input.branchId,line.productVariantId,line.sku,line.availableQuantity,input.source,input.capturedAtUtc]
+          [input.merchantId,input.branchId,line.productVariantId,line.sku,line.availableQuantity,input.source,input.capturedAtUtc,input.confidence]
         );
         if (result.rowCount === 1) accepted++; else stale++;
       }
