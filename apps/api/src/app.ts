@@ -297,20 +297,12 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     if (!/^[a-zA-Z0-9._-]{1,100}$/.test(providerKey)) {
       return reply.code(400).send({ error: "invalid_provider" });
     }
-    if (!options.paymentWebhookInbox || !options.paymentWebhookSecretResolver) {
-      return reply.code(503).send({ error: "webhook_service_unavailable" });
-    }
     const rawBody = paymentWebhookRawBodies.get(request);
     if (rawBody === undefined || !rawBody.length) {
       return reply.code(400).send({ error: "empty_webhook_body" });
     }
     const signatureHeader = request.headers["x-payment-signature"];
     const signature = Array.isArray(signatureHeader) ? signatureHeader[0] : signatureHeader;
-    const secret = await options.paymentWebhookSecretResolver(providerKey);
-    if (!secret) return reply.code(503).send({ error: "webhook_provider_not_configured" });
-    if (!verifyPaymentProviderWebhook({ rawBody, signatureHeader: signature, secret })) {
-      return reply.code(401).send({ error: "invalid_webhook_signature" });
-    }
     const body = request.body;
     if (typeof body !== "object" || body === null ||
         typeof (body as { id?: unknown }).id !== "string" ||
@@ -339,6 +331,14 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
         return reply.code(409).send({ error: "provider_payment_identity_collision" });
       }
       return reply.code(result.outcome === "recorded" ? 201 : 200).send(result);
+    }
+    if (!options.paymentWebhookInbox || !options.paymentWebhookSecretResolver) {
+      return reply.code(503).send({ error: "webhook_service_unavailable" });
+    }
+    const secret = await options.paymentWebhookSecretResolver(providerKey);
+    if (!secret) return reply.code(503).send({ error: "webhook_provider_not_configured" });
+    if (!verifyPaymentProviderWebhook({ rawBody, signatureHeader: signature, secret })) {
+      return reply.code(401).send({ error: "invalid_webhook_signature" });
     }
     const normalizedStatus = (body as { status?: unknown }).status;
     const adjustmentId = (body as { adjustmentId?: unknown }).adjustmentId;
