@@ -5,6 +5,7 @@ import { PostgresBranchInventoryReservationAdapter } from "../../../packages/dom
 import { PostgresScheduledOrderTransactionRunner, PostgresScheduledTaskInboxPublisher } from "../../../packages/domain/src/postgres-scheduled-task-store.js";
 import type { ScheduledFulfillmentTaskEnvelope } from "../../../packages/domain/src/scheduled-fulfillment-workflow.js";
 import { PostgresBranchInventoryReservationLifecycle } from "../../../packages/domain/src/postgres-branch-inventory-reservation-lifecycle.js";
+import { PostgresInventoryReservationExpiryWorker } from "../../../packages/domain/src/postgres-inventory-reservation-expiry-worker.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const integration = describe.skipIf(!databaseUrl);
@@ -226,6 +227,27 @@ integration("PostgreSQL branch inventory reservations", () => {
       tenantId, merchantId, branchId, reservationId: reservation.reservationReference,
       nowUtc: "2026-11-08T00:02:00.000Z"
     })).resolves.toEqual({ outcome: "updated", status: "expired" });
+  });
+
+  it("automatically expires due reservations and restores branch stock", async () => {
+    const request = await createPaidOrder(1);
+    const reservation = await adapter.reserveExactVariants({
+      ...request,
+      requestedAtUtc: "2026-11-08T00:00:00.000Z",
+      expiresAtUtc: "2026-11-08T00:01:00.000Z"
+    });
+    if (reservation.outcome !== "reserved") throw new Error("expected reservation");
+    const expiryWorker = new PostgresInventoryReservationExpiryWorker(pool, lifecycle);
+    const result = await expiryWorker.runOnce({
+      nowUtc: "2026-11-08T00:02:00.000Z",
+      limit: 10
+    });
+    expect(result.expired).toBe(1);
+    const stock = await pool.query<{ available_quantity: number; reserved_quantity: number }>(
+      "SELECT available_quantity, reserved_quantity FROM branch_inventory WHERE merchant_id=$1 AND branch_id=$2 AND product_variant_id=$3",
+      [merchantId, branchId, variantId]
+    );
+    expect(stock.rows[0]).toEqual({ available_quantity: 1, reserved_quantity: 0 });
   });
 
   it("rejects a request that does not match the persisted order line", async () => {
