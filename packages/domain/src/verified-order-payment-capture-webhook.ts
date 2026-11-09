@@ -27,6 +27,8 @@ export interface PaymentCaptureOrderResolver {
   findExpectedOrder(input: {
     providerKey: string;
     providerPaymentReference: string;
+    amountMinor: number;
+    currency: string;
   }): Promise<ExpectedPaymentOrder | null>;
 }
 
@@ -82,7 +84,9 @@ export class VerifiedOrderPaymentCaptureWebhookProcessor {
 
     const expectedOrder = await this.dependencies.orderResolver.findExpectedOrder({
       providerKey: input.providerKey,
-      providerPaymentReference: decoded.providerPaymentReference
+      providerPaymentReference: decoded.providerPaymentReference,
+      amountMinor: decoded.amountMinor,
+      currency: decoded.currency
     });
     if (!expectedOrder) return { outcome: "payment_intent_not_found" };
 
