@@ -106,6 +106,9 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Added versioned schema for customer order item lines, branch inventory quantities and freshness/source metadata, reservation headers, and reservation lines.
 - [x] Added a PostgreSQL transaction adapter that locks branch stock rows, validates exact merchant suborder lines, reserves all lines or none, and safely returns unavailable variants when stock is missing/insufficient.
 - [x] Added idempotency replay/conflict handling and integration tests for simultaneous requests competing for the final unit.
+- [x] Added a tenant/merchant/branch-scoped PostgreSQL inventory read repository exposing available/reserved quantities, source, last-sync timestamp, and freshness confidence.
+- [x] Added authenticated GET `/api/v1/merchants/:merchantId/branches/:branchId/inventory` with bounded result limits and branch-scope authorization; merchant employees receive read-only inventory access.
+- [x] Added repository and API tests for tenant/branch predicates, bounded limits, read-only roles, and cross-branch denial; CI run 42610770365 passed typecheck, lint, tests, and build.
 - [ ] Wire checkout to call this adapter after confirmed payment capture; no customer API route or merchant connector is claimed live.
 - [x] Added a standalone PostgreSQL inventory reservation expiry worker with configurable polling/batch limits, branch-aware lifecycle calls, structured outcomes, and graceful shutdown.
 - [x] Added Docker Compose service and package scripts for the inventory expiry worker; Compose configuration is validated in CI.
