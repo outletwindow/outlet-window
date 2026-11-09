@@ -9,7 +9,7 @@ const merchantOwner: Actor = {
   role: "merchant_owner",
   active: true,
   grants: [
-    { resource: "merchant.catalog", actions: ["read", "create"], scope: { merchantId: "merchant-1" } }
+    { resource: "merchant.integration", actions: ["read", "create"], scope: { merchantId: "merchant-1" } }
   ]
 };
 
@@ -86,7 +86,7 @@ describe("merchant catalog API", () => {
 
     const otherTenantActor: Actor = {
       ...merchantOwner,
-      grants: [{ resource: "merchant.catalog", actions: ["create"], scope: { merchantId: "merchant-2" } }]
+      grants: [{ resource: "merchant.integration", actions: ["create"], scope: { merchantId: "merchant-2" } }]
     };
     const crossTenant = await makeApp(repository, otherTenantActor);
     const forbidden = await crossTenant.inject({
