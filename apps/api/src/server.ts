@@ -4,7 +4,7 @@ import { buildPostgresApp } from "./postgres-app.js";
 import { buildApp } from "./app.js";
 import { grantsForAssignments } from "./permissions.js";
 import { SallaOAuthHttpClient } from "../../../packages/domain/src/salla-oauth-http-client.js";
-import { PostgresSallaOAuthFlowService, PostgresSallaOAuthStateStore, PostgresSallaOAuthTokenVault, PostgresSallaRefreshLock } from "../../../packages/domain/src/postgres-salla-oauth.js";
+import { SallaOAuthFlowService, PostgresSallaOAuthStateStore, PostgresSallaOAuthTokenVault, PostgresSallaRefreshLock } from "../../../packages/domain/src/postgres-salla-oauth.js";
 import { PostgresIntegrationRegistryStore } from "../../../packages/domain/src/postgres-integration-registry-store.js";
 
 const port = Number.parseInt(process.env.PORT ?? "3000", 10);
