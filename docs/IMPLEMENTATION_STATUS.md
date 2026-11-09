@@ -241,3 +241,11 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [ ] Implement a durable PostgreSQL recovery incident store and worker that discovers incidents from API, queue, database, and integration health signals.
 - [ ] Wire approved safe executors to real idempotent queue replay and lease-recovery adapters; no arbitrary shell execution or unrestricted database repair.
 - [ ] Add alert delivery, recovery dashboard, incident correlation, and post-recovery verification against real services.
+
+
+## Fulfillment handover inbox schema (development branch)
+- [x] Added migration `0022_fulfillment_handover_event_inbox` with provider/event uniqueness, SHA-256 payload digest, tenant/merchant/branch/reservation identity, namespaced handover reference, UTC event time, and constrained receipt states.
+- [x] Registered migration 0022 in the versioned migration runner and API readiness requirements.
+- [x] Added PostgreSQL CI acceptance coverage for provider event deduplication and digest-based detection of same-ID/different-payload collisions.
+- [ ] Implement the PostgreSQL inbox writer and atomic receipt-to-reservation consumer; the table is currently a durable schema foundation, not yet a live webhook endpoint.
+- [ ] Add signed fulfillment webhook route, provider secret-manager wiring, route tests, and transaction-level acceptance tests before enabling external carrier events.
