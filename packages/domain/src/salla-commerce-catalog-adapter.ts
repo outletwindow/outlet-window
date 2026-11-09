@@ -116,7 +116,7 @@ export class SallaCommerceCatalogAdapter implements CommerceCatalogAdapter {
     private readonly tokens: SallaAccessTokenProvider,
     merchantHosts: readonly string[]
   ) {
-    if (merchantHosts.length === 0 || merchantHosts.some(host => !/^(?:[a-z0-9-]+\\.)*[a-z0-9-]+$/i.test(host))) {
+    if (merchantHosts.length === 0 || merchantHosts.some(host => !/^(?:[a-z0-9-]+\.)*[a-z0-9-]+$/i.test(host))) {
       throw new Error("INVALID_SALLA_MERCHANT_HOSTS");
     }
     this.descriptor = {
