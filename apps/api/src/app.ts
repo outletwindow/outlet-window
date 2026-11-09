@@ -13,6 +13,7 @@ import {
 import { ORDER_STATUSES, type OrderStatus, type OrderTransitionContext } from "../../../packages/domain/src/order-lifecycle.js";
 import { INTEGRATION_FAMILIES, IntegrationHub } from "../../../packages/domain/src/integration-hub.js";
 import { verifyPaymentProviderWebhook } from "../../../packages/domain/src/payment-adjustment-provider.js";
+import { verifyAndParseFulfillmentHandoverEvent, type VerifiedFulfillmentHandoverEvent } from "../../../packages/domain/src/fulfillment-handover-provider.js";
 import type { CatalogProductInput, CatalogProductRecord } from "../../../packages/domain/src/postgres-merchant-catalog.js";
 import type { MerchantCatalogImportService } from "../../../packages/domain/src/merchant-catalog-import-service.js";
 import type { BranchInventorySyncRequest, BranchInventorySyncResult } from "../../../packages/domain/src/branch-inventory-sync.js";
@@ -71,6 +72,16 @@ export interface PaymentWebhookInboxWriter {
     | { outcome: "event_id_collision" }
   >;
 }
+export interface FulfillmentHandoverInboxWriter {
+  recordAndApply(input: { event: VerifiedFulfillmentHandoverEvent; rawBody: string; nowUtc?: string }): Promise<
+    | { outcome: "applied"; receiptId: string }
+    | { outcome: "duplicate"; receiptId: string }
+    | { outcome: "event_id_collision" }
+    | { outcome: "reservation_not_found" }
+    | { outcome: "reservation_already_finalized"; status: string }
+    | { outcome: "reservation_expired" }
+  >;
+}
 export interface AuditEventWriter { append(event: AuditEvent): Promise<"inserted" | "already_exists">; }
 export interface OrderTransitionWriter {
   transitionSuborder(input: { tenantId: string; orderId: string; suborderId: string; nextStatus: OrderStatus; context: OrderTransitionContext; auditEvent: AuditEvent }): Promise<
@@ -105,6 +116,8 @@ export interface AppOptions {
   merchantCatalogImport?: MerchantCatalogImportService;
   paymentWebhookInbox?: PaymentWebhookInboxWriter;
   paymentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
+  fulfillmentHandoverInbox?: FulfillmentHandoverInboxWriter;
+  fulfillmentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
   sallaOAuthFlow?: SallaOAuthFlow;
   branchInventorySync?: { sync(input: BranchInventorySyncRequest): Promise<BranchInventorySyncResult> };
   branchInventoryReader?: { list(input: { tenantId: string; merchantId: string; branchId: string; limit?: number }): Promise<readonly BranchInventoryRecord[]> };
@@ -116,6 +129,7 @@ export interface AppOptions {
 }
 
 const paymentWebhookRawBodies = new WeakMap<FastifyRequest, string>();
+const fulfillmentWebhookRawBodies = new WeakMap<FastifyRequest, string>();
 
 type AuthorizationResult =
   | { actor: Actor; decision: AuthorizationDecision & { allowed: true } }
@@ -318,6 +332,63 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       receiptId: receipt.receiptId
     });
   });
+
+  app.post<{ Params: { providerKey: string }; Body: unknown }>(
+    "/api/v1/webhooks/fulfillment/:providerKey",
+    {
+      bodyLimit: 65_536,
+      preParsing: async (request, reply, payload) => {
+        const chunks: Buffer[] = [];
+        let size = 0;
+        for await (const chunk of payload) {
+          const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
+          size += buffer.length;
+          if (size > 65_536) {
+            reply.code(413).send({ error: "webhook_payload_too_large" });
+            return Readable.from([]);
+          }
+          chunks.push(buffer);
+        }
+        const raw = Buffer.concat(chunks);
+        fulfillmentWebhookRawBodies.set(request, raw.toString("utf8"));
+        return Readable.from([raw]);
+      }
+    },
+    async (request, reply) => {
+      if (reply.sent) return reply;
+      const { providerKey } = request.params;
+      if (!/^[a-zA-Z0-9._-]{1,100}$/.test(providerKey)) {
+        return reply.code(400).send({ error: "invalid_provider" });
+      }
+      if (!options.fulfillmentHandoverInbox || !options.fulfillmentWebhookSecretResolver) {
+        return reply.code(503).send({ error: "webhook_service_unavailable" });
+      }
+      const rawBody = fulfillmentWebhookRawBodies.get(request);
+      if (!rawBody) return reply.code(400).send({ error: "empty_webhook_body" });
+      const header = request.headers["x-fulfillment-signature"];
+      const signature = Array.isArray(header) ? header[0] : header;
+      const secret = await options.fulfillmentWebhookSecretResolver(providerKey);
+      if (!secret) return reply.code(503).send({ error: "webhook_provider_not_configured" });
+      const event = verifyAndParseFulfillmentHandoverEvent({
+        providerKey, rawBody, signatureHeader: signature, secret
+      });
+      if (!event) return reply.code(401).send({ error: "invalid_webhook_signature_or_event" });
+      const result = await options.fulfillmentHandoverInbox.recordAndApply({
+        event, rawBody, nowUtc: new Date().toISOString()
+      });
+      if (result.outcome === "event_id_collision") {
+        return reply.code(409).send({ error: "provider_event_id_collision" });
+      }
+      if (result.outcome === "reservation_not_found") {
+        return reply.code(404).send({ error: "reservation_not_found" });
+      }
+      if (result.outcome === "reservation_expired" ||
+          result.outcome === "reservation_already_finalized") {
+        return reply.code(409).send(result);
+      }
+      return reply.code(result.outcome === "applied" ? 200 : 202).send(result);
+    }
+  );
 
   // Authentication and authorization always precede adapter availability checks and data access.
   app.get<{
