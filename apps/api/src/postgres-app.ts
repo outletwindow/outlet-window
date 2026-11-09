@@ -55,6 +55,13 @@ export function buildPostgresApp(options: PostgresApiOptions) {
     ...(options.serviceName === undefined ? {} : { serviceName: options.serviceName }),
     ...(options.version === undefined ? {} : { version: options.version }),
     merchantBranches: options.merchantBranches ?? new PostgresMerchantBranchReader(options.pool),
+    resolveMerchantTenantId: async (merchantId: string) => {
+      const result = await options.pool.query<{ tenant_id: string }>(
+        "SELECT tenant_id FROM merchants WHERE id = $1 AND status = 'active'",
+        [merchantId]
+      );
+      return result.rows[0]?.tenant_id ?? null;
+    },
     merchantBranchWriter: new PostgresMerchantBranchWriter(options.pool),
     auditEvents: new PostgresAuditEventStore(options.pool),
     integrationHub,
