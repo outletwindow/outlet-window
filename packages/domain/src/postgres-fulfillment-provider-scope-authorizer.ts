@@ -10,7 +10,15 @@ export class PostgresFulfillmentProviderScopeAuthorizer {
 
   async isAuthorized(providerKey: string, event: VerifiedFulfillmentHandoverEvent): Promise<boolean> {
     const result = await this.db.query<{ authorized: boolean }>(
-      `SELECT COUNT(DISTINCT i.id) = 1 AS authorized
+      `SELECT (
+         SELECT COUNT(*) = 1
+         FROM tenant_integrations candidate
+         WHERE candidate.tenant_id = $1
+           AND candidate.provider_key = $2
+           AND candidate.family = 'carriers'
+           AND candidate.status = 'connected'
+       ) AND EXISTS (
+         SELECT 1
          FROM tenant_integrations i
          JOIN fulfillment_provider_branch_scopes s
            ON s.tenant_id = i.tenant_id AND s.integration_id = i.id
@@ -27,7 +35,7 @@ export class PostgresFulfillmentProviderScopeAuthorizer {
            AND s.branch_id = $4
            AND m.status = 'active'
            AND b.status = 'active'
-       `,
+       ) AS authorized`,
       [event.tenantId, providerKey, event.merchantId, event.branchId]
     );
     return result.rows[0]?.authorized === true;
