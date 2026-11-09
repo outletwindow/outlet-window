@@ -104,6 +104,7 @@ A checkbox is marked complete only when code is present and automated checks or 
 
 ## Branch inventory and reservation progress (development branch)
 - [x] Added versioned schema for customer order item lines, branch inventory quantities and freshness/source metadata, reservation headers, and reservation lines.
+- [x] Added migration `0020_inventory_reservation_line_scope` with a composite foreign key enforcing that every reservation line belongs to the exact merchant and branch on its reservation header; PostgreSQL CI rejects cross-branch line insertion.
 - [x] Added a PostgreSQL transaction adapter that locks branch stock rows, validates exact merchant suborder lines, reserves all lines or none, and safely returns unavailable variants when stock is missing/insufficient.
 - [x] Added idempotency replay/conflict handling and integration tests for simultaneous requests competing for the final unit.
 - [x] Added a tenant/merchant/branch-scoped PostgreSQL inventory read repository exposing available/reserved quantities, source, last-sync timestamp, and freshness confidence.
