@@ -671,6 +671,35 @@ describe("signed payment provider webhook intake", () => {
     } finally { await app.close(); }
   });
 
+  it("routes signed initial payment capture events only to the trusted capture processor", async () => {
+    const captureBody = JSON.stringify({
+      id: "evt-capture-api", type: "payment.captured",
+      paymentReference: "intent-from-provider", amountMinor: 12500, currency: "SAR",
+      capturedAtUtc: new Date().toISOString(), orderId: "client-forged-order"
+    });
+    const process = vi.fn(async () => ({ outcome: "recorded" as const, captureId: "capture-api-1" }));
+    const record = vi.fn(async () => ({ outcome: "received" as const, receiptId: "wrong-path" }));
+    const app = buildApp({
+      paymentWebhookSecretResolver: async () => secret,
+      paymentWebhookInbox: { record },
+      paymentCaptureWebhookHandler: { process }
+    });
+    await app.ready();
+    try {
+      const response = await app.inject({
+        method: "POST", url: "/api/v1/webhooks/payments/psp-a",
+        headers: { "content-type": "application/json", "x-payment-signature": makeSignature(captureBody) },
+        payload: captureBody
+      });
+      expect(response.statusCode).toBe(201);
+      expect(response.json()).toEqual({ outcome: "recorded", captureId: "capture-api-1" });
+      expect(process).toHaveBeenCalledWith({
+        providerKey: "psp-a", rawBody: captureBody, signatureHeader: makeSignature(captureBody)
+      });
+      expect(record).not.toHaveBeenCalled();
+    } finally { await app.close(); }
+  });
+
   it("rejects invalid signatures without persisting the event", async () => {
     const record = vi.fn(async () => ({ outcome: "received" as const, receiptId: "unused" }));
     const app = buildApp({
