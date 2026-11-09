@@ -31,6 +31,22 @@ describe("Salla Commerce Catalog Adapter", () => {
     expect(result).toMatchObject({ completed: true, products: [{ externalProductId: "1001", title: "T-Shirt", currency: "SAR", priceMinor: 9995, variants: [{ externalId: "5001", sku: "TS-S", availability: "in_stock" }, { externalId: "5002", availability: "out_of_stock" }] }] });
     expect(result.products[0]?.sourceContentSha256).toMatch(/^[a-f0-9]{64}$/);
   });
+  it("converts currencies using their ISO minor-unit precision", async () => {
+    const { adapter } = makeAdapter({
+      success: true,
+      data: [
+        { id: 1, name: "KWD item", url: "https://my-store.salla.sa/kwd", price: { amount: 1.234, currency: "KWD" },
+          skus: [{ id: 11, price: { amount: 2.345, currency: "BHD" } }] },
+        { id: 2, name: "JPY item", url: "https://my-store.salla.sa/jpy", price: { amount: 1200, currency: "JPY" } }
+      ],
+      pagination: { currentPage: 1, totalPages: 1 }
+    });
+    const result = await adapter.importPage(request);
+    expect(result.products).toMatchObject([
+      { currency: "KWD", priceMinor: 1234, variants: [{ currency: "BHD", priceMinor: 2345 }] },
+      { currency: "JPY", priceMinor: 1200 }
+    ]);
+  });
   it("paginates using numeric cursors and stops at total pages", async () => {
     const { adapter, calls } = makeAdapter({ success: true, data: products, pagination: { currentPage: 2, totalPages: 3 } });
     const result = await adapter.importPage({ ...request, cursor: "2" });
