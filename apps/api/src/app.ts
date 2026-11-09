@@ -13,6 +13,7 @@ import {
 import { ORDER_STATUSES, type OrderStatus, type OrderTransitionContext } from "../../../packages/domain/src/order-lifecycle.js";
 import { INTEGRATION_FAMILIES, IntegrationHub } from "../../../packages/domain/src/integration-hub.js";
 import { verifyPaymentProviderWebhook } from "../../../packages/domain/src/payment-adjustment-provider.js";
+import type { CatalogProductInput, CatalogProductRecord } from "../../../packages/domain/src/postgres-merchant-catalog.js";
 import {
   resolveActorFromBearerToken,
   type ActorResolutionDependencies
@@ -43,6 +44,11 @@ export interface MerchantBranchWriter {
 export interface CustomerDeliveryDestinationService {
   /** Must resolve the service area and a fresh quote server-side; never accept pricing/zone/branch from the client. */
   update(input: { customerId: string; orderId: string; actorId: string; destination: DeliveryCoordinate }): Promise<UpdateDeliveryDestinationResult>;
+}
+
+export interface MerchantCatalogRepository {
+  createProduct(input: CatalogProductInput): Promise<CatalogProductRecord>;
+  listProducts(tenantId: string, limit?: number): Promise<Array<Record<string, unknown>>>;
 }
 
 export interface CustomerPaymentAdjustmentActions {
@@ -84,6 +90,7 @@ export interface AppOptions {
   customerDeliveryDestinations?: CustomerDeliveryDestinationService;
   customerPaymentAdjustments?: CustomerPaymentAdjustmentActions;
   integrationHub?: IntegrationHub;
+  merchantCatalog?: MerchantCatalogRepository;
   paymentWebhookInbox?: PaymentWebhookInboxWriter;
   paymentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
 }
@@ -715,6 +722,110 @@ app.patch<{
         createdAtUtc: now, updatedAtUtc: now
       }
     });
+  });
+
+
+  app.get<{
+    Params: { merchantId: string };
+    Querystring: { limit?: string };
+  }>("/api/v1/merchants/:merchantId/catalog/products", async (request, reply) => {
+    const { merchantId } = request.params;
+    const result = await authorizeRequest(request, options, {
+      resource: "merchant.catalog", action: "read", scope: { merchantId }
+    });
+    if (!result.actor) return sendAuthorizationFailure(reply, result.statusCode, result.decision.reason);
+    if (!["merchant_owner", "merchant_admin"].includes(result.actor.role)) {
+      return reply.code(403).send({ error: "merchant_admin_only" });
+    }
+    if (!options.merchantCatalog) return reply.code(503).send({ error: "catalog_service_unavailable" });
+    const rawLimit = request.query.limit;
+    const limit = rawLimit === undefined ? 50 : Number(rawLimit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+      return reply.code(400).send({ error: "invalid_limit" });
+    }
+    const products = await options.merchantCatalog.listProducts(merchantId, limit);
+    return reply.code(200).send({ products });
+  });
+
+  app.post<{
+    Params: { merchantId: string };
+    Body: {
+      integrationId: string; providerKey: string; externalProductId: string;
+      canonicalUrl: string; title: string; description?: string; brand?: string;
+      currency?: string; priceMinor?: number; imageUrls?: string[];
+      sourceType: CatalogProductInput["sourceType"]; sourceCapturedAt: string;
+      sourceContentSha256: string; sizeChartUrl?: string;
+      variants?: CatalogProductInput["variants"];
+    };
+  }>("/api/v1/merchants/:merchantId/catalog/products", async (request, reply) => {
+    const { merchantId } = request.params;
+    const result = await authorizeRequest(request, options, {
+      resource: "merchant.catalog", action: "create", scope: { merchantId }
+    });
+    if (!result.actor) return sendAuthorizationFailure(reply, result.statusCode, result.decision.reason);
+    if (!["merchant_owner", "merchant_admin"].includes(result.actor.role)) {
+      return reply.code(403).send({ error: "merchant_admin_only" });
+    }
+    if (!options.merchantCatalog) return reply.code(503).send({ error: "catalog_service_unavailable" });
+    const body = request.body;
+    const validText = (value: unknown, max: number) =>
+      typeof value === "string" && value.trim().length > 0 && value.length <= max;
+    const validMoney = (value: unknown) =>
+      value === undefined || (Number.isSafeInteger(value) && (value as number) >= 0);
+    const variants = body?.variants ?? [];
+    const validVariants = Array.isArray(variants) && variants.length <= 500 &&
+      variants.every(variant => variant && validText(variant.externalVariantId, 200) &&
+        (variant.sku === undefined || validText(variant.sku, 200)) &&
+        (variant.barcode === undefined || validText(variant.barcode, 100)) &&
+        (variant.sizeLabel === undefined || validText(variant.sizeLabel, 100)) &&
+        (variant.colorLabel === undefined || validText(variant.colorLabel, 100)) &&
+        (variant.currency === undefined || /^[A-Z]{3}$/.test(variant.currency)) &&
+        validMoney(variant.priceMinor) &&
+        (variant.availability === undefined || ["in_stock","out_of_stock","preorder","unknown"].includes(variant.availability)));
+    const capturedAt = typeof body?.sourceCapturedAt === "string" ? Date.parse(body.sourceCapturedAt) : NaN;
+    if (!body || !validText(body.integrationId, 100) ||
+        !/^[a-z0-9][a-z0-9._-]{1,79}$/.test(body.providerKey) ||
+        !validText(body.externalProductId, 200) ||
+        !validText(body.canonicalUrl, 2000) || !body.canonicalUrl.startsWith("https://") ||
+        !validText(body.title, 500) ||
+        (body.description !== undefined && (typeof body.description !== "string" || body.description.length > 10000)) ||
+        (body.brand !== undefined && !validText(body.brand, 200)) ||
+        (body.currency !== undefined && !/^[A-Z]{3}$/.test(body.currency)) ||
+        !validMoney(body.priceMinor) ||
+        !Array.isArray(body.imageUrls ?? []) || (body.imageUrls ?? []).length > 30 ||
+        (body.imageUrls ?? []).some(url => !validText(url, 2000) || !url.startsWith("https://")) ||
+        !["official_api","merchant_feed","structured_data","html_page","manual"].includes(body.sourceType) ||
+        !Number.isFinite(capturedAt) ||
+        !/^[a-f0-9]{64}$/.test(body.sourceContentSha256) ||
+        (body.sizeChartUrl !== undefined && (!validText(body.sizeChartUrl, 2000) || !body.sizeChartUrl.startsWith("https://"))) ||
+        !validVariants) {
+      return reply.code(400).send({ error: "invalid_catalog_product" });
+    }
+    try {
+      const product = await options.merchantCatalog.createProduct({
+        tenantId: merchantId, integrationId: body.integrationId,
+        providerKey: body.providerKey, externalProductId: body.externalProductId,
+        canonicalUrl: body.canonicalUrl, title: body.title.trim(),
+        ...(body.description === undefined ? {} : { description: body.description }),
+        ...(body.brand === undefined ? {} : { brand: body.brand.trim() }),
+        ...(body.currency === undefined ? {} : { currency: body.currency }),
+        ...(body.priceMinor === undefined ? {} : { priceMinor: body.priceMinor }),
+        imageUrls: body.imageUrls ?? [], sourceType: body.sourceType,
+        sourceCapturedAt: new Date(capturedAt).toISOString(),
+        sourceContentSha256: body.sourceContentSha256,
+        ...(body.sizeChartUrl === undefined ? {} : { sizeChartUrl: body.sizeChartUrl }),
+        variants
+      });
+      return reply.code(201).send({ product });
+    } catch (error) {
+      if (error instanceof Error && error.message === "CATALOG_INTEGRATION_NOT_CONNECTED") {
+        return reply.code(409).send({ error: "catalog_integration_not_connected" });
+      }
+      if (error instanceof Error && error.message === "CATALOG_PRODUCT_ALREADY_EXISTS") {
+        return reply.code(409).send({ error: "catalog_product_already_exists" });
+      }
+      throw error;
+    }
   });
 
   return app;
