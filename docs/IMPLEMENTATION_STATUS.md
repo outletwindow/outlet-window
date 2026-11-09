@@ -303,6 +303,13 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [ ] Do not enable checkout reservation from this processor until the payment intent resolver is backed by a persisted server-created payment intent and provider contract verification has passed.
 
 
+## Durable initial-order payment capture webhook inbox — schema foundation
+- [x] Added migration `0029_initial_payment_capture_webhook_inbox` with provider/event deduplication, server-owned payment-intent binding, payload digest, canonical capture fields, bounded attempts, retry scheduling, and paired worker leases.
+- [x] Raw webhook payloads and signatures are not persisted; event identity and capture evidence fields are immutable while processing state remains mutable.
+- [x] Added PostgreSQL acceptance coverage for duplicate events, immutable event identity, lease constraints, claim/finalize lifecycle, and truncate protection.
+- [ ] Add a dedicated initial-capture inbox writer/worker that atomically records verified capture evidence and finalizes the receipt; the existing payment webhook worker remains adjustment-only.
+- [ ] Wire the signed capture route to this durable inbox after provider-specific decoder and secret-manager verification; no live PSP is enabled.
+
 ## Server-owned provider payment intent mapping — development foundation
 - [x] Added migration `0028_provider_payment_intents` for provider reference to tenant/order mapping, exact amount/currency, expiry, tenant-scoped idempotency, and immutable records.
 - [x] Database insertion requires an order in `awaiting_payment`, exact order total/currency, and an expiry within 24 hours.
