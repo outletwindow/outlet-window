@@ -11,7 +11,7 @@ const input = {
 
 describe("PostgreSQL verified order payment capture store", () => {
   it("inserts a new verified capture with server-generated identity", async () => {
-    const query = vi.fn(async (sql: string) => sql.includes("INSERT")
+    const query = vi.fn(async (sql: string, _values?: readonly unknown[]) => sql.includes("INSERT")
       ? { rows: [{ id: "capture-1" }], rowCount: 1 }
       : { rows: [], rowCount: 0 });
     const pool = { query, connect: vi.fn() } as unknown as PostgresPool;
