@@ -15,6 +15,7 @@ import { INTEGRATION_FAMILIES, IntegrationHub } from "../../../packages/domain/s
 import { verifyPaymentProviderWebhook } from "../../../packages/domain/src/payment-adjustment-provider.js";
 import type { CatalogProductInput, CatalogProductRecord } from "../../../packages/domain/src/postgres-merchant-catalog.js";
 import type { MerchantCatalogImportService } from "../../../packages/domain/src/merchant-catalog-import-service.js";
+import type { BranchInventorySyncRequest, BranchInventorySyncResult } from "../../../packages/domain/src/branch-inventory-sync.js";
 
 export interface SallaOAuthFlow {
   begin(input: { tenantId: string; integrationId: string }): Promise<{ authorizationUrl: string }>;
@@ -101,6 +102,7 @@ export interface AppOptions {
   paymentWebhookInbox?: PaymentWebhookInboxWriter;
   paymentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
   sallaOAuthFlow?: SallaOAuthFlow;
+  branchInventorySync?: { sync(input: BranchInventorySyncRequest): Promise<BranchInventorySyncResult> };
 }
 
 const paymentWebhookRawBodies = new WeakMap<FastifyRequest, string>();
@@ -925,6 +927,42 @@ app.patch<{
       }
       if (error instanceof Error && error.message === "CATALOG_PRODUCT_ALREADY_EXISTS") {
         return reply.code(409).send({ error: "catalog_product_already_exists" });
+      }
+      throw error;
+    }
+  });
+
+
+  app.post<{
+    Params: { merchantId: string; branchId: string };
+    Body: { source: "pos" | "erp" | "ecommerce" | "csv" | "merchant_portal" | "manual"; capturedAtUtc: string;
+      lines: Array<{ productVariantId: string; sku: string; availableQuantity: number }> };
+  }>("/api/v1/merchants/:merchantId/branches/:branchId/inventory/sync", async (request, reply) => {
+    const { merchantId, branchId } = request.params;
+    const access = await authorizeRequest(request, options, {
+      resource: "merchant.branch.inventory", action: "update", scope: { merchantId, branchId }
+    });
+    if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
+    if (!options.branchInventorySync) return reply.code(503).send({ error: "inventory_sync_unavailable" });
+    const body = request.body;
+    if (!body || !["pos","erp","ecommerce","csv","merchant_portal","manual"].includes(body.source) ||
+        typeof body.capturedAtUtc !== "string" || !Array.isArray(body.lines) ||
+        body.lines.length < 1 || body.lines.length > 5000) {
+      return reply.code(400).send({ error: "invalid_inventory_snapshot" });
+    }
+    try {
+      const result = await options.branchInventorySync.sync({
+        tenantId: merchantId, merchantId, branchId, source: body.source,
+        capturedAtUtc: body.capturedAtUtc, lines: body.lines
+      });
+      return reply.code(200).send({ result });
+    } catch (error) {
+      if (error instanceof Error && (error.message === "INVALID_BRANCH_INVENTORY_SNAPSHOT" ||
+          error.message === "INVALID_BRANCH_INVENTORY_LINE")) {
+        return reply.code(400).send({ error: "invalid_inventory_snapshot" });
+      }
+      if (error instanceof Error && error.message === "BRANCH_INVENTORY_SCOPE_NOT_FOUND") {
+        return reply.code(404).send({ error: "branch_not_found" });
       }
       throw error;
     }
