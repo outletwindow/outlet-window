@@ -38,7 +38,8 @@ async function main(): Promise<void> {
       { version: "0019_salla_oauth_vault", file: "0019_salla_oauth_vault.sql" },
       { version: "0020_inventory_reservation_line_scope", file: "0020_inventory_reservation_line_scope.sql" },
       { version: "0021_unique_inventory_handover_evidence", file: "0021_unique_inventory_handover_evidence.sql" },
-      { version: "0022_fulfillment_handover_event_inbox", file: "0022_fulfillment_handover_event_inbox.sql" }
+      { version: "0022_fulfillment_handover_event_inbox", file: "0022_fulfillment_handover_event_inbox.sql" },
+      { version: "0023_fulfillment_provider_branch_scopes", file: "0023_fulfillment_provider_branch_scopes.sql" }
     ].map(async migration => ({
       version: migration.version,
       sql: await readFile(resolve(process.cwd(), `../../database/migrations/${migration.file}`), "utf8")
