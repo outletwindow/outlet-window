@@ -55,4 +55,28 @@ describe("Salla OAuth token manager", () => {
     );
     expect(await manager.getAccessToken("t1", "i1")).toBeNull();
   });
+  it("rejects stored tokens containing whitespace or exceeding the size limit", async () => {
+    for (const invalid of ["token with spaces", "x".repeat(10_001)]) {
+      const manager = new SallaOAuthTokenManager(
+        { async read() { return { ...initial, accessToken: invalid }; }, async writeAtomically() { throw new Error("must-not-write"); } },
+        { async refresh() { throw new Error("must-not-refresh"); } },
+        { async withLock<T>(_key: string, op: () => Promise<T>) { return op(); } }, () => now
+      );
+      expect(await manager.getAccessToken("t1", "i1")).toBeNull();
+    }
+  });
+
+  it("rejects malformed refreshed token material before vault persistence", async () => {
+    for (const invalid of ["token with spaces", "x".repeat(10_001)]) {
+      let writes = 0;
+      const manager = new SallaOAuthTokenManager(
+        { async read() { return { ...initial }; }, async writeAtomically() { writes++; } },
+        { async refresh() { return { access_token: invalid, refresh_token: "new-refresh", expires_in: 3600 }; } },
+        { async withLock<T>(_key: string, op: () => Promise<T>) { return op(); } }, () => now
+      );
+      await expect(manager.getAccessToken("t1", "i1")).rejects.toThrow("INVALID_SALLA_REFRESH_RESPONSE");
+      expect(writes).toBe(0);
+    }
+  });
+
 });
