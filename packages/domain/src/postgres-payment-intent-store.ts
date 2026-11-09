@@ -58,8 +58,8 @@ export class PostgresPaymentIntentStore implements PaymentCaptureOrderResolver {
   async findExpectedOrder(input: {
     providerKey:string; providerPaymentReference:string; amountMinor:number; currency:string;
   }): Promise<ExpectedPaymentOrder|null> {
-    const result=await this.pool.query<{tenant_id:string;order_id:string}>(
-      `SELECT i.tenant_id,i.order_id
+    const result=await this.pool.query<{tenant_id:string;order_id:string;id:string}>(
+      `SELECT i.id,i.tenant_id,i.order_id
        FROM provider_payment_intents i
        JOIN customer_orders o ON o.tenant_id=i.tenant_id AND o.id=i.order_id
        WHERE i.provider_key=$1 AND i.provider_payment_reference=$2
@@ -67,6 +67,6 @@ export class PostgresPaymentIntentStore implements PaymentCaptureOrderResolver {
          AND i.expires_at > $5 AND o.status='awaiting_payment'`,
       [input.providerKey,input.providerPaymentReference,input.amountMinor,input.currency,this.now().toISOString()]
     );
-    return result.rowCount===1 ? {tenantId:result.rows[0]!.tenant_id,orderId:result.rows[0]!.order_id} : null;
+    return result.rowCount===1 ? {tenantId:result.rows[0]!.tenant_id,orderId:result.rows[0]!.order_id,paymentIntentId:result.rows[0]!.id} : null;
   }
 }
