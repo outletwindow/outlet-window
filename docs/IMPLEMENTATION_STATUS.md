@@ -301,3 +301,13 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [ ] The server-owned payment-intent/order resolver and provider-specific decoders still need production implementations and sandbox contract tests. No real PSP adapter or payment intent creation flow is configured.
 - [ ] Add an initial payment webhook inbox worker/retry lease flow and transactional reconciliation between receipt finalization and capture ledger insertion before enabling live traffic.
 - [ ] Do not enable checkout reservation from this processor until the payment intent resolver is backed by a persisted server-created payment intent and provider contract verification has passed.
+
+
+## Server-owned provider payment intent mapping — development foundation
+- [x] Added migration `0028_provider_payment_intents` for provider reference to tenant/order mapping, exact amount/currency, expiry, tenant-scoped idempotency, and immutable records.
+- [x] Database insertion requires an order in `awaiting_payment`, exact order total/currency, and an expiry within 24 hours.
+- [x] Added `PostgresPaymentIntentStore` to persist provider references only when supplied by a trusted backend after provider intent creation, and to resolve webhook references from server-owned records.
+- [x] Initial capture resolver now matches provider reference, amount, currency, unexpired intent, and payable order; webhook metadata never supplies tenant/order identity.
+- [x] Added adapter unit tests and PostgreSQL migration acceptance checks to CI.
+- [ ] The PSP API call that creates the external payment intent, provider-specific signature/decoder adapters, secure secret resolution, durable initial-capture inbox/worker, and production credentials remain pending.
+- [ ] The intent store is a persistence boundary, not a live payment gateway. Do not treat the generic webhook route as production-ready until a provider contract and deployment wiring are verified.
