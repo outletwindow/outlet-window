@@ -33,7 +33,7 @@ export type ScheduledCheckoutRecoveryStatus =
   | { status: "identity_collision" };
 
 async function recordRecoveryCase(input: {
-  recorder?: ScheduledCheckoutRecoveryRecorder;
+  recorder?: ScheduledCheckoutRecoveryRecorder | undefined;
   order: ScheduledOrderConfirmation;
   failureCode: "INVENTORY_UNAVAILABLE" | "INVENTORY_UNGUARANTEED" | "TASK_COMMIT_REJECTED";
   failedSuborderId?: string;
