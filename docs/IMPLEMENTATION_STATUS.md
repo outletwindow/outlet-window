@@ -265,3 +265,16 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Provider handover references are length-bounded after namespacing to fit the reservation ledger.
 - [ ] Add focused API route tests and a PostgreSQL transaction-level acceptance test before enabling a real carrier provider.
 - [ ] Supply provider secrets through the host secret manager via `fulfillmentWebhookSecretResolver`; no provider secret is embedded in source.
+
+## Immediate checkout orchestration — verified gap and acceptance gate
+- [x] Re-verified that PostgreSQL exact-variant reservation and reservation finalization are implemented as separate domain adapters; the API composition root currently wires the lifecycle adapter but does not wire the reservation adapter into an immediate-checkout application service.
+- [x] Re-verified that the scheduled checkout orchestrator records provider-confirmed capture evidence, reserves each merchant suborder, and only then commits scheduled outbox tasks. Its documented contract does not charge, refund, or automatically compensate prior holds when a later suborder fails.
+- [x] Re-verified that the generic payment webhook inbox/worker is not an initial-order payment confirmation flow: its reconciliation path is scoped to payment adjustments.
+- [x] Re-verified that merchant suborder transitions enforce payment/inventory context for confirmation, preparation evidence before ready-for-pickup, and verified fulfillment evidence before reservation consumption.
+- [x] Re-verified that the public reservation-finalization route rejects client-asserted handover proof; consumption is reserved for the signed fulfillment event path.
+- [ ] Implement an application-level checkout coordinator for immediate and scheduled orders with a trusted, provider-confirmed payment result; do not accept client-supplied paymentCaptured/inventoryReserved booleans or provider references as proof.
+- [ ] Persist a durable checkout/idempotency state machine that coordinates multi-merchant reservations, order/suborder status changes, and outbox creation; define explicit partial-reservation recovery states.
+- [ ] Define and implement compensation policy for payment captured but one or more branch reservations unavailable: customer choice, provider refund/void where supported, and auditable retry/reconciliation. Never silently release stock and assume payment was refunded.
+- [ ] Connect reservation release to authorized cancellation/merchant rejection only after the payment/refund decision is recorded; keep expiry worker and signed handover consumption as separate trusted paths.
+- [ ] Add PostgreSQL integration acceptance tests for full immediate checkout, replayed requests/webhooks, concurrent checkout, second-merchant reservation failure, task-commit failure, cancellation, expiry, and verified handover; assert payment and stock ledgers remain consistent.
+- [ ] Do not mark immediate checkout production-ready until the coordinator is wired through the API composition root, provider-specific payment contract tests pass, and all acceptance cases pass in CI.
