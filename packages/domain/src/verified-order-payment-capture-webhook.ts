@@ -64,7 +64,7 @@ export class VerifiedOrderPaymentCaptureWebhookProcessor {
       rawBody: input.rawBody,
       signatureHeader: input.signatureHeader,
       secret,
-      nowUtc: this.dependencies.now?.()
+      ...(this.dependencies.now === undefined ? {} : { nowUtc: this.dependencies.now() })
     })) return { outcome: "invalid_signature_or_event" };
 
     let decoded: DecodedProviderCapture | null;
