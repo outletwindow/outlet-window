@@ -978,6 +978,9 @@ app.patch<{
       if (error instanceof Error && error.message === "BRANCH_INVENTORY_SCOPE_NOT_FOUND") {
         return reply.code(404).send({ error: "branch_not_found" });
       }
+      if (error instanceof Error && error.message === "BRANCH_INVENTORY_RESERVED_STOCK_CONFLICT") {
+        return reply.code(409).send({ error: "snapshot_conflicts_with_reserved_stock" });
+      }
       throw error;
     }
   });
