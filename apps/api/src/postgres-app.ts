@@ -4,7 +4,7 @@ import {
   PostgresIamStore,
   type PostgresPool
 } from "../../../packages/domain/src/postgres-iam-store.js";
-import { buildApp, type AppOptions, type MerchantBranchReader, type CustomerDeliveryDestinationService, type CustomerPaymentAdjustmentActions } from "./app.js";
+import { buildApp, type AppOptions, type MerchantBranchReader, type CustomerDeliveryDestinationService, type CustomerPaymentAdjustmentActions, MerchantCatalogRepository } from "./app.js";
 import { PostgresMerchantBranchReader } from "../../../packages/domain/src/postgres-merchant-branch-reader.js";
 import { PostgresMerchantBranchWriter } from "../../../packages/domain/src/postgres-merchant-branch-writer.js";
 import { PostgresAuditEventStore } from "../../../packages/domain/src/postgres-audit-event-store.js";
@@ -13,6 +13,7 @@ import { PostgresPaymentAdjustmentStore } from "../../../packages/domain/src/pos
 import { IntegrationHub } from "../../../packages/domain/src/integration-hub.js";
 import { PostgresIntegrationRegistryStore } from "../../../packages/domain/src/postgres-integration-registry-store.js";
 import { PostgresPaymentWebhookInbox } from "../../../packages/domain/src/postgres-payment-webhook-inbox.js";
+import { PostgresMerchantCatalog } from "../../../packages/domain/src/postgres-merchant-catalog.js";
 
 export interface PostgresApiOptions {
   pool: PostgresPool;
@@ -24,6 +25,7 @@ export interface PostgresApiOptions {
   version?: string;
   customerDeliveryDestinations?: CustomerDeliveryDestinationService;
   customerPaymentAdjustments?: CustomerPaymentAdjustmentActions;
+  merchantCatalog?: MerchantCatalogRepository;
   paymentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
 }
 
@@ -41,6 +43,7 @@ export function buildPostgresApp(options: PostgresApiOptions) {
     auditEvents: new PostgresAuditEventStore(options.pool),
     integrationHub: new IntegrationHub(new PostgresIntegrationRegistryStore(options.pool)),
     paymentWebhookInbox: new PostgresPaymentWebhookInbox(options.pool),
+    merchantCatalog: options.merchantCatalog ?? new PostgresMerchantCatalog(options.pool),
     ...(options.paymentWebhookSecretResolver === undefined ? {} : {
       paymentWebhookSecretResolver: options.paymentWebhookSecretResolver
     }),
@@ -70,7 +73,9 @@ export function buildPostgresApp(options: PostgresApiOptions) {
         "0013_payment_adjustment_consents",
         "0014_payment_provider_webhook_inbox",
         "0015_multi_provider_integration_hub",
-        "0016_payment_webhook_worker_envelope"
+        "0016_payment_webhook_worker_envelope",
+        "0017_self_healing_incidents",
+        "0018_commerce_catalog"
       ];
       const result = await options.pool.query<{ version: string }>(
         "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",
