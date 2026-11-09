@@ -184,7 +184,7 @@ export class PostgresInitialPaymentCaptureInbox {
        processed_at=CASE WHEN attempt_count>=20 THEN now() ELSE NULL END,
        next_attempt_at=CASE WHEN attempt_count>=20 THEN next_attempt_at ELSE now()+($3 * interval '1 second') END,
        lease_owner=NULL,lease_expires_at=NULL,failure_code=$4
-       WHERE id=$1 AND status='processing' AND lease_owner=$2 RETURNING attempt_count`,
+       WHERE id=$1 AND status='processing' AND lease_owner=$2 AND lease_expires_at>now() RETURNING attempt_count`,
       [input.receiptId,input.workerId,input.delaySeconds,input.failureCode]
     );
     if(r.rowCount!==1)return "lease_lost";
