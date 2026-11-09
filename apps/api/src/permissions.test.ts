@@ -65,6 +65,11 @@ describe("merchant order permissions", () => {
     expect(grants.some(grant => grant.resource === "merchant.order" && grant.actions.includes("update"))).toBe(false);
     expect(grants.some(grant => grant.resource === "merchant.branch.inventory" && grant.actions.includes("update"))).toBe(false);
     expect(grants.some(grant => grant.resource === "merchant.branch.inventory_reservation" && grant.actions.includes("execute"))).toBe(false);
+    expect(grants).toContainEqual({
+      resource: "merchant.branch.inventory",
+      actions: ["read"],
+      scope: { merchantId: "merchant-1", branchId: "branch-1" }
+    });
   });
 });
 
