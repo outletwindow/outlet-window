@@ -1123,7 +1123,8 @@ app.patch<{
       return reply.code(200).send({ result });
     } catch (error) {
       if (error instanceof Error && (error.message === "INVALID_BRANCH_INVENTORY_SNAPSHOT" ||
-          error.message === "INVALID_BRANCH_INVENTORY_LINE")) {
+          error.message === "INVALID_BRANCH_INVENTORY_LINE" ||
+          error.message === "FUTURE_BRANCH_INVENTORY_SNAPSHOT")) {
         return reply.code(400).send({ error: "invalid_inventory_snapshot" });
       }
       if (error instanceof Error && error.message === "BRANCH_INVENTORY_SCOPE_NOT_FOUND") {
