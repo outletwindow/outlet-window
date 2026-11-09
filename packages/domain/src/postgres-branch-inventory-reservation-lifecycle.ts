@@ -160,7 +160,7 @@ export class PostgresBranchInventoryReservationLifecycle {
       }
 
       await client.query(
-        "UPDATE inventory_reservations SET status = $3, updated_at = $4, finalization_reason = $5, handover_reference = $6 WHERE tenant_id = $1 AND merchant_id = $2 AND branch_id = $3 AND id = $4 AND status = 'reserved'",
+        "UPDATE inventory_reservations SET status = $5, updated_at = $6, finalization_reason = $7, handover_reference = $8 WHERE tenant_id = $1 AND merchant_id = $2 AND branch_id = $3 AND id = $4 AND status = 'reserved'",
         [input.tenantId, input.merchantId, input.branchId, input.reservationId, input.nextStatus, nowUtc,
           input.finalizationReason ?? null, input.handoverReference ?? null]
       );
