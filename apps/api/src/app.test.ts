@@ -428,6 +428,47 @@ describe("Outlet Window API foundation", () => {
     } finally { await protectedApp.close(); }
   });
 
+  it("limits merchant employees to preparation transitions within their assigned branch", async () => {
+    const employee: Actor = {
+      id: "employee-1", role: "merchant_employee", active: true,
+      grants: [{ resource: "merchant.order", actions: ["read", "update"], scope: { merchantId: "merchant-1", branchId: "branch-1" } }]
+    };
+    let writes = 0;
+    const employeeApp = buildApp({
+      resolveActor: async () => employee,
+      orderTransitions: { transitionSuborder: async input => {
+        writes += 1;
+        return { outcome: "updated", transition: { ok: true, previousStatus: "preparing", order: { status: input.nextStatus, version: 3 } }, parentStatus: input.nextStatus };
+      } }
+    });
+    await employeeApp.ready();
+    try {
+      const wrongBranch = await employeeApp.inject({
+        method: "POST",
+        url: "/api/v1/merchants/merchant-1/branches/branch-2/orders/order-1/suborders/sub-1/transitions",
+        payload: { nextStatus: "preparing", expectedVersion: 2 }
+      });
+      expect(wrongBranch.statusCode).toBe(403);
+      const forbiddenStatus = await employeeApp.inject({
+        method: "POST",
+        url: "/api/v1/merchants/merchant-1/branches/branch-1/orders/order-1/suborders/sub-1/transitions",
+        payload: { nextStatus: "cancelled", expectedVersion: 2, reason: "not permitted" }
+      });
+      expect(forbiddenStatus.statusCode).toBe(403);
+      expect(forbiddenStatus.json()).toEqual({ error: "employee_preparation_transition_only" });
+      expect(writes).toBe(0);
+      const allowed = await employeeApp.inject({
+        method: "POST",
+        url: "/api/v1/merchants/merchant-1/branches/branch-1/orders/order-1/suborders/sub-1/transitions",
+        payload: { nextStatus: "ready_for_pickup", expectedVersion: 2 }
+      });
+      expect(allowed.statusCode).toBe(200);
+      expect(writes).toBe(1);
+    } finally {
+      await employeeApp.close();
+    }
+  });
+
   it("rejects malformed order transition commands", async () => {
     const operator: Actor = { ...merchantActor, grants: [{ resource: "merchant.order", actions: ["update"], scope: { merchantId: "merchant-1", branchId: "branch-1" } }] };
     let writes = 0;
