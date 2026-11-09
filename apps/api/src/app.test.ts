@@ -33,7 +33,10 @@ describe("Outlet Window API foundation", () => {
     const recordAndApply = vi.fn(async () => ({ outcome: "applied" as const, receiptId: "receipt-1" }));
     const webhookApp = buildApp({
       fulfillmentHandoverInbox: { recordAndApply },
-      fulfillmentWebhookSecretResolver: async key => key === "carrier-a" ? secret : null
+      fulfillmentWebhookSecretResolver: async key => key === "carrier-a" ? secret : null,
+      fulfillmentWebhookAuthorizationResolver: async (key, event) =>
+        key === "carrier-a" && event.tenantId === "tenant-1" &&
+        event.merchantId === "merchant-1" && event.branchId === "branch-1"
     });
     await webhookApp.ready();
     try {
@@ -58,11 +61,45 @@ describe("Outlet Window API foundation", () => {
     }
   });
 
+  it("rejects a correctly signed fulfillment event outside the provider's assigned branch scope", async () => {
+    const secret = "fulfillment-test-secret-with-at-least-32-characters";
+    const recordAndApply = vi.fn();
+    const webhookApp = buildApp({
+      fulfillmentHandoverInbox: { recordAndApply },
+      fulfillmentWebhookSecretResolver: async () => secret,
+      fulfillmentWebhookAuthorizationResolver: async (_key, event) =>
+        event.tenantId === "tenant-allowed" && event.merchantId === "merchant-allowed" &&
+        event.branchId === "branch-allowed"
+    });
+    await webhookApp.ready();
+    try {
+      const rawBody = JSON.stringify({
+        eventType: "handover.completed", providerEventId: "event-scope-1",
+        tenantId: "tenant-other", merchantId: "merchant-other", branchId: "branch-other",
+        reservationId: "reservation-1", handoverReference: "handover-1",
+        occurredAtUtc: new Date().toISOString()
+      });
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      const signature = createHmac("sha256", secret).update(timestamp + "." + rawBody).digest("hex");
+      const response = await webhookApp.inject({
+        method: "POST", url: "/api/v1/webhooks/fulfillment/carrier-a",
+        headers: { "content-type": "application/json", "x-fulfillment-signature": `t=${timestamp},v1=${signature}` },
+        payload: rawBody
+      });
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toEqual({ error: "fulfillment_provider_scope_not_authorized" });
+      expect(recordAndApply).not.toHaveBeenCalled();
+    } finally {
+      await webhookApp.close();
+    }
+  });
+
   it("rejects unsigned fulfillment handover events before persistence", async () => {
     const recordAndApply = vi.fn();
     const webhookApp = buildApp({
       fulfillmentHandoverInbox: { recordAndApply },
-      fulfillmentWebhookSecretResolver: async () => "fulfillment-test-secret-with-at-least-32-characters"
+      fulfillmentWebhookSecretResolver: async () => "fulfillment-test-secret-with-at-least-32-characters",
+      fulfillmentWebhookAuthorizationResolver: async () => true
     });
     await webhookApp.ready();
     try {
