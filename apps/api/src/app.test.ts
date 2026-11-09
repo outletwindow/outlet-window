@@ -411,7 +411,7 @@ describe("Outlet Window API foundation", () => {
   it("authorizes scoped merchant order transitions and derives the actor from the session", async () => {
     const operator: Actor = { ...merchantActor, grants: [{ resource: "merchant.order", actions: ["update"], scope: { merchantId: "merchant-1", branchId: "branch-1" } }] };
     const calls: Array<{ tenantId: string; context: { actorId: string; actorRole: string; paymentAuthorized?: boolean }; auditEvent: { actor: { id: string }; tenantId?: string; branchId?: string } }> = [];
-    const protectedApp = buildApp({ resolveActor: async () => operator, orderTransitions: { transitionSuborder: async input => {
+    const protectedApp = buildApp({ resolveActor: async () => operator, resolveMerchantTenantId: async () => "tenant-merchant-1", orderTransitions: { transitionSuborder: async input => {
       calls.push(input);
       return { outcome: "updated", transition: { ok: true, previousStatus: "pending_validation", order: { status: "awaiting_payment", version: 2 } }, parentStatus: "awaiting_payment" };
     } } });
@@ -423,10 +423,33 @@ describe("Outlet Window API foundation", () => {
       const allowed = await protectedApp.inject({ method: "POST", url: "/api/v1/merchants/merchant-1/branches/branch-1/orders/order-1/suborders/sub-1/transitions", payload: { nextStatus: "awaiting_payment", expectedVersion: 1 } });
       expect(allowed.statusCode).toBe(200);
       expect(allowed.json()).toMatchObject({ suborder: { id: "sub-1", status: "awaiting_payment", version: 2 }, previousStatus: "pending_validation", parentStatus: "awaiting_payment" });
-      expect(calls[0]?.tenantId).toBe("merchant-1");
+      expect(calls[0]?.tenantId).toBe("tenant-merchant-1");
       expect(calls[0]?.context).toMatchObject({ actorId: "principal-1", actorRole: "merchant_owner", paymentAuthorized: false });
-      expect(calls[0]?.auditEvent).toMatchObject({ actor: { id: "principal-1" }, tenantId: "merchant-1", branchId: "branch-1" });
+      expect(calls[0]?.auditEvent).toMatchObject({ actor: { id: "principal-1" }, tenantId: "tenant-merchant-1", branchId: "branch-1" });
     } finally { await protectedApp.close(); }
+  });
+
+  it("fails closed when merchant tenant ownership cannot be resolved for an order transition", async () => {
+    const operator: Actor = { ...merchantActor, grants: [{ resource: "merchant.order", actions: ["update"], scope: { merchantId: "merchant-1", branchId: "branch-1" } }] };
+    const transitionSuborder = vi.fn(async () => ({ outcome: "not_found" as const }));
+    const protectedApp = buildApp({
+      resolveActor: async () => operator,
+      resolveMerchantTenantId: async () => null,
+      orderTransitions: { transitionSuborder }
+    });
+    await protectedApp.ready();
+    try {
+      const response = await protectedApp.inject({
+        method: "POST",
+        url: "/api/v1/merchants/merchant-1/branches/branch-1/orders/order-1/suborders/sub-1/transitions",
+        payload: { nextStatus: "awaiting_payment", expectedVersion: 1 }
+      });
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toEqual({ error: "merchant_not_found" });
+      expect(transitionSuborder).not.toHaveBeenCalled();
+    } finally {
+      await protectedApp.close();
+    }
   });
 
   it("limits merchant employees to preparation transitions within their assigned branch", async () => {
@@ -437,6 +460,7 @@ describe("Outlet Window API foundation", () => {
     let writes = 0;
     const employeeApp = buildApp({
       resolveActor: async () => employee,
+      resolveMerchantTenantId: async () => "tenant-merchant-1",
       orderTransitions: { transitionSuborder: async input => {
         writes += 1;
         return { outcome: "updated", transition: { ok: true, previousStatus: "preparing", order: { status: input.nextStatus, version: 3 } }, parentStatus: input.nextStatus };
