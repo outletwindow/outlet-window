@@ -99,6 +99,8 @@ export interface AppOptions {
   customerPaymentAdjustments?: CustomerPaymentAdjustmentActions;
   integrationHub?: IntegrationHub;
   merchantCatalog?: MerchantCatalogRepository;
+  /** Resolve merchant tenant ownership from trusted persistence after authorization. */
+  resolveMerchantTenantId?: (merchantId: string) => Promise<string | null>;
   merchantCatalogImport?: MerchantCatalogImportService;
   paymentWebhookInbox?: PaymentWebhookInboxWriter;
   paymentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
@@ -877,6 +879,8 @@ app.patch<{
       return reply.code(403).send({ error: "merchant_admin_only" });
     }
     if (!options.merchantCatalog) return reply.code(503).send({ error: "catalog_service_unavailable" });
+    const tenantId = await options.resolveMerchantTenantId?.(merchantId);
+    if (!tenantId) return reply.code(404).send({ error: "merchant_not_found" });
     const body = request.body;
     const validText = (value: unknown, max: number) =>
       typeof value === "string" && value.trim().length > 0 && value.length <= max;
@@ -913,7 +917,7 @@ app.patch<{
     }
     try {
       const product = await options.merchantCatalog.createProduct({
-        tenantId: merchantId, integrationId: body.integrationId,
+        tenantId, integrationId: body.integrationId,
         providerKey: body.providerKey, externalProductId: body.externalProductId,
         canonicalUrl: body.canonicalUrl, title: body.title.trim(),
         ...(body.description === undefined ? {} : { description: body.description }),
@@ -950,6 +954,8 @@ app.patch<{
     });
     if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
     if (!options.branchInventorySync) return reply.code(503).send({ error: "inventory_sync_unavailable" });
+    const tenantId = await options.resolveMerchantTenantId?.(merchantId);
+    if (!tenantId) return reply.code(404).send({ error: "merchant_not_found" });
     const body = request.body;
     if (!body || !["pos","erp","ecommerce","csv","merchant_portal","manual"].includes(body.source) ||
         typeof body.capturedAtUtc !== "string" || !Array.isArray(body.lines) ||
@@ -958,7 +964,7 @@ app.patch<{
     }
     try {
       const result = await options.branchInventorySync.sync({
-        tenantId: merchantId, merchantId, branchId, source: body.source,
+        tenantId, merchantId, branchId, source: body.source,
         capturedAtUtc: body.capturedAtUtc, lines: body.lines
       });
       return reply.code(200).send({ result });
@@ -986,6 +992,8 @@ app.patch<{
     if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
     const lifecycle = options.inventoryReservationLifecycle;
     if (!lifecycle) return reply.code(503).send({ error: "inventory_reservation_lifecycle_unavailable" });
+    const tenantId = await options.resolveMerchantTenantId?.(merchantId);
+    if (!tenantId) return reply.code(404).send({ error: "merchant_not_found" });
     const body = request.body;
     if (!body || !["release","expire","consume"].includes(body.action)) {
       return reply.code(400).send({ error: "invalid_reservation_action" });
@@ -993,10 +1001,10 @@ app.patch<{
     try {
       const nowUtc = new Date().toISOString();
       const result = body.action === "release"
-        ? await lifecycle.release({ tenantId: merchantId, reservationId, nowUtc, reason: body.reason ?? "" })
+        ? await lifecycle.release({ tenantId, reservationId, nowUtc, reason: body.reason ?? "" })
         : body.action === "expire"
-          ? await lifecycle.expire({ tenantId: merchantId, reservationId, nowUtc })
-          : await lifecycle.consume({ tenantId: merchantId, reservationId, nowUtc,
+          ? await lifecycle.expire({ tenantId, reservationId, nowUtc })
+          : await lifecycle.consume({ tenantId, reservationId, nowUtc,
               handoverVerified: body.handoverVerified === true, handoverReference: body.handoverReference ?? "" });
       return reply.code(result.outcome === "not_found" ? 404 : 200).send({ result });
     } catch (error) {
