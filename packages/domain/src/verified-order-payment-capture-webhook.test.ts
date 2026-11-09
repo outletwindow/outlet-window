@@ -15,7 +15,7 @@ function signature(body: string): string {
 function createProcessor(overrides: Record<string, unknown> = {}) {
   const recordVerifiedCapture = vi.fn(async () => ({ outcome: "inserted" as const, captureId: "capture-1" }));
   const orderResolver = {
-    findExpectedOrder: vi.fn(async () => ({ tenantId: "tenant-1", orderId: "order-1" }))
+    findExpectedOrder: vi.fn(async () => ({ tenantId: "tenant-1", orderId: "order-1", paymentIntentId: "intent-1" }))
   };
   const processor = new VerifiedOrderPaymentCaptureWebhookProcessor({
     secretResolver: async () => secret,
