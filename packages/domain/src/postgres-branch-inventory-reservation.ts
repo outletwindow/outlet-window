@@ -34,6 +34,11 @@ export class PostgresBranchInventoryReservationAdapter implements InventoryReser
     try {
       await client.query("BEGIN");
 
+      // Serialize retries sharing an idempotency key before checking the ledger.
+      // Without this lock, concurrent first attempts can both observe no row and
+      // the loser may incorrectly return "unavailable" instead of the prior result.
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [request.idempotencyKey]);
+
       const existing = await client.query<{
         id: string; tenant_id: string; order_id: string; suborder_id: string;
         merchant_id: string; branch_id: string; status: string;
