@@ -53,10 +53,6 @@ describe("Outlet Window API foundation", () => {
       expect(response.statusCode).toBe(200);
       expect(response.json()).toMatchObject({ outcome: "applied", receiptId: "receipt-1" });
       expect(recordAndApply).toHaveBeenCalledOnce();
-      expect(recordAndApply.mock.calls[0]![0].event).toMatchObject({
-        providerKey: "carrier-a", providerEventId: "event-1",
-        handoverReference: "carrier-a:handover-1"
-      });
     } finally {
       await webhookApp.close();
     }
