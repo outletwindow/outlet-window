@@ -18,6 +18,7 @@ import { MerchantCatalogImportService } from "../../../packages/domain/src/merch
 import type { CommerceConnectorRegistry } from "../../../packages/domain/src/commerce-connectors.js";
 import { PostgresCommerceCatalogStore } from "../../../packages/domain/src/postgres-commerce-catalog-store.js";
 import { BranchInventorySyncService, PostgresBranchInventorySyncStore } from "../../../packages/domain/src/branch-inventory-sync.js";
+import { PostgresBranchInventoryReservationLifecycle } from "../../../packages/domain/src/postgres-branch-inventory-reservation-lifecycle.js";
 
 export interface PostgresApiOptions {
   pool: PostgresPool;
@@ -58,6 +59,7 @@ export function buildPostgresApp(options: PostgresApiOptions) {
     auditEvents: new PostgresAuditEventStore(options.pool),
     integrationHub,
     branchInventorySync: new BranchInventorySyncService(new PostgresBranchInventorySyncStore(options.pool), options.now),
+    inventoryReservationLifecycle: new PostgresBranchInventoryReservationLifecycle(options.pool),
     ...(options.sallaOAuthFlow === undefined ? {} : { sallaOAuthFlow: options.sallaOAuthFlow }),
     paymentWebhookInbox: new PostgresPaymentWebhookInbox(options.pool),
     merchantCatalog: options.merchantCatalog ?? new PostgresMerchantCatalog(options.pool),
