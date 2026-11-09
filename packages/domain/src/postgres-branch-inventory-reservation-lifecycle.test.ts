@@ -68,6 +68,26 @@ describe("branch-scoped PostgreSQL reservation finalization", () => {
     expect(pool.client.released).toBe(true);
   });
 
+  it("rolls back stock changes if the reservation status compare-and-swap updates no row", async () => {
+    const pool = new FinalizePool();
+    const originalQuery = pool.client.query.bind(pool.client);
+    pool.client.query = async function<Row>(sql: string, values: readonly unknown[] = []) {
+      if (sql.startsWith("UPDATE inventory_reservations")) {
+        this.statements.push({ sql: sql.trim().replace(/\\s+/g, " "), values });
+        return { rows: [], rowCount: 0 };
+      }
+      return originalQuery<Row>(sql, values);
+    };
+    const lifecycle = new PostgresBranchInventoryReservationLifecycle(pool);
+    await expect(lifecycle.release({
+      tenantId: "tenant-1", merchantId: "merchant-1", branchId: "branch-1",
+      reservationId: "reservation-1", nowUtc: "2026-11-09T10:00:00.000Z",
+      reason: "merchant_cancelled"
+    })).rejects.toThrow("inventory_reservation_finalize_conflict");
+    expect(pool.client.statements.some(s => s.sql === "ROLLBACK")).toBe(true);
+    expect(pool.client.released).toBe(true);
+  });
+
   it("does not touch a reservation when the supplied branch does not own it", async () => {
     const pool = new FinalizePool();
     pool.client.query = async function<Row>(sql: string, values: readonly unknown[] = []) {
