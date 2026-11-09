@@ -161,11 +161,12 @@ export class PostgresBranchInventoryReservationLifecycle {
         if (changed.rowCount !== 1) throw new Error("inventory_reservation_stock_ledger_conflict");
       }
 
-      await client.query(
+      const finalized = await client.query(
         "UPDATE inventory_reservations SET status = $5, updated_at = $6, finalization_reason = $7, handover_reference = $8 WHERE tenant_id = $1 AND merchant_id = $2 AND branch_id = $3 AND id = $4 AND status = 'reserved'",
         [input.tenantId, input.merchantId, input.branchId, input.reservationId, input.nextStatus, nowUtc,
           input.finalizationReason ?? null, input.handoverReference ?? null]
       );
+      if (finalized.rowCount !== 1) throw new Error("inventory_reservation_finalize_conflict");
       await client.query("COMMIT");
       return { outcome: "updated", status: input.nextStatus };
     } catch (error) {
