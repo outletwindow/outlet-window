@@ -127,7 +127,8 @@ export function buildPostgresApp(options: PostgresApiOptions) {
         "0023_fulfillment_provider_branch_scopes",
         "0024_merchant_order_item_preparation_checks",
         "0025_immutable_preparation_check_evidence",
-        "0026_block_preparation_evidence_truncate"
+        "0026_block_preparation_evidence_truncate",
+        "0027_verified_order_payment_captures"
       ];
       const result = await options.pool.query<{ version: string }>(
         "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",
