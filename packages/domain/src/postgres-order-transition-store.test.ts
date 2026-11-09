@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { PostgresOrderTransitionStore } from "./postgres-order-transition-store.js";
 import type { PostgresPool, PostgresQueryResult } from "./postgres-iam-store.js";
 
-function fakePool(options: { version?: number; missing?: boolean; statuses?: string[] } = {}) {
+function fakePool(options: { version?: number; missing?: boolean; statuses?: string[]; status?: string; itemCount?: number; verifiedCount?: number } = {}) {
   const statements: string[] = [];
   const query = vi.fn(async <Row>(sql: string, _values?: readonly unknown[]) => {
     statements.push(sql);
@@ -11,11 +11,11 @@ function fakePool(options: { version?: number; missing?: boolean; statuses?: str
     if (sql.includes("FROM merchant_suborders s") && sql.includes("FOR UPDATE")) {
       rows = options.missing ? [] : [{
         id: "sub-1", order_id: "order-1", tenant_id: "tenant-1",
-        status: "pending_validation", version: options.version ?? 1,
+        status: (options.status ?? "pending_validation") as "pending_validation", version: options.version ?? 1,
         merchant_id: "merchant-1", branch_id: "branch-1"
       }];
       rowCount = rows.length;
-    } else if (sql.includes("SELECT status FROM merchant_suborders")) {
+    } else if (sql.includes("COUNT(i.id)::int AS item_count")) {\n      rows = [{ item_count: options.itemCount ?? 0, verified_count: options.verifiedCount ?? 0 }];\n      rowCount = 1;\n    } else if (sql.includes("SELECT status FROM merchant_suborders")) {
       rows = (options.statuses ?? ["awaiting_payment"]).map(status => ({ status }));
       rowCount = rows.length;
     }
@@ -81,6 +81,30 @@ describe("PostgresOrderTransitionStore", () => {
     });
     expect(result).toEqual({ outcome: "not_found" });
     expect(db.query.mock.calls[1]?.[1]).toEqual(["tenant-other", "order-1", "sub-1"]);
+  });
+
+  it("blocks ready-for-pickup when any order item is missing a successful preparation check", async () => {
+    const db = fakePool({ status: "preparing", itemCount: 2, verifiedCount: 1 });
+    const result = await new PostgresOrderTransitionStore(db.pool).transitionSuborder({
+      tenantId: "tenant-1", orderId: "order-1", suborderId: "sub-1",
+      nextStatus: "ready_for_pickup", context,
+      auditEvent: { ...auditEvent, metadata: { orderId: "order-1", nextStatus: "ready_for_pickup" } }
+    });
+    expect(result).toEqual({ outcome: "rejected", reason: "preparation_checks_incomplete" });
+    expect(db.statements).toContain("ROLLBACK");
+    expect(db.statements.some(sql => sql.startsWith("UPDATE"))).toBe(false);
+  });
+
+  it("allows ready-for-pickup only when every order item has a verified check", async () => {
+    const db = fakePool({ status: "preparing", itemCount: 2, verifiedCount: 2 });
+    const result = await new PostgresOrderTransitionStore(db.pool).transitionSuborder({
+      tenantId: "tenant-1", orderId: "order-1", suborderId: "sub-1",
+      nextStatus: "ready_for_pickup", context,
+      auditEvent: { ...auditEvent, metadata: { orderId: "order-1", nextStatus: "ready_for_pickup" } }
+    });
+    expect(result).toMatchObject({ outcome: "updated", transition: { ok: true, order: { status: "ready_for_pickup" } } });
+    expect(db.statements.some(sql => sql.includes("COUNT(i.id)::int AS item_count"))).toBe(true);
+    expect(db.statements.at(-1)).toBe("COMMIT");
   });
 
   it("rejects invalid lifecycle transitions and rolls back", async () => {
