@@ -14,7 +14,9 @@ import { IntegrationHub } from "../../../packages/domain/src/integration-hub.js"
 import { PostgresIntegrationRegistryStore } from "../../../packages/domain/src/postgres-integration-registry-store.js";
 import { PostgresPaymentWebhookInbox } from "../../../packages/domain/src/postgres-payment-webhook-inbox.js";
 import { PostgresMerchantCatalog } from "../../../packages/domain/src/postgres-merchant-catalog.js";
-import type { MerchantCatalogImportService } from "../../../packages/domain/src/merchant-catalog-import-service.js";
+import { MerchantCatalogImportService } from "../../../packages/domain/src/merchant-catalog-import-service.js";
+import type { CommerceConnectorRegistry } from "../../../packages/domain/src/commerce-connectors.js";
+import { PostgresCommerceCatalogStore } from "../../../packages/domain/src/postgres-commerce-catalog-store.js";
 
 export interface PostgresApiOptions {
   pool: PostgresPool;
@@ -28,6 +30,7 @@ export interface PostgresApiOptions {
   customerPaymentAdjustments?: CustomerPaymentAdjustmentActions;
   merchantCatalog?: MerchantCatalogRepository;
   merchantCatalogImport?: MerchantCatalogImportService;
+  commerceConnectors?: CommerceConnectorRegistry;
   paymentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
 }
 
@@ -37,16 +40,24 @@ export interface PostgresApiOptions {
  */
 export function buildPostgresApp(options: PostgresApiOptions) {
   const iam = new PostgresIamStore(options.pool);
+  const integrationHub = new IntegrationHub(new PostgresIntegrationRegistryStore(options.pool));
+  const catalogImport = options.merchantCatalogImport ?? (options.commerceConnectors
+    ? new MerchantCatalogImportService(
+        integrationHub,
+        options.commerceConnectors,
+        new PostgresCommerceCatalogStore(options.pool)
+      )
+    : undefined);
   const appOptions: AppOptions = {
     ...(options.serviceName === undefined ? {} : { serviceName: options.serviceName }),
     ...(options.version === undefined ? {} : { version: options.version }),
     merchantBranches: options.merchantBranches ?? new PostgresMerchantBranchReader(options.pool),
     merchantBranchWriter: new PostgresMerchantBranchWriter(options.pool),
     auditEvents: new PostgresAuditEventStore(options.pool),
-    integrationHub: new IntegrationHub(new PostgresIntegrationRegistryStore(options.pool)),
+    integrationHub,
     paymentWebhookInbox: new PostgresPaymentWebhookInbox(options.pool),
     merchantCatalog: options.merchantCatalog ?? new PostgresMerchantCatalog(options.pool),
-    ...(options.merchantCatalogImport === undefined ? {} : { merchantCatalogImport: options.merchantCatalogImport }),
+    ...(catalogImport === undefined ? {} : { merchantCatalogImport: catalogImport }),
     ...(options.paymentWebhookSecretResolver === undefined ? {} : {
       paymentWebhookSecretResolver: options.paymentWebhookSecretResolver
     }),
