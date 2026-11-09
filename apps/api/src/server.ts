@@ -42,7 +42,7 @@ if (sallaOAuthConfigured && !pool) {
   throw new Error("Salla OAuth requires DATABASE_URL and PostgreSQL-backed state/token storage");
 }
 const sallaOAuthFlow = sallaOAuthConfigured && pool
-  ? new PostgresSallaOAuthFlowService(
+  ? new SallaOAuthFlowService(
       new PostgresSallaOAuthStateStore(pool),
       new PostgresSallaOAuthTokenVault(pool, process.env.SALLA_TOKEN_ENCRYPTION_KEY!),
       new SallaOAuthHttpClient({
