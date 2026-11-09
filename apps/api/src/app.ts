@@ -73,6 +73,16 @@ export interface PaymentWebhookInboxWriter {
     | { outcome: "event_id_collision" }
   >;
 }
+export interface PaymentCaptureWebhookHandler {
+  process(input: { providerKey: string; rawBody: string; signatureHeader?: string }): Promise<
+    | { outcome: "recorded"; captureId: string }
+    | { outcome: "duplicate"; captureId: string }
+    | { outcome: "identity_collision" }
+    | { outcome: "invalid_signature_or_event" }
+    | { outcome: "provider_not_configured" }
+    | { outcome: "payment_intent_not_found" }
+  >;
+}
 export interface FulfillmentHandoverInboxWriter {
   recordAndApply(input: { event: VerifiedFulfillmentHandoverEvent; rawBody: string; nowUtc?: string }): Promise<
     | { outcome: "applied"; receiptId: string }
@@ -117,6 +127,7 @@ export interface AppOptions {
   resolveMerchantTenantId?: (merchantId: string) => Promise<string | null>;
   merchantCatalogImport?: MerchantCatalogImportService;
   paymentWebhookInbox?: PaymentWebhookInboxWriter;
+  paymentCaptureWebhookHandler?: PaymentCaptureWebhookHandler;
   paymentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
   fulfillmentHandoverInbox?: FulfillmentHandoverInboxWriter;
   fulfillmentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
@@ -308,6 +319,27 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       return reply.code(400).send({ error: "invalid_webhook_event" });
     }
     const eventType = (body as { type?: unknown }).type;
+    if (eventType === "payment.captured") {
+      if (!options.paymentCaptureWebhookHandler) {
+        return reply.code(503).send({ error: "payment_capture_processor_unavailable" });
+      }
+      const result = await options.paymentCaptureWebhookHandler.process({
+        providerKey, rawBody, signatureHeader: signature
+      });
+      if (result.outcome === "invalid_signature_or_event") {
+        return reply.code(401).send({ error: "invalid_webhook_signature_or_capture_event" });
+      }
+      if (result.outcome === "provider_not_configured") {
+        return reply.code(503).send({ error: "webhook_provider_not_configured" });
+      }
+      if (result.outcome === "payment_intent_not_found") {
+        return reply.code(404).send({ error: "payment_intent_not_found" });
+      }
+      if (result.outcome === "identity_collision") {
+        return reply.code(409).send({ error: "provider_payment_identity_collision" });
+      }
+      return reply.code(result.outcome === "recorded" ? 201 : 200).send(result);
+    }
     const normalizedStatus = (body as { status?: unknown }).status;
     const adjustmentId = (body as { adjustmentId?: unknown }).adjustmentId;
     const providerReference = (body as { providerReference?: unknown }).providerReference;
