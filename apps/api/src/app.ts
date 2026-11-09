@@ -14,6 +14,7 @@ import { ORDER_STATUSES, type OrderStatus, type OrderTransitionContext } from ".
 import { INTEGRATION_FAMILIES, IntegrationHub } from "../../../packages/domain/src/integration-hub.js";
 import { verifyPaymentProviderWebhook } from "../../../packages/domain/src/payment-adjustment-provider.js";
 import type { CatalogProductInput, CatalogProductRecord } from "../../../packages/domain/src/postgres-merchant-catalog.js";
+import type { MerchantCatalogImportService } from "../../../packages/domain/src/merchant-catalog-import-service.js";
 import {
   resolveActorFromBearerToken,
   type ActorResolutionDependencies
@@ -91,6 +92,7 @@ export interface AppOptions {
   customerPaymentAdjustments?: CustomerPaymentAdjustmentActions;
   integrationHub?: IntegrationHub;
   merchantCatalog?: MerchantCatalogRepository;
+  merchantCatalogImport?: MerchantCatalogImportService;
   paymentWebhookInbox?: PaymentWebhookInboxWriter;
   paymentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
 }
@@ -724,6 +726,48 @@ app.patch<{
     });
   });
 
+
+  app.post<{
+    Params: { merchantId: string; integrationId: string };
+    Body: { sourceUrl?: unknown; cursor?: unknown; updatedSinceUtc?: unknown };
+  }>("/api/v1/merchants/:merchantId/integrations/:integrationId/catalog/import", async (request, reply) => {
+    const { merchantId, integrationId } = request.params;
+    const result = await authorizeRequest(request, options, {
+      resource: "merchant.integration", action: "create", scope: { merchantId }
+    });
+    if (!result.actor) return sendAuthorizationFailure(reply, result.statusCode, result.decision.reason);
+    if (!["merchant_owner", "merchant_admin"].includes(result.actor.role)) {
+      return reply.code(403).send({ error: "merchant_admin_only" });
+    }
+    if (!options.merchantCatalogImport) {
+      return reply.code(503).send({ error: "catalog_import_provider_not_configured" });
+    }
+    const body = request.body;
+    if (!body || typeof body.sourceUrl !== "string" || body.sourceUrl.length > 2000 ||
+        (body.cursor !== undefined && (typeof body.cursor !== "string" || body.cursor.length > 2000)) ||
+        (body.updatedSinceUtc !== undefined && (typeof body.updatedSinceUtc !== "string" ||
+          !Number.isFinite(Date.parse(body.updatedSinceUtc)) || !body.updatedSinceUtc.endsWith("Z")))) {
+      return reply.code(400).send({ error: "invalid_catalog_import_request" });
+    }
+    try {
+      const summary = await options.merchantCatalogImport.import({
+        tenantId: merchantId, integrationId, sourceUrl: body.sourceUrl,
+        ...(body.cursor === undefined ? {} : { cursor: body.cursor as string }),
+        ...(body.updatedSinceUtc === undefined ? {} : { updatedSinceUtc: body.updatedSinceUtc as string })
+      });
+      return reply.code(200).send({ import: summary });
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "";
+      if (code === "CATALOG_INTEGRATION_NOT_FOUND") return reply.code(404).send({ error: "integration_not_found" });
+      if (code === "CATALOG_INTEGRATION_NOT_CONNECTED") return reply.code(409).send({ error: "integration_not_connected" });
+      if (code === "CATALOG_PROVIDER_NOT_CONFIGURED") return reply.code(503).send({ error: "catalog_provider_not_configured" });
+      if (code === "CATALOG_INTEGRATION_FAMILY_UNSUPPORTED") return reply.code(409).send({ error: "integration_family_unsupported" });
+      if (["UNTRUSTED_CATALOG_SOURCE", "INVALID_CATALOG_IMPORT_REQUEST", "INVALID_OR_REPEATED_CATALOG_CURSOR"].includes(code)) {
+        return reply.code(400).send({ error: "invalid_or_untrusted_catalog_source" });
+      }
+      throw error;
+    }
+  });
 
   app.get<{
     Params: { merchantId: string };
