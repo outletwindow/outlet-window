@@ -85,3 +85,6 @@ export * from "./postgres-fulfillment-handover-inbox.js";
 
 export * from "./postgres-fulfillment-provider-scope-authorizer.js";
 export * from "./postgres-merchant-order-item-preparation.js";
+
+export * from "./postgres-verified-order-payment-capture.js";
+export * from "./verified-order-payment-capture-webhook.js";
