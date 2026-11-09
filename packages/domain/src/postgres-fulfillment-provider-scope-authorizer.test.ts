@@ -19,6 +19,10 @@ describe("PostgresFulfillmentProviderScopeAuthorizer", () => {
     expect(query.mock.calls[0]?.[1]).toEqual(["tenant-1", "carrier-a", "merchant-1", "branch-1"]);
     expect(String(query.mock.calls[0]?.[0])).toContain("i.status = 'connected'");
     expect(String(query.mock.calls[0]?.[0])).toContain("SELECT COUNT(*) = 1");
+    expect(String(query.mock.calls[0]?.[0])).toContain("s.tenant_id = i.tenant_id");
+    expect(String(query.mock.calls[0]?.[0])).toContain("m.status = 'active'");
+    expect(String(query.mock.calls[0]?.[0])).toContain("b.status = 'active'");
+    expect(String(query.mock.calls[0]?.[0])).toContain("s.active = true");
     expect(String(query.mock.calls[0]?.[0])).toContain("s.active = true");
   });
 
