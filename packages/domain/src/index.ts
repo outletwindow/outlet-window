@@ -90,3 +90,5 @@ export * from "./postgres-verified-order-payment-capture.js";
 export * from "./verified-order-payment-capture-webhook.js";
 
 export * from "./postgres-payment-intent-store.js";
+
+export * from "./postgres-initial-payment-capture-inbox.js";
