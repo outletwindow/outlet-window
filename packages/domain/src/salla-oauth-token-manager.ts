@@ -17,9 +17,13 @@ export interface SallaRefreshLock {
   /** Must be a distributed lock in production, not a process-local mutex. */
   withLock<T>(key: string, operation: () => Promise<T>): Promise<T>;
 }
+function validOpaqueToken(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 10_000 && !/\\s/.test(value);
+}
+
 function validTokenSet(value: SallaOAuthTokenSet): boolean {
-  return typeof value.accessToken === "string" && value.accessToken.length > 0 &&
-    typeof value.refreshToken === "string" && value.refreshToken.length > 0 &&
+  return validOpaqueToken(value.accessToken) && validOpaqueToken(value.refreshToken) &&
+    typeof value.expiresAtUtc === "string" &&
     Number.isFinite(Date.parse(value.expiresAtUtc)) && value.expiresAtUtc.endsWith("Z");
 }
 
@@ -52,7 +56,7 @@ export class SallaOAuthTokenManager {
         return latest.accessToken;
       }
       const refreshed = await this.client.refresh(latest.refreshToken);
-      if (!refreshed.access_token || !refreshed.refresh_token ||
+      if (!validOpaqueToken(refreshed.access_token) || !validOpaqueToken(refreshed.refresh_token) ||
           !Number.isSafeInteger(refreshed.expires_in) || refreshed.expires_in <= 0 ||
           refreshed.expires_in > 60 * 60 * 24 * 31) {
         throw new Error("INVALID_SALLA_REFRESH_RESPONSE");
