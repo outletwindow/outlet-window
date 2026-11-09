@@ -23,6 +23,11 @@ describe("merchant order permissions", () => {
         actions: ["read", "update"],
         scope: { merchantId: "merchant-1", branchId: "branch-1" }
       });
+      expect(grants).toContainEqual({
+        resource: "merchant.branch.inventory",
+        actions: ["read", "update"],
+        scope: { merchantId: "merchant-1", branchId: "branch-1" }
+      });
     }
   });
 
@@ -30,6 +35,11 @@ describe("merchant order permissions", () => {
     const grants = grantsForAssignments([assignment("branch_manager")]);
     expect(grants).toContainEqual({
       resource: "merchant.order",
+      actions: ["read", "update"],
+      scope: { merchantId: "merchant-1", branchId: "branch-1" }
+    });
+    expect(grants).toContainEqual({
+      resource: "merchant.branch.inventory",
       actions: ["read", "update"],
       scope: { merchantId: "merchant-1", branchId: "branch-1" }
     });
@@ -43,6 +53,7 @@ describe("merchant order permissions", () => {
       scope: { merchantId: "merchant-1", branchId: "branch-1" }
     });
     expect(grants.some(grant => grant.resource === "merchant.order" && grant.actions.includes("update"))).toBe(false);
+    expect(grants.some(grant => grant.resource === "merchant.branch.inventory" && grant.actions.includes("update"))).toBe(false);
   });
 });
 
