@@ -4,7 +4,7 @@ import {
   PostgresIamStore,
   type PostgresPool
 } from "../../../packages/domain/src/postgres-iam-store.js";
-import { buildApp, type AppOptions, type MerchantBranchReader, type CustomerDeliveryDestinationService, type CustomerPaymentAdjustmentActions, type MerchantCatalogRepository } from "./app.js";
+import { buildApp, type AppOptions, type MerchantBranchReader, type CustomerDeliveryDestinationService, type CustomerPaymentAdjustmentActions, type MerchantCatalogRepository, type SallaOAuthFlow } from "./app.js";
 import { PostgresMerchantBranchReader } from "../../../packages/domain/src/postgres-merchant-branch-reader.js";
 import { PostgresMerchantBranchWriter } from "../../../packages/domain/src/postgres-merchant-branch-writer.js";
 import { PostgresAuditEventStore } from "../../../packages/domain/src/postgres-audit-event-store.js";
@@ -32,6 +32,7 @@ export interface PostgresApiOptions {
   merchantCatalogImport?: MerchantCatalogImportService;
   commerceConnectors?: CommerceConnectorRegistry;
   paymentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
+  sallaOAuthFlow?: SallaOAuthFlow;
 }
 
 /**
@@ -44,6 +45,7 @@ export function buildPostgresApp(options: PostgresApiOptions) {
   const catalogImport = options.merchantCatalogImport ?? (options.commerceConnectors
     ? new MerchantCatalogImportService(
         integrationHub,
+    ...(options.sallaOAuthFlow === undefined ? {} : { sallaOAuthFlow: options.sallaOAuthFlow }),
         options.commerceConnectors,
         new PostgresCommerceCatalogStore(options.pool)
       )
@@ -89,7 +91,8 @@ export function buildPostgresApp(options: PostgresApiOptions) {
         "0015_multi_provider_integration_hub",
         "0016_payment_webhook_worker_envelope",
         "0017_self_healing_incidents",
-        "0018_commerce_catalog"
+        "0018_commerce_catalog",
+        "0019_salla_oauth_vault"
       ];
       const result = await options.pool.query<{ version: string }>(
         "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",
