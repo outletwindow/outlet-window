@@ -76,3 +76,5 @@ export * from "./salla-http-merchant-api.js";
 export * from "./merchant-catalog-import-service.js";
 
 export * from "./salla-oauth-http-client.js";
+
+export * from "./postgres-salla-oauth.js";
