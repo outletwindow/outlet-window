@@ -54,4 +54,3 @@ try{
   process.stdout.write(JSON.stringify({event:"initial_capture_webhook_worker_started",pollMs,batchSize,leaseSeconds,workerId})+"\n");
   await tick();interval=setInterval(()=>void tick(),pollMs);
 }catch(error){await pool.end();throw error;}
-}
