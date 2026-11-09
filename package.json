@@ -17,6 +17,7 @@
     "lint": "pnpm --recursive lint",
     "worker:fulfillment": "pnpm --filter @outlet-window/worker start:fulfillment",
     "worker:payment-webhooks": "pnpm --filter @outlet-window/worker start:payment-webhooks",
+    "worker:initial-payment-captures": "pnpm --filter @outlet-window/worker start:initial-payment-captures",
     "worker:inventory-expiry": "pnpm --filter @outlet-window/worker start:inventory-expiry",
     "ops:up": "docker compose up -d --build",
     "ops:up:all": "docker compose --profile fulfillment up -d --build",
