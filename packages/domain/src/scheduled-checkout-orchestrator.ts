@@ -75,6 +75,7 @@ export type ScheduledCheckoutOrchestrationResult =
       failedSuborderId: string;
       inventoryResult: InventoryReservationResult;
       reservationReferences: readonly { suborderId: string; reservationReference: string }[];
+      recoveryCase?: ScheduledCheckoutRecoveryStatus;
     }
   | {
       status: "task_commit_rejected";
@@ -82,6 +83,7 @@ export type ScheduledCheckoutOrchestrationResult =
       paymentCapture: "inserted" | "already_exists";
       reason: "invalid_order" | "invalid_tasks";
       reservationReferences: readonly { suborderId: string; reservationReference: string }[];
+      recoveryCase?: ScheduledCheckoutRecoveryStatus;
     }
   | { status: "rejected"; reason: "invalid_checkout_input" };
 
@@ -103,6 +105,8 @@ export async function orchestratePaidScheduledCheckout(input: {
   inventoryPort: InventoryReservationPort;
   transactionRunner: ScheduledOrderTransactionRunner;
   outboxIdForTask: (task: ScheduledFulfillmentTaskEnvelope, index: number) => string;
+  /** Persist a durable customer/refund-resolution case after a paid checkout cannot be completed. */
+  recoveryRecorder?: ScheduledCheckoutRecoveryRecorder;
 }): Promise<ScheduledCheckoutOrchestrationResult> {
   const { order, plan, inventoryRequests } = input;
   if (!order.orderId.trim() || plan.orderId !== order.orderId ||
