@@ -93,8 +93,8 @@ export function buildPostgresApp(options: PostgresApiOptions) {
     merchantOrderItemPreparation: new PostgresMerchantOrderItemPreparationStore(options.pool),
     ...(options.sallaOAuthFlow === undefined ? {} : { sallaOAuthFlow: options.sallaOAuthFlow }),
     paymentWebhookInbox: new PostgresPaymentWebhookInbox(options.pool),
-    ...(options.paymentCaptureWebhookHandler === undefined ? {} : {
-      paymentCaptureWebhookHandler: options.paymentCaptureWebhookHandler
+    ...(paymentCaptureWebhookHandler === undefined ? {} : {
+      paymentCaptureWebhookHandler
     }),
     fulfillmentHandoverInbox: new PostgresFulfillmentHandoverInbox(options.pool),
     fulfillmentWebhookAuthorizationResolver: options.fulfillmentWebhookAuthorizationResolver ??
