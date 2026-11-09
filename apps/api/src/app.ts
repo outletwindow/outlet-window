@@ -324,7 +324,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
         return reply.code(503).send({ error: "payment_capture_processor_unavailable" });
       }
       const result = await options.paymentCaptureWebhookHandler.process({
-        providerKey, rawBody, signatureHeader: signature
+        providerKey, rawBody, ...(signature === undefined ? {} : { signatureHeader: signature })
       });
       if (result.outcome === "invalid_signature_or_event") {
         return reply.code(401).send({ error: "invalid_webhook_signature_or_capture_event" });
