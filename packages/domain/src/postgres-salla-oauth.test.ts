@@ -4,7 +4,7 @@ import { PostgresSallaOAuthStateStore, PostgresSallaOAuthTokenVault } from "./po
 
 class FakeDb implements PostgresQueryable {
   state: { hash: string; tenant: string; integration: string; expires: string } | null = null;
-  token: { iv: string; auth_tag: string; ciphertext: string } | null = null;
+  token: { tenant_id: string; integration_id: string; iv: string; auth_tag: string; ciphertext: string } | null = null;
   async query<Row>(sql: string, values: readonly unknown[] = []): Promise<PostgresQueryResult<Row>> {
     if (sql.startsWith("INSERT INTO salla_oauth_states")) {
       this.state = { hash: String(values[0]), tenant: String(values[1]), integration: String(values[2]), expires: String(values[3]) };
@@ -19,11 +19,12 @@ class FakeDb implements PostgresQueryable {
       return { rows: [row], rowCount: 1 };
     }
     if (sql.startsWith("INSERT INTO salla_oauth_tokens")) {
-      this.token = { iv: String(values[2]), auth_tag: String(values[3]), ciphertext: String(values[4]) };
+      this.token = { tenant_id: String(values[0]), integration_id: String(values[1]), iv: String(values[2]), auth_tag: String(values[3]), ciphertext: String(values[4]) };
       return { rows: [], rowCount: 1 };
     }
     if (sql.startsWith("SELECT iv, auth_tag, ciphertext FROM salla_oauth_tokens")) {
-      return { rows: (this.token ? [this.token as Row] : []), rowCount: this.token ? 1 : 0 };
+      const matches = this.token && this.token.tenant_id === values[0] && this.token.integration_id === values[1];
+      return { rows: (matches ? [this.token as Row] : []), rowCount: matches ? 1 : 0 };
     }
     throw new Error("UNEXPECTED_SQL");
   }
