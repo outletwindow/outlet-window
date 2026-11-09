@@ -13,6 +13,53 @@ import {
 } from "./scheduled-order-commit.js";
 import type { ScheduledOrderPlan } from "./scheduled-fulfillment.js";
 
+export interface ScheduledCheckoutRecoveryRecorder {
+  record(input: {
+    tenantId: string;
+    orderId: string;
+    idempotencyKey: string;
+    failureCode: "INVENTORY_UNAVAILABLE" | "INVENTORY_UNGUARANTEED" | "TASK_COMMIT_REJECTED";
+    failedSuborderId?: string;
+    paymentReference: string;
+    paymentCapturedAtUtc: string;
+    reservationReferences: readonly { suborderId: string; reservationReference: string }[];
+  }): Promise<{ outcome: "recorded" | "duplicate"; caseId: string } | { outcome: "identity_collision" }>;
+}
+
+export type ScheduledCheckoutRecoveryStatus =
+  | { status: "recorded" | "duplicate"; caseId: string }
+  | { status: "not_configured" }
+  | { status: "persistence_failed" }
+  | { status: "identity_collision" };
+
+async function recordRecoveryCase(input: {
+  recorder?: ScheduledCheckoutRecoveryRecorder;
+  order: ScheduledOrderConfirmation;
+  failureCode: "INVENTORY_UNAVAILABLE" | "INVENTORY_UNGUARANTEED" | "TASK_COMMIT_REJECTED";
+  failedSuborderId?: string;
+  reservationReferences: readonly { suborderId: string; reservationReference: string }[];
+}): Promise<ScheduledCheckoutRecoveryStatus> {
+  if (!input.recorder) return { status: "not_configured" };
+  try {
+    const result = await input.recorder.record({
+      tenantId: input.order.tenantId,
+      orderId: input.order.orderId,
+      idempotencyKey: "checkout-recovery:" + input.order.orderId + ":" + input.order.fulfillmentVersion,
+      failureCode: input.failureCode,
+      ...(input.failedSuborderId === undefined ? {} : { failedSuborderId: input.failedSuborderId }),
+      paymentReference: input.order.paymentReference,
+      paymentCapturedAtUtc: input.order.paymentCapturedAtUtc,
+      reservationReferences: input.reservationReferences
+    });
+    return result.outcome === "identity_collision"
+      ? { status: "identity_collision" }
+      : { status: result.outcome, caseId: result.caseId };
+  } catch {
+    return { status: "persistence_failed" };
+  }
+}
+
+
 export type ScheduledCheckoutOrchestrationResult =
   | {
       status: "scheduled";
@@ -98,13 +145,20 @@ export async function orchestratePaidScheduledCheckout(input: {
       port: input.inventoryPort
     });
     if (inventoryResult.state !== "reserved") {
+      const failureCode = inventoryResult.state === "unavailable"
+        ? "INVENTORY_UNAVAILABLE" as const : "INVENTORY_UNGUARANTEED" as const;
+      const recoveryCase = await recordRecoveryCase({
+        recorder: input.recoveryRecorder, order, failureCode,
+        failedSuborderId: request.suborderId, reservationReferences
+      });
       return {
         status: inventoryResult.state === "unavailable" ? "inventory_unavailable" : "inventory_unguaranteed",
         orderId: order.orderId,
         paymentCapture,
         failedSuborderId: request.suborderId,
         inventoryResult,
-        reservationReferences
+        reservationReferences,
+        recoveryCase
       };
     }
     reservationReferences.push({
@@ -126,12 +180,17 @@ export async function orchestratePaidScheduledCheckout(input: {
     transactionRunner: input.transactionRunner
   });
   if (taskCommit.status !== "committed") {
+    const recoveryCase = await recordRecoveryCase({
+      recorder: input.recoveryRecorder, order, failureCode: "TASK_COMMIT_REJECTED",
+      reservationReferences
+    });
     return {
       status: "task_commit_rejected",
       orderId: order.orderId,
       paymentCapture,
       reason: taskCommit.reason,
-      reservationReferences
+      reservationReferences,
+      recoveryCase
     };
   }
   return {
