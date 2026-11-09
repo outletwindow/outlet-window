@@ -3,6 +3,8 @@ import { Pool } from "pg";
 import { buildPostgresApp } from "./postgres-app.js";
 import { buildApp } from "./app.js";
 import { grantsForAssignments } from "./permissions.js";
+import { SallaOAuthHttpClient } from "../../../packages/domain/src/salla-oauth-http-client.js";
+import { PostgresSallaOAuthFlowService, PostgresSallaOAuthStateStore, PostgresSallaOAuthTokenVault, PostgresSallaRefreshLock } from "../../../packages/domain/src/postgres-salla-oauth.js";
 
 const port = Number.parseInt(process.env.PORT ?? "3000", 10);
 const host = process.env.HOST ?? "0.0.0.0";
@@ -25,11 +27,38 @@ const pool = databaseUrl ? new Pool({
 }) : null;
 
 
+const sallaOAuthEnvironment = [
+  process.env.SALLA_CLIENT_ID,
+  process.env.SALLA_CLIENT_SECRET,
+  process.env.SALLA_REDIRECT_URI,
+  process.env.SALLA_TOKEN_ENCRYPTION_KEY
+];
+const sallaOAuthConfigured = sallaOAuthEnvironment.every(value => typeof value === "string" && value.length > 0);
+if (sallaOAuthEnvironment.some(Boolean) && !sallaOAuthConfigured) {
+  throw new Error("Salla OAuth requires SALLA_CLIENT_ID, SALLA_CLIENT_SECRET, SALLA_REDIRECT_URI and SALLA_TOKEN_ENCRYPTION_KEY together");
+}
+if (sallaOAuthConfigured && !pool) {
+  throw new Error("Salla OAuth requires DATABASE_URL and PostgreSQL-backed state/token storage");
+}
+const sallaOAuthFlow = sallaOAuthConfigured && pool
+  ? new PostgresSallaOAuthFlowService(
+      new PostgresSallaOAuthStateStore(pool),
+      new PostgresSallaOAuthTokenVault(pool, process.env.SALLA_TOKEN_ENCRYPTION_KEY!),
+      new SallaOAuthHttpClient({
+        clientId: process.env.SALLA_CLIENT_ID!,
+        clientSecret: process.env.SALLA_CLIENT_SECRET!,
+        redirectUri: process.env.SALLA_REDIRECT_URI!
+      }),
+      new PostgresSallaRefreshLock(pool)
+    )
+  : undefined;
+
 const app = pool
   ? buildPostgresApp({
       pool,
       digestToken: async secret => createHash("sha256").update(secret, "utf8").digest("hex"),
-      grantsForAssignments
+      grantsForAssignments,
+      ...(sallaOAuthFlow === undefined ? {} : { sallaOAuthFlow })
     })
   : buildApp();
 
