@@ -115,8 +115,9 @@ export class PostgresBranchInventoryReservationLifecycle {
         `SELECT merchant_id, branch_id, product_variant_id, quantity
          FROM inventory_reservation_lines
          WHERE reservation_id = $1
+           AND merchant_id = $2 AND branch_id = $3
          ORDER BY merchant_id, branch_id, product_variant_id`,
-        [input.reservationId]
+        [input.reservationId, input.merchantId, input.branchId]
       );
       if (!lines.rowCount) throw new Error("inventory_reservation_lines_missing");
 
@@ -129,9 +130,10 @@ export class PostgresBranchInventoryReservationLifecycle {
            ON l.merchant_id = i.merchant_id AND l.branch_id = i.branch_id
           AND l.product_variant_id = i.product_variant_id
          WHERE l.reservation_id = $1
+           AND l.merchant_id = $2 AND l.branch_id = $3
          ORDER BY i.merchant_id, i.branch_id, i.product_variant_id
          FOR UPDATE OF i`,
-        [input.reservationId]
+        [input.reservationId, input.merchantId, input.branchId]
       );
       if (stock.rowCount !== lines.rowCount) throw new Error("inventory_reservation_stock_missing");
 
