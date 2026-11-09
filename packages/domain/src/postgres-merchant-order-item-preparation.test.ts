@@ -79,4 +79,31 @@ describe("PostgresMerchantOrderItemPreparationStore", () => {
     });
     expect(result).toMatchObject({ outcome: "recorded" });
   });
+  it("rolls back and releases the connection when persistence fails", async () => {
+    const db = fakePool();
+    db.query.mockImplementation(async <Row>(sql: string, _values?: readonly unknown[]) => {
+      db.statements.push(sql);
+      if (sql.startsWith("INSERT INTO merchant_order_item_preparation_checks")) {
+        throw new Error("database_write_failed");
+      }
+      const rows: unknown[] = sql.includes("SELECT i.sku")
+        ? [{ sku: "SKU-DB", quantity: 2, size_label: "M", color_label: "Black" }]
+        : [];
+      return { rows: rows as Row[], rowCount: rows.length } as PostgresQueryResult<Row>;
+    });
+    await expect(new PostgresMerchantOrderItemPreparationStore(db.pool).record(input))
+      .rejects.toThrow("database_write_failed");
+    expect(db.statements).toContain("ROLLBACK");
+    expect(db.client.release).toHaveBeenCalledOnce();
+  });
+
+  it("uses tenant, order, suborder, merchant and branch predicates for the item lock", async () => {
+    const db = fakePool();
+    await new PostgresMerchantOrderItemPreparationStore(db.pool).record(input);
+    const lock = db.statements.find(sql => sql.includes("SELECT i.sku"));
+    expect(lock).toContain("i.tenant_id = $1 AND i.order_id = $2 AND i.suborder_id = $3");
+    expect(lock).toContain("i.id = $4 AND i.merchant_id = $5 AND i.branch_id = $6");
+    expect(lock).toContain("FOR UPDATE OF i, s");
+  });
+
 });
