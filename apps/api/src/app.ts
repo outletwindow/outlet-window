@@ -16,6 +16,7 @@ import { verifyPaymentProviderWebhook } from "../../../packages/domain/src/payme
 import type { CatalogProductInput, CatalogProductRecord } from "../../../packages/domain/src/postgres-merchant-catalog.js";
 import type { MerchantCatalogImportService } from "../../../packages/domain/src/merchant-catalog-import-service.js";
 import type { BranchInventorySyncRequest, BranchInventorySyncResult } from "../../../packages/domain/src/branch-inventory-sync.js";
+import type { InventoryReservationFinalizeResult } from "../../../packages/domain/src/postgres-branch-inventory-reservation-lifecycle.js";
 
 export interface SallaOAuthFlow {
   begin(input: { tenantId: string; integrationId: string }): Promise<{ authorizationUrl: string }>;
@@ -103,6 +104,11 @@ export interface AppOptions {
   paymentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
   sallaOAuthFlow?: SallaOAuthFlow;
   branchInventorySync?: { sync(input: BranchInventorySyncRequest): Promise<BranchInventorySyncResult> };
+  inventoryReservationLifecycle?: {
+    release(input: { tenantId: string; reservationId: string; nowUtc: string; reason: string }): Promise<InventoryReservationFinalizeResult>;
+    expire(input: { tenantId: string; reservationId: string; nowUtc: string }): Promise<InventoryReservationFinalizeResult>;
+    consume(input: { tenantId: string; reservationId: string; nowUtc: string; handoverVerified: boolean; handoverReference: string }): Promise<InventoryReservationFinalizeResult>;
+  };
 }
 
 const paymentWebhookRawBodies = new WeakMap<FastifyRequest, string>();
@@ -964,6 +970,38 @@ app.patch<{
       if (error instanceof Error && error.message === "BRANCH_INVENTORY_SCOPE_NOT_FOUND") {
         return reply.code(404).send({ error: "branch_not_found" });
       }
+      throw error;
+    }
+  });
+
+
+  app.post<{
+    Params: { merchantId: string; reservationId: string };
+    Body: { action: "release" | "expire" | "consume"; reason?: string; handoverVerified?: boolean; handoverReference?: string };
+  }>("/api/v1/merchants/:merchantId/inventory/reservations/:reservationId/finalize", async (request, reply) => {
+    const { merchantId, reservationId } = request.params;
+    const access = await authorizeRequest(request, options, {
+      resource: "merchant.branch.inventory_reservation", action: "execute", scope: { merchantId }
+    });
+    if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
+    const lifecycle = options.inventoryReservationLifecycle;
+    if (!lifecycle) return reply.code(503).send({ error: "inventory_reservation_lifecycle_unavailable" });
+    const body = request.body;
+    if (!body || !["release","expire","consume"].includes(body.action)) {
+      return reply.code(400).send({ error: "invalid_reservation_action" });
+    }
+    try {
+      const nowUtc = new Date().toISOString();
+      const result = body.action === "release"
+        ? await lifecycle.release({ tenantId: merchantId, reservationId, nowUtc, reason: body.reason ?? "" })
+        : body.action === "expire"
+          ? await lifecycle.expire({ tenantId: merchantId, reservationId, nowUtc })
+          : await lifecycle.consume({ tenantId: merchantId, reservationId, nowUtc,
+              handoverVerified: body.handoverVerified === true, handoverReference: body.handoverReference ?? "" });
+      return reply.code(result.outcome === "not_found" ? 404 : 200).send({ result });
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "";
+      if (code.startsWith("inventory_reservation_")) return reply.code(409).send({ error: code });
       throw error;
     }
   });
