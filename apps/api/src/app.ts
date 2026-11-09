@@ -16,6 +16,7 @@ import { verifyPaymentProviderWebhook } from "../../../packages/domain/src/payme
 import type { CatalogProductInput, CatalogProductRecord } from "../../../packages/domain/src/postgres-merchant-catalog.js";
 import type { MerchantCatalogImportService } from "../../../packages/domain/src/merchant-catalog-import-service.js";
 import type { BranchInventorySyncRequest, BranchInventorySyncResult } from "../../../packages/domain/src/branch-inventory-sync.js";
+import type { BranchInventoryRecord } from "../../../packages/domain/src/postgres-branch-inventory-reader.js";
 import type { InventoryReservationFinalizeResult } from "../../../packages/domain/src/postgres-branch-inventory-reservation-lifecycle.js";
 
 export interface SallaOAuthFlow {
@@ -106,6 +107,7 @@ export interface AppOptions {
   paymentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
   sallaOAuthFlow?: SallaOAuthFlow;
   branchInventorySync?: { sync(input: BranchInventorySyncRequest): Promise<BranchInventorySyncResult> };
+  branchInventoryReader?: { list(input: { tenantId: string; merchantId: string; branchId: string; limit?: number }): Promise<readonly BranchInventoryRecord[]> };
   inventoryReservationLifecycle?: {
     release(input: { tenantId: string; merchantId: string; branchId: string; reservationId: string; nowUtc: string; reason: string }): Promise<InventoryReservationFinalizeResult>;
     expire(input: { tenantId: string; merchantId: string; branchId: string; reservationId: string; nowUtc: string }): Promise<InventoryReservationFinalizeResult>;
@@ -944,6 +946,27 @@ app.patch<{
     }
   });
 
+
+  app.get<{
+    Params: { merchantId: string; branchId: string };
+    Querystring: { limit?: string };
+  }>("/api/v1/merchants/:merchantId/branches/:branchId/inventory", async (request, reply) => {
+    const { merchantId, branchId } = request.params;
+    const access = await authorizeRequest(request, options, {
+      resource: "merchant.branch.inventory", action: "read", scope: { merchantId, branchId }
+    });
+    if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
+    if (!options.branchInventoryReader) return reply.code(503).send({ error: "inventory_read_unavailable" });
+    const tenantId = await options.resolveMerchantTenantId?.(merchantId);
+    if (!tenantId) return reply.code(404).send({ error: "merchant_not_found" });
+    const rawLimit = request.query.limit;
+    const limit = rawLimit === undefined ? 50 : Number(rawLimit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+      return reply.code(400).send({ error: "invalid_limit" });
+    }
+    const inventory = await options.branchInventoryReader.list({ tenantId, merchantId, branchId, limit });
+    return reply.code(200).send({ inventory });
+  });
 
   app.post<{
     Params: { merchantId: string; branchId: string };
