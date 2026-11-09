@@ -13,7 +13,7 @@ export type PersistedOrderTransitionResult =
   | { outcome: "updated"; transition: Extract<OrderTransitionResult, { ok: true }>; parentStatus: OrderStatus }
   | { outcome: "not_found" }
   | { outcome: "conflict" }
-  | { outcome: "rejected"; reason: Extract<OrderTransitionResult, { ok: false }>["reason"] };
+  | { outcome: "rejected"; reason: Extract<OrderTransitionResult, { ok: false }>["reason"] | "preparation_checks_incomplete" };
 
 type LockedSuborder = {
   id: string; order_id: string; tenant_id: string; status: OrderStatus;
@@ -60,6 +60,25 @@ export class PostgresOrderTransitionStore {
         return { outcome: "not_found" };
       }
       const current = locked.rows[0]!;
+      if (input.nextStatus === "ready_for_pickup") {
+        const preparation = await client.query<{ item_count: number; verified_count: number }>(
+          `SELECT COUNT(i.id)::int AS item_count,
+                  COUNT(c.order_item_id) FILTER (WHERE c.outcome = 'verified')::int AS verified_count
+           FROM customer_order_items i
+           LEFT JOIN merchant_order_item_preparation_checks c
+             ON c.tenant_id = i.tenant_id AND c.suborder_id = i.suborder_id
+             AND c.order_item_id = i.id
+           WHERE i.tenant_id = $1 AND i.order_id = $2 AND i.suborder_id = $3
+             AND i.merchant_id = $4 AND i.branch_id = $5`,
+          [input.tenantId, input.orderId, input.suborderId, current.merchant_id, current.branch_id]
+        );
+        const counts = preparation.rows[0];
+        if (!counts || Number(counts.item_count) === 0 ||
+            Number(counts.verified_count) !== Number(counts.item_count)) {
+          await client.query("ROLLBACK");
+          return { outcome: "rejected", reason: "preparation_checks_incomplete" };
+        }
+      }
       if (current.version !== input.context.expectedVersion) {
         await client.query("ROLLBACK");
         return { outcome: "conflict" };
