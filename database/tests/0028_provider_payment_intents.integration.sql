@@ -1,7 +1,5 @@
 \set ON_ERROR_STOP on
 BEGIN;
-INSERT INTO identities (id,principal_type,status,created_at,updated_at)
-VALUES ('pi-customer','customer','active',now(),now()) ON CONFLICT DO NOTHING;
 INSERT INTO customer_orders (id,tenant_id,customer_id,idempotency_key,status,currency,total_minor)
 VALUES ('pi-order','pi-tenant','pi-customer','pi-order-idem','awaiting_payment','SAR',12500);
 INSERT INTO provider_payment_intents
