@@ -81,6 +81,8 @@ describe("PostgreSQL verified order payment capture store", () => {
     );
     await expect(store.recordVerifiedCapture({ ...input, amountMinor: Number.NaN }))
       .rejects.toThrow("INVALID_VERIFIED_ORDER_PAYMENT_CAPTURE");
+    await expect(store.recordVerifiedCapture({ ...input, amountMinor: 0 }))
+      .rejects.toThrow("INVALID_VERIFIED_ORDER_PAYMENT_CAPTURE");
     expect(query).not.toHaveBeenCalled();
   });
 });
