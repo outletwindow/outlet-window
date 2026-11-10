@@ -27,6 +27,20 @@ describe("PostgreSQL server-owned payment intents",()=>{
     expect(query.mock.calls[0]?.[0]).toContain("i.amount_minor=$3 AND i.currency=$4");
   });
 
+  it("resolves a provider-confirmed capture after intent expiry when webhook delivery is delayed",async()=>{
+    const query=vi.fn(async(_sql:string,_values?:readonly unknown[])=>({
+      rows:[{id:"intent-1",tenant_id:"tenant-1",order_id:"order-1"}],rowCount:1
+    }));
+    const delayedNow=()=>new Date("2026-11-09T12:30:00.000Z");
+    const store=new PostgresPaymentIntentStore(
+      {query,connect:vi.fn()} as unknown as PostgresPool,undefined,delayedNow
+    );
+    await expect(store.findExpectedOrder({
+      providerKey:"psp-a",providerPaymentReference:"provider-ref-1",amountMinor:12500,currency:"SAR"
+    })).resolves.toEqual({tenantId:"tenant-1",orderId:"order-1",paymentIntentId:"intent-1"});
+    expect(query.mock.calls[0]?.[0]).not.toContain("i.expires_at >");
+  });
+
   it("fails closed when no exact mapping exists",async()=>{
     const query=vi.fn(async(_sql:string,_values?:readonly unknown[])=>({rows:[],rowCount:0}));
     const store=new PostgresPaymentIntentStore({query,connect:vi.fn()} as unknown as PostgresPool,undefined,now);
