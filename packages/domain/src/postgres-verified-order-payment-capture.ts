@@ -63,8 +63,7 @@ export class PostgresVerifiedOrderPaymentCaptureStore {
        WHERE (provider_key=$1 AND provider_event_id=$2)
           OR (provider_key=$1 AND provider_payment_reference=$3)
           OR (tenant_id=$4 AND order_id=$5 AND idempotency_key=$6)
-       ORDER BY verified_at
-       LIMIT 1`,
+       ORDER BY verified_at`,
       [input.providerKey, input.providerEventId, input.providerPaymentReference,
         input.tenantId, input.orderId, input.idempotencyKey]
     );
