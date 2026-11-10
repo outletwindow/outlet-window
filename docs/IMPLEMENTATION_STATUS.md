@@ -404,3 +404,8 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Corrected the multi-match conflict path: when a provider event identity and another uniqueness identity resolve to different capture rows, the store now returns `identity_collision` (fail-closed) instead of treating the expected ambiguity as a lookup infrastructure error.
 - [x] The existing regression test covers two conflicting capture rows; CI previously exposed the mismatch between the test's expected collision outcome and the store's error path.
 - [ ] Re-run the full CI pipeline after this correction.
+
+## Initial capture ledger ambiguity handling (2026-11-10)
+- [x] Hardened the webhook worker's ledger conflict recovery: if a uniqueness conflict maps to multiple prior capture rows, it now marks the inbox receipt as a terminal `CAPTURE_IDENTITY_COLLISION` conflict instead of throwing a retryable infrastructure error.
+- [x] Added a regression test covering multiple conflicting ledger rows and verifying the receipt is failed inside the same transaction.
+- [ ] Await full CI validation for this worker hardening.
