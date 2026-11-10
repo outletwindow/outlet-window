@@ -72,6 +72,7 @@ integration("PostgreSQL scheduled task outbox", () => {
     await pool.query("DELETE FROM scheduled_task_inbox WHERE order_id = $1", [orderId]);
     await pool.query("DELETE FROM scheduled_task_outbox WHERE order_id = $1", [orderId]);
     await pool.query("DELETE FROM scheduled_order_confirmations WHERE order_id = $1", [orderId]);
+    await pool.query("DELETE FROM verified_order_payment_captures WHERE order_id = $1", [orderId]);
     await pool.query("DELETE FROM customer_orders WHERE id = $1", [orderId]);
   }
 
@@ -124,6 +125,20 @@ integration("PostgreSQL scheduled task outbox", () => {
       id: record.id, leaseToken: second[0]!.leaseToken!, publishedAtUtc: "2026-11-08T10:00:07.000Z"
     })).toBe(true);
     await cleanup();
+  });
+
+  it("rejects scheduling confirmation without immutable provider capture evidence", async () => {
+    const capturedAtUtc = "2026-11-08T09:59:00.000Z";
+    await expect(transactionRunner.recordPaymentCapture({
+      orderId, tenantId: "platform", paymentReference: "unverified-provider-reference",
+      paymentCapturedAtUtc: capturedAtUtc, confirmedAtUtc: "2026-11-08T10:00:00.000Z",
+      fulfillmentVersion: 1
+    })).rejects.toThrow("scheduled_payment_capture_evidence_missing");
+    const confirmations = await pool.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM scheduled_order_confirmations WHERE order_id = $1",
+      [orderId]
+    );
+    expect(confirmations.rows[0]?.count).toBe("0");
   });
 
   it("commits payment-confirmed order state and outbox tasks atomically", async () => {
