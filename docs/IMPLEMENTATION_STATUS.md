@@ -418,3 +418,11 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [ ] This is a transport/client layer only: it is not yet exposed through an authenticated customer checkout route, and the client secret is not yet returned to a customer.
 - [ ] Before wiring checkout, add durable creation-attempt/reconciliation semantics. Moyasar's current Payment Intent create reference documents no idempotency field for this endpoint; an ambiguous timeout must not be blindly retried. The customer/order ownership check and server-side persisted-order amount lookup are also required.
 - [ ] Frontend fulfillment with the publishable key and client secret, callback handling, and end-to-end sandbox payment remain pending.
+
+## Durable payment-intent creation attempts (2026-11-10)
+- [x] Added migration `0032_payment_intent_creation_attempts` with tenant/order binding, server-calculated amount/currency snapshot validation, one active attempt per order/provider, and unique idempotency.
+- [x] Added explicit `dispatching`, `outcome_unknown`, `created`, and `rejected` states. An ambiguous attempt blocks a second provider dispatch until reconciliation.
+- [x] Database transitions are fail-closed; an ambiguous attempt can become rejected only with a provider reconciliation reference. Attempt rows cannot be deleted or truncated.
+- [x] Added a PostgreSQL store that reserves the attempt before the provider call and atomically records the provider intent mapping with the created state.
+- [x] Registered migration 0032 in the migration runner and API readiness gate; added unit and PostgreSQL acceptance coverage.
+- [ ] The attempt store is not yet wired to an authenticated customer checkout endpoint. Customer ownership verification, server-side order amount lookup, Moyasar sandbox contract execution, and frontend payment completion remain pending.
