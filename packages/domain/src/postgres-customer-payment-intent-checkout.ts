@@ -29,8 +29,8 @@ export class PostgresCustomerPaymentIntentCheckout {
    let recovered;
    try { recovered=await this.provider.fetchIntent(attempt.providerPaymentReference); }
    catch { return {outcome:"recovery_unavailable"}; }
-   if(recovered.status!=="created"||recovered.amount!==amountMinor||recovered.currency!==currency||
-      Date.parse(recovered.expiresAtUtc)<=Date.now()) return {outcome:"attempt_exists"};
+   if(recovered.status!=="created"||recovered.id!==attempt.providerPaymentReference||recovered.amount!==amountMinor||recovered.currency!==currency||
+      Date.parse(recovered.expiresAtUtc)!==Date.parse(attempt.expiresAtUtc)||Date.parse(recovered.expiresAtUtc)<=Date.now()) return {outcome:"attempt_exists"};
    return {outcome:"created",providerPaymentReference:recovered.id,clientSecret:recovered.clientSecret,
     expiresAtUtc:recovered.expiresAtUtc,amountMinor,currency};
   }
