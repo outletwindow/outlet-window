@@ -322,3 +322,12 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Added adapter unit tests and PostgreSQL migration acceptance checks to CI.
 - [ ] The PSP API call that creates the external payment intent, provider-specific signature/decoder adapters, secure secret resolution, durable initial-capture inbox/worker, and production credentials remain pending.
 - [ ] The intent store is a persistence boundary, not a live payment gateway. Do not treat the generic webhook route as production-ready until a provider contract and deployment wiring are verified.
+
+
+## Moyasar webhook verification adapter — development increment (2026-11-10)
+- [x] Added an isolated Moyasar webhook verifier that validates the documented JSON envelope fields `id`, `account_name`, and `secret_token` against the endpoint's configured shared secret using constant-time byte comparison.
+- [x] Added fail-closed tests for valid envelopes, wrong secrets, missing fields, malformed JSON, oversized payloads, arrays, and null values.
+- [x] Extended the initial payment-capture processor with an injectable provider-specific webhook-verifier registry while retaining the existing timestamped HMAC verifier as the fallback for already-supported generic providers.
+- [ ] Wire `moyasarWebhookVerifier` into the deployment's provider registry and secret-manager resolver; no Moyasar credentials or live endpoint are configured.
+- [ ] Implement and verify the Moyasar-specific payment-capture event decoder against the account's enabled webhook event schema and sandbox payloads; this verifier alone does not make Moyasar payments operational.
+- [ ] Run Moyasar sandbox contract tests and confirm webhook registration, retry handling, event deduplication, and canonical payment-status reconciliation before enabling live traffic.
