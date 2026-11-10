@@ -145,7 +145,11 @@ export class PostgresInitialPaymentCaptureInbox {
           [event.provider_key,event.provider_event_id,event.provider_payment_reference,
             payment.tenant_id,payment.order_id,`payment-capture:${event.provider_key}:${event.provider_event_id}`]
         );
-        if(prior.rowCount!==1) throw new Error("INITIAL_CAPTURE_LEDGER_CONFLICT_LOOKUP_FAILED");
+        if(prior.rowCount===0) throw new Error("INITIAL_CAPTURE_LEDGER_CONFLICT_LOOKUP_FAILED");
+        if(prior.rowCount!==1) {
+          await this.failLocked(client,input.receiptId,"CAPTURE_IDENTITY_COLLISION");
+          await client.query("COMMIT"); return "conflict";
+        }
         const p=prior.rows[0]!;
         const same=p.tenant_id===payment.tenant_id && p.order_id===payment.order_id &&
           p.provider_key===event.provider_key && p.provider_event_id===event.provider_event_id &&
