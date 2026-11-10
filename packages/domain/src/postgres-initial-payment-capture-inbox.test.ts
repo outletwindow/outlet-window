@@ -95,6 +95,39 @@ describe("PostgresInitialPaymentCaptureInbox", () => {
     expect(client.release).toHaveBeenCalledOnce();
   });
 
+
+  it("accepts a provider-confirmed capture completed after the intent fulfillment deadline", async () => {
+    const capturedAt = new Date("2026-11-09T14:30:00.000Z");
+    const clientQuery = vi.fn()
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // BEGIN
+      .mockResolvedValueOnce({ rows: [{
+        id: "receipt-1", provider_key: "psp-a", provider_event_id: "evt-1",
+        payment_intent_id: "intent-1", provider_payment_reference: "pay-1",
+        amount_minor: "12500", currency: "SAR", captured_at: capturedAt,
+        attempt_count: 1, status: "processing", lease_owner: "worker-1", lease_valid: true
+      }], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{
+        tenant_id: "tenant-1", order_id: "order-1", provider_key: "psp-a",
+        provider_payment_reference: "pay-1", amount_minor: "12500", currency: "SAR",
+        created_at: new Date("2026-11-09T11:00:00.000Z"),
+        order_status: "awaiting_payment"
+      }], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ id: "capture-1" }], rowCount: 1 }) // capture evidence
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 }) // finalize receipt
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 }); // COMMIT
+    const client = { query: clientQuery, release: vi.fn() } as unknown as PostgresClient;
+    const pool = { query: vi.fn(), connect: vi.fn().mockResolvedValue(client) } as unknown as PostgresPool;
+    const store = new PostgresInitialPaymentCaptureInbox(pool);
+
+    await expect(store.applyClaimed({ receiptId: "receipt-1", workerId: "worker-1" }))
+      .resolves.toBe("applied");
+    const intentLookup = String(clientQuery.mock.calls[2]?.[0]);
+    expect(intentLookup).not.toContain("expires_at");
+    expect(clientQuery.mock.calls[3]?.[0]).toContain("INSERT INTO verified_order_payment_captures");
+    expect(clientQuery.mock.calls.at(-1)?.[0]).toBe("COMMIT");
+    expect(client.release).toHaveBeenCalledOnce();
+  });
+
   it("does not apply a receipt after its processing lease expires", async () => {
     const clientQuery = vi.fn()
       .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // BEGIN

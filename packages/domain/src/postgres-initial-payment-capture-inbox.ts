@@ -102,10 +102,10 @@ export class PostgresInitialPaymentCaptureInbox {
       const event=receipt.rows[0]!;
       const intent=await client.query<{
         tenant_id:string;order_id:string;provider_key:string;provider_payment_reference:string;
-        amount_minor:string|number;currency:string;created_at:Date|string;expires_at:Date|string;order_status:string;
+        amount_minor:string|number;currency:string;created_at:Date|string;order_status:string;
       }>(
         `SELECT i.tenant_id,i.order_id,i.provider_key,i.provider_payment_reference,i.amount_minor,
-          i.currency,i.created_at,i.expires_at,o.status AS order_status
+          i.currency,i.created_at,o.status AS order_status
          FROM provider_payment_intents i
          JOIN customer_orders o ON o.tenant_id=i.tenant_id AND o.id=i.order_id
          WHERE i.id=$1 FOR UPDATE OF i,o`,
@@ -117,7 +117,7 @@ export class PostgresInitialPaymentCaptureInbox {
          payment.provider_payment_reference!==event.provider_payment_reference ||
          Number(payment.amount_minor)!==Number(event.amount_minor) ||
          payment.currency!==event.currency || dateMillis(event.captured_at)<dateMillis(payment.created_at) ||
-         dateMillis(event.captured_at)>dateMillis(payment.expires_at) || payment.order_status!=="awaiting_payment") {
+         payment.order_status!=="awaiting_payment") {
         await this.failLocked(client,input.receiptId,"PAYMENT_INTENT_MISMATCH");
         await client.query("COMMIT"); return "conflict";
       }
