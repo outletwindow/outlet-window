@@ -89,6 +89,7 @@ export * from "./postgres-merchant-order-item-preparation.js";
 export * from "./postgres-verified-order-payment-capture.js";
 export * from "./verified-order-payment-capture-webhook.js";
 export * from "./moyasar-payment-webhook-verifier.js";
+export * from "./moyasar-payment-capture-decoder.js";
 
 export * from "./postgres-payment-intent-store.js";
 
