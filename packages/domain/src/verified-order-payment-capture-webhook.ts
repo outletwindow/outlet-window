@@ -79,13 +79,13 @@ export class VerifiedOrderPaymentCaptureWebhookProcessor {
     const verified = providerVerifier
       ? providerVerifier.verify({
           rawBody: input.rawBody,
-          signatureHeader: input.signatureHeader,
+          ...(input.signatureHeader === undefined ? {} : { signatureHeader: input.signatureHeader }),
           secret,
           ...(this.dependencies.now === undefined ? {} : { nowUtc: this.dependencies.now() })
         })
       : verifyPaymentProviderWebhook({
           rawBody: input.rawBody,
-          signatureHeader: input.signatureHeader,
+          ...(input.signatureHeader === undefined ? {} : { signatureHeader: input.signatureHeader }),
           secret,
           ...(this.dependencies.now === undefined ? {} : { nowUtc: this.dependencies.now() })
         });
