@@ -17,6 +17,16 @@ export interface PaymentCaptureEventDecoder {
   decodeCapture(rawBody: string): DecodedProviderCapture | null;
 }
 
+export interface PaymentCaptureWebhookVerifier {
+  /** Verifies the provider's own authentication scheme against the exact raw body. */
+  verify(input: {
+    rawBody: string;
+    signatureHeader?: string;
+    secret: string;
+    nowUtc?: Date;
+  }): boolean;
+}
+
 export interface ExpectedPaymentOrder {
   tenantId: string;
   orderId: string;
@@ -45,6 +55,7 @@ export class VerifiedOrderPaymentCaptureWebhookProcessor {
   constructor(private readonly dependencies: {
     secretResolver: (providerKey: string) => Promise<string | null>;
     decoders: ReadonlyMap<string, PaymentCaptureEventDecoder>;
+    webhookVerifiers?: ReadonlyMap<string, PaymentCaptureWebhookVerifier>;
     orderResolver: PaymentCaptureOrderResolver;
     captureStore: Pick<PostgresVerifiedOrderPaymentCaptureStore, "recordVerifiedCapture">;
     inboxStore?: { recordVerified(input: { providerKey:string; providerEventId:string; paymentIntentId:string; rawBody:string; providerPaymentReference:string; amountMinor:number; currency:string; capturedAtUtc:string }): Promise<{outcome:"received"|"duplicate";receiptId:string}|{outcome:"event_id_collision"}> };
@@ -64,12 +75,21 @@ export class VerifiedOrderPaymentCaptureWebhookProcessor {
     if (!decoder) return { outcome: "provider_not_configured" };
     const secret = await this.dependencies.secretResolver(input.providerKey);
     if (!secret) return { outcome: "provider_not_configured" };
-    if (!verifyPaymentProviderWebhook({
-      rawBody: input.rawBody,
-      signatureHeader: input.signatureHeader,
-      secret,
-      ...(this.dependencies.now === undefined ? {} : { nowUtc: this.dependencies.now() })
-    })) return { outcome: "invalid_signature_or_event" };
+    const providerVerifier = this.dependencies.webhookVerifiers?.get(input.providerKey);
+    const verified = providerVerifier
+      ? providerVerifier.verify({
+          rawBody: input.rawBody,
+          signatureHeader: input.signatureHeader,
+          secret,
+          ...(this.dependencies.now === undefined ? {} : { nowUtc: this.dependencies.now() })
+        })
+      : verifyPaymentProviderWebhook({
+          rawBody: input.rawBody,
+          signatureHeader: input.signatureHeader,
+          secret,
+          ...(this.dependencies.now === undefined ? {} : { nowUtc: this.dependencies.now() })
+        });
+    if (!verified) return { outcome: "invalid_signature_or_event" };
 
     let decoded: DecodedProviderCapture | null;
     try { decoded = decoder.decodeCapture(input.rawBody); }
