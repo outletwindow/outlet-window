@@ -409,3 +409,12 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Hardened the webhook worker's ledger conflict recovery: if a uniqueness conflict maps to multiple prior capture rows, it now marks the inbox receipt as a terminal `CAPTURE_IDENTITY_COLLISION` conflict instead of throwing a retryable infrastructure error.
 - [x] Added a regression test covering multiple conflicting ledger rows and verifying the receipt is failed inside the same transaction.
 - [ ] Await full CI validation for this worker hardening.
+
+## Moyasar Payment Intent backend client (2026-11-10)
+- [x] Added a server-only Moyasar Payment Intents API client using the secret key with Basic authentication; publishable keys are rejected at construction.
+- [x] Validates server-calculated minor-unit amount (Moyasar minimum 100), ISO currency, HTTPS callback URL, provider response identity/status/amount/currency, one-hour expiry window, and client-secret shape.
+- [x] Does not return provider error bodies or include credentials in error messages; transport failures are surfaced as an ambiguous outcome and are never automatically retried.
+- [x] Added unit tests for successful request/authentication, invalid key and request rejection, provider rejection, ambiguous network failure, and malformed/mismatched/expired responses.
+- [ ] This is a transport/client layer only: it is not yet exposed through an authenticated customer checkout route, and the client secret is not yet returned to a customer.
+- [ ] Before wiring checkout, add durable creation-attempt/reconciliation semantics. Moyasar's current Payment Intent create reference documents no idempotency field for this endpoint; an ambiguous timeout must not be blindly retried. The customer/order ownership check and server-side persisted-order amount lookup are also required.
+- [ ] Frontend fulfillment with the publishable key and client secret, callback handling, and end-to-end sandbox payment remain pending.
