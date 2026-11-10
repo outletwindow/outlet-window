@@ -353,3 +353,12 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [ ] Verify CI for the new provider route, decoder, verifier, TypeScript, full tests, database acceptance suite, and Compose validation.
 - [ ] Provision the secret in the deployment secret manager and register the HTTPS webhook URL in Moyasar dashboard; no credential or live endpoint is present in this repository.
 - [ ] Implement authenticated server-side payment creation and authoritative payment fetch/reconciliation before production activation.
+
+
+## Moyasar purchase/capture mode hardening — development increment (2026-11-10)
+- [x] Added support for native `payment_paid` purchase events (status `paid`) and `payment_captured` manual-capture events (status `captured`); both map to the full collected amount.
+- [x] Full-order checkout rejects partial manual captures until partial-payment balances and compensation are implemented.
+- [x] API route tests cover both native Moyasar event names.
+- [x] Added an expected live-mode binding to the Moyasar webhook verifier; sandbox payloads cannot be accepted by a live-configured endpoint and vice versa.
+- [x] Production startup now requires explicit `MOYASAR_EXPECT_LIVE=true|false`; development defaults to sandbox mode.
+- [ ] Await and inspect the latest full GitHub Actions run for all new API, decoder, verifier, TypeScript, database, and Compose changes.
