@@ -335,7 +335,7 @@ A checkbox is marked complete only when code is present and automated checks or 
 
 ## Moyasar capture webhook decoder — development increment (2026-11-10)
 - [x] Added a Moyasar-specific decoder that accepts only `payment_captured` events and requires the nested payment status to be `captured`.
-- [x] Maps the provider event ID, payment ID, captured amount (including partial captures), currency, and captured timestamp into the canonical capture contract.
+- [x] Maps successful `payment_paid` purchase events using the full payment amount and `payment_captured` manual-capture events using the captured amount and timestamp.
 - [x] Rejects `payment_paid`, `payment_authorized`, refund, void, 3DS, malformed, invalid-timestamp, zero-capture, and malformed-currency events from the initial-capture path.
 - [x] Tightened webhook envelope validation to require event ID/type, valid creation timestamp, live-mode boolean, object data, account name, and non-empty shared secret.
 - [x] Exported the verifier and decoder from the domain package.
