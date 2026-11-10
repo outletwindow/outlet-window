@@ -362,3 +362,6 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Added an expected live-mode binding to the Moyasar webhook verifier; sandbox payloads cannot be accepted by a live-configured endpoint and vice versa.
 - [x] Production startup now requires explicit `MOYASAR_EXPECT_LIVE=true|false`; development defaults to sandbox mode.
 - [ ] Await and inspect the latest full GitHub Actions run for all new API, decoder, verifier, TypeScript, database, and Compose changes.
+
+
+- [x] Production Compose configuration now requires the operator to supply `MOYASAR_EXPECT_LIVE` explicitly; it no longer silently defaults a production deployment to sandbox mode.
