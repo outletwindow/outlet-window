@@ -14,7 +14,7 @@ DO $$ BEGIN
   RAISE EXCEPTION 'expected one active attempt per order/provider';
  EXCEPTION WHEN unique_violation THEN NULL; END;
  BEGIN
-  UPDATE payment_intent_creation_attempts SET status='rejected',failure_code='NOPE' WHERE id='pia-1';
+  UPDATE payment_intent_creation_attempts SET status='created' WHERE id='pia-1';
   RAISE EXCEPTION 'expected invalid state transition rejection';
  EXCEPTION WHEN check_violation THEN NULL; END;
 END $$;
