@@ -32,7 +32,14 @@ export class PostgresCustomerPaymentIntentCheckout {
    }
    await this.attempts.markOutcomeUnknown(attempt.attemptId); return {outcome:"outcome_unknown"};
   }
-  const saved=await this.attempts.markCreated({attemptId:attempt.attemptId,providerPaymentReference:intent.id,expiresAtUtc:intent.expiresAtUtc});
+  let saved:"created"|"not_found"|"conflict";
+  try {
+   saved=await this.attempts.markCreated({attemptId:attempt.attemptId,providerPaymentReference:intent.id,expiresAtUtc:intent.expiresAtUtc});
+  } catch {
+   // The provider may have created the intent; never leave the reservation looking dispatchable.
+   await this.attempts.markOutcomeUnknown(attempt.attemptId);
+   return {outcome:"persistence_conflict"};
+  }
   if(saved!=="created") return {outcome:"persistence_conflict"};
   return {outcome:"created",providerPaymentReference:intent.id,clientSecret:intent.clientSecret,expiresAtUtc:intent.expiresAtUtc,amountMinor,currency};
  }
