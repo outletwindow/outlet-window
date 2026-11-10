@@ -723,6 +723,31 @@ describe("signed payment provider webhook intake", () => {
     } finally { await app.close(); }
   });
 
+  it("routes native Moyasar payment_paid purchase events to the trusted capture processor", async () => {
+    const purchaseBody = JSON.stringify({
+      id: "evt-moyasar-paid", type: "payment_paid",
+      created_at: "2026-11-10T07:00:00.000Z",
+      secret_token: "moyasar-secret", account_name: "Outlet Window", live: false,
+      data: {
+        id: "pay-moyasar-paid", status: "paid", amount: 12500,
+        captured: 0, currency: "SAR", captured_at: null,
+        updated_at: "2026-11-10T06:59:00.000Z"
+      }
+    });
+    const process = vi.fn(async () => ({ outcome: "recorded" as const, captureId: "capture-paid-1" }));
+    const app = buildApp({ paymentCaptureWebhookHandler: { process } });
+    await app.ready();
+    try {
+      const response = await app.inject({
+        method: "POST", url: "/api/v1/webhooks/payments/moyasar",
+        headers: { "content-type": "application/json" },
+        payload: purchaseBody
+      });
+      expect(response.statusCode).toBe(201);
+      expect(process).toHaveBeenCalledWith({ providerKey: "moyasar", rawBody: purchaseBody });
+    } finally { await app.close(); }
+  });
+
   it("rejects invalid signatures without persisting the event", async () => {
     const record = vi.fn(async () => ({ outcome: "received" as const, receiptId: "unused" }));
     const app = buildApp({
