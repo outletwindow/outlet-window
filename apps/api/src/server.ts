@@ -8,6 +8,7 @@ import { SallaOAuthFlowService, PostgresSallaOAuthStateStore, PostgresSallaOAuth
 import { PostgresIntegrationRegistryStore } from "../../../packages/domain/src/postgres-integration-registry-store.js";
 import { createMoyasarWebhookVerifier } from "../../../packages/domain/src/moyasar-payment-webhook-verifier.js";
 import { moyasarPaymentCaptureDecoder } from "../../../packages/domain/src/moyasar-payment-capture-decoder.js";
+import { createMoyasarCheckoutRuntimeConfig } from "./moyasar-checkout-runtime-config.js";
 
 const port = Number.parseInt(process.env.PORT ?? "3000", 10);
 const host = process.env.HOST ?? "0.0.0.0";
@@ -21,8 +22,13 @@ if (production && !databaseUrl) {
   throw new Error("DATABASE_URL is required in production; refusing to start without persistent IAM storage");
 }
 const moyasarExpectedLiveMode = process.env.MOYASAR_EXPECT_LIVE;
+const moyasarCheckoutConfig = createMoyasarCheckoutRuntimeConfig(process.env);
 if (production && moyasarExpectedLiveMode !== "true" && moyasarExpectedLiveMode !== "false") {
   throw new Error("MOYASAR_EXPECT_LIVE must be explicitly set to true or false in production");
+}
+
+if (moyasarCheckoutConfig && !databaseUrl) {
+  throw new Error("Moyasar checkout requires DATABASE_URL and durable payment-attempt storage");
 }
 
 const pool = databaseUrl ? new Pool({
@@ -75,6 +81,10 @@ const app = pool
         providerKey === "moyasar" ? (process.env.MOYASAR_WEBHOOK_SECRET ?? null) : null,
       paymentCaptureDecoders: new Map([["moyasar", moyasarPaymentCaptureDecoder]]),
       paymentCaptureWebhookVerifiers: new Map([["moyasar", createMoyasarWebhookVerifier(moyasarExpectedLiveMode === "true")]]),
+      ...(moyasarCheckoutConfig === null ? {} : {
+        moyasarPaymentIntentClient: moyasarCheckoutConfig.client,
+        paymentCallbackUrl: moyasarCheckoutConfig.callbackUrl
+      }),
       ...(sallaOAuthFlow === undefined ? {} : { sallaOAuthFlow })
     })
   : buildApp();
