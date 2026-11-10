@@ -393,3 +393,9 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Tightened the verified-capture persistence boundary to reject zero-value captures. Provider webhook decoding already rejects non-positive capture amounts; the database-facing domain store now enforces the same invariant independently.
 - [x] Added a regression assertion that zero-value capture evidence is rejected before any database write.
 - [ ] Confirm the updated payment identity-collision and zero-value capture tests pass in the complete CI pipeline.
+
+## Database-level positive capture invariant (2026-11-10)
+- [x] Added migration `0031_positive_verified_payment_capture` to strengthen the existing database constraint from non-negative to strictly positive verified capture amounts.
+- [x] Registered migration 0031 in the migration runner and API readiness gate; the initial-capture worker also refuses to start until this migration is applied.
+- [x] Added PostgreSQL acceptance SQL to prove zero-value capture evidence is rejected and the named positive-amount constraint exists; CI now runs this acceptance check.
+- [ ] Await CI for the new migration, acceptance SQL, typecheck, lint, tests, and build.
