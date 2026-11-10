@@ -365,3 +365,9 @@ A checkbox is marked complete only when code is present and automated checks or 
 
 
 - [x] Production Compose configuration now requires the operator to supply `MOYASAR_EXPECT_LIVE` explicitly; it no longer silently defaults a production deployment to sandbox mode.
+
+
+## CI correction — optional webhook signature typing (2026-11-10)
+- [x] Inspected failed GitHub Actions run #1326 logs; all 30 PostgreSQL acceptance scripts and Compose validation passed, while TypeScript failed on the fallback HMAC verifier's required `signatureHeader: string | undefined` property.
+- [x] Corrected the fallback verifier call to pass the required property explicitly while keeping the provider-specific verifier interface optional.
+- [ ] Re-run and confirm typecheck, lint, unit tests, and build on the corrected branch head.
