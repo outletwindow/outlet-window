@@ -48,8 +48,10 @@ export class PostgresPaymentIntentCreationAttemptStore {
         Number(r.amount_minor)===input.amountMinor&&r.currency===input.currency;
       return same?{outcome:"duplicate",attemptId:r.id,status:r.status}:{outcome:"identity_collision"};
     }
-    const active=found.rows.filter(r=>r.order_id===input.orderId&&r.provider_key===input.providerKey&&
-      ["dispatching","outcome_unknown","created"].includes(r.status));
+    const active=found.rows.filter((r):r is AttemptRow & {
+      status:"dispatching"|"outcome_unknown"|"created"
+    }=>r.order_id===input.orderId&&r.provider_key===input.providerKey&&
+      (r.status==="dispatching"||r.status==="outcome_unknown"||r.status==="created"));
     return active.length===1?{outcome:"order_attempt_exists",attemptId:active[0]!.id,status:active[0]!.status}
       :{outcome:"identity_collision"};
   }
