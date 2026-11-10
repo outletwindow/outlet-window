@@ -376,3 +376,9 @@ A checkbox is marked complete only when code is present and automated checks or 
 ## CI execution efficiency
 - [x] Added a branch-scoped GitHub Actions concurrency group so newer commits cancel superseded push/PR runs for the same branch instead of queueing redundant full PostgreSQL/typecheck/test/build pipelines.
 - [ ] Confirm the latest branch-head workflow completes with all checks green.
+
+## Payment capture reconciliation hardening (2026-11-10)
+- [x] Fixed delayed-webhook reconciliation: once the provider has confirmed collection, order lookup no longer rejects the capture solely because the original payment-intent fulfillment deadline has passed. This prevents a late but authentic provider webhook from becoming an unmatchable payment.
+- [x] Kept intent creation expiry validation intact; only the post-capture evidence lookup is no longer expiry-gated. Exact provider reference, amount, currency, and the order's `awaiting_payment` state remain mandatory.
+- [x] Added a regression test for a confirmed capture webhook delivered after the payment-intent expiry.
+- [ ] Re-run CI on the updated branch and verify the delayed-webhook test in the full PostgreSQL/typecheck/lint/test/build pipeline.
