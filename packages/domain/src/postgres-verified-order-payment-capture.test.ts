@@ -55,6 +55,25 @@ describe("PostgreSQL verified order payment capture store", () => {
     await expect(store.recordVerifiedCapture(input)).resolves.toEqual({ outcome: "identity_collision" });
   });
 
+  it("fails closed when event and idempotency identities point to different captures", async () => {
+    const query = vi.fn()
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 })
+      .mockResolvedValueOnce({ rows: [
+        { id:"capture-event", tenant_id:input.tenantId, order_id:input.orderId,
+          provider_key:input.providerKey, provider_event_id:input.providerEventId,
+          provider_payment_reference:"different-pay", amount_minor:"12500",
+          currency:"SAR", captured_at:new Date(input.capturedAtUtc), idempotency_key:"other-key" },
+        { id:"capture-key", tenant_id:input.tenantId, order_id:"order-other",
+          provider_key:input.providerKey, provider_event_id:"other-event",
+          provider_payment_reference:"pay-other", amount_minor:"12500",
+          currency:"SAR", captured_at:new Date(input.capturedAtUtc), idempotency_key:input.idempotencyKey }
+      ], rowCount: 2 });
+    const store = new PostgresVerifiedOrderPaymentCaptureStore(
+      { query, connect: vi.fn() } as unknown as PostgresPool
+    );
+    await expect(store.recordVerifiedCapture(input)).resolves.toEqual({ outcome:"identity_collision" });
+  });
+
   it("rejects malformed or unsafe evidence before database access", async () => {
     const query = vi.fn();
     const store = new PostgresVerifiedOrderPaymentCaptureStore(
