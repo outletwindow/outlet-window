@@ -14,8 +14,12 @@ export const moyasarWebhookVerifier: PaymentCaptureWebhookVerifier = {
     if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return false;
     const envelope = payload as Record<string, unknown>;
     if (typeof envelope.id !== "string" || !envelope.id.trim() ||
+        typeof envelope.type !== "string" || !envelope.type.trim() ||
+        typeof envelope.created_at !== "string" || !Number.isFinite(Date.parse(envelope.created_at)) ||
+        typeof envelope.live !== "boolean" || typeof envelope.data !== "object" ||
+        envelope.data === null || Array.isArray(envelope.data) ||
         typeof envelope.account_name !== "string" || !envelope.account_name.trim() ||
-        typeof envelope.secret_token !== "string") return false;
+        typeof envelope.secret_token !== "string" || !envelope.secret_token) return false;
     const supplied = Buffer.from(envelope.secret_token, "utf8");
     const expected = Buffer.from(secret, "utf8");
     return supplied.length === expected.length && timingSafeEqual(supplied, expected);
