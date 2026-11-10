@@ -92,6 +92,7 @@ export * from "./moyasar-payment-webhook-verifier.js";
 export * from "./moyasar-payment-capture-decoder.js";
 
 export * from "./postgres-payment-intent-store.js";
+export * from "./postgres-payment-intent-creation-attempt-store.js";
 
 export * from "./postgres-initial-payment-capture-inbox.js";
 export * from "./postgres-checkout-recovery-case-store.js";
