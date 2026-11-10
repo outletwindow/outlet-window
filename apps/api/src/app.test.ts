@@ -817,4 +817,119 @@ describe("signed payment provider webhook intake", () => {
       expect(record).not.toHaveBeenCalled();
     } finally { await app.close(); }
   });
+
+  it("requires an authenticated customer and idempotency key before starting checkout", async () => {
+    const create = vi.fn();
+    const noIdentity = buildApp({ customerPaymentIntentCheckout: { create } });
+    await noIdentity.ready();
+    try {
+      const response = await noIdentity.inject({ method: "POST", url: "/api/v1/customer/orders/order-1/payment-intents" });
+      expect(response.statusCode).toBe(401);
+      expect(create).not.toHaveBeenCalled();
+    } finally { await noIdentity.close(); }
+
+    const customer: Actor = {
+      id: "customer-1", role: "customer", active: true,
+      grants: [{ resource: "customer.order", actions: ["update"], scope: { orderId: "order-1" } }]
+    };
+    const protectedApp = buildApp({ resolveActor: async () => customer, customerPaymentIntentCheckout: { create } });
+    await protectedApp.ready();
+    try {
+      const response = await protectedApp.inject({ method: "POST", url: "/api/v1/customer/orders/order-1/payment-intents" });
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toEqual({ error: "idempotency_key_required" });
+      expect(create).not.toHaveBeenCalled();
+    } finally { await protectedApp.close(); }
+  });
+
+  it("does not allow a non-customer actor to start customer checkout", async () => {
+    const create = vi.fn();
+    const app = buildApp({
+      resolveActor: async () => merchantActor,
+      customerPaymentIntentCheckout: { create }
+    });
+    await app.ready();
+    try {
+      const response = await app.inject({
+        method: "POST", url: "/api/v1/customer/orders/order-1/payment-intents",
+        headers: { "idempotency-key": "checkout-api-key-0001" }
+      });
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toEqual({ error: "customer_only" });
+      expect(create).not.toHaveBeenCalled();
+    } finally { await app.close(); }
+  });
+
+  it("returns unavailable when payment checkout is not configured", async () => {
+    const customer: Actor = {
+      id: "customer-1", role: "customer", active: true,
+      grants: [{ resource: "customer.order", actions: ["update"], scope: { orderId: "order-1" } }]
+    };
+    const app = buildApp({ resolveActor: async () => customer });
+    await app.ready();
+    try {
+      const response = await app.inject({
+        method: "POST", url: "/api/v1/customer/orders/order-1/payment-intents",
+        headers: { "idempotency-key": "checkout-api-key-0001" }
+      });
+      expect(response.statusCode).toBe(503);
+      expect(response.json()).toEqual({ error: "payment_checkout_unavailable" });
+    } finally { await app.close(); }
+  });
+
+  it("maps checkout outcomes to safe HTTP responses without leaking provider credentials", async () => {
+    const customer: Actor = {
+      id: "customer-1", role: "customer", active: true,
+      grants: [{ resource: "customer.order", actions: ["update"], scope: { orderId: "order-1" } }]
+    };
+    const create = vi.fn(async () => ({
+      outcome: "created" as const, providerPaymentReference: "provider-intent-1",
+      clientSecret: "pi_secret_test_only", expiresAtUtc: "2026-11-10T22:30:00.000Z",
+      amountMinor: 12500, currency: "SAR"
+    }));
+    const app = buildApp({ resolveActor: async () => customer, customerPaymentIntentCheckout: { create } });
+    await app.ready();
+    try {
+      const response = await app.inject({
+        method: "POST", url: "/api/v1/customer/orders/order-1/payment-intents",
+        headers: { "idempotency-key": "checkout-api-key-0001" }
+      });
+      expect(response.statusCode).toBe(201);
+      expect(response.json()).toMatchObject({
+        outcome: "created", providerPaymentReference: "provider-intent-1",
+        clientSecret: "pi_secret_test_only", amountMinor: 12500, currency: "SAR"
+      });
+      expect(create).toHaveBeenCalledWith({
+        customerId: "customer-1", orderId: "order-1", idempotencyKey: "checkout-api-key-0001"
+      });
+    } finally { await app.close(); }
+  });
+
+  it("maps an unknown provider outcome to HTTP 202 and recovery outage to HTTP 503", async () => {
+    const customer: Actor = {
+      id: "customer-1", role: "customer", active: true,
+      grants: [{ resource: "customer.order", actions: ["update"], scope: { orderId: "order-1" } }]
+    };
+    let outcome: "outcome_unknown" | "recovery_unavailable" = "outcome_unknown";
+    const app = buildApp({
+      resolveActor: async () => customer,
+      customerPaymentIntentCheckout: { create: async () => ({ outcome }) }
+    });
+    await app.ready();
+    try {
+      const request = () => app.inject({
+        method: "POST", url: "/api/v1/customer/orders/order-1/payment-intents",
+        headers: { "idempotency-key": "checkout-api-key-0001" }
+      });
+      const unknown = await request();
+      expect(unknown.statusCode).toBe(202);
+      expect(unknown.json()).toEqual({ outcome: "outcome_unknown" });
+      outcome = "recovery_unavailable";
+      const unavailable = await request();
+      expect(unavailable.statusCode).toBe(503);
+      expect(unavailable.json()).toEqual({ error: "payment_intent_recovery_unavailable" });
+    } finally { await app.close(); }
+  });
+
+
 });
