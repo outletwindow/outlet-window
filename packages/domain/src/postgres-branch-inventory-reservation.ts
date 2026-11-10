@@ -75,7 +75,6 @@ export class PostgresBranchInventoryReservationAdapter implements InventoryReser
                WHERE p.tenant_id = o.tenant_id AND p.order_id = o.id
                  AND p.amount_minor = o.total_minor AND p.currency = o.currency
              )
-             OR EXISTS (SELECT 1 FROM scheduled_order_confirmations c WHERE c.order_id = o.id)
            )
          FOR UPDATE OF o, s`,
         [request.tenantId, request.orderId, request.suborderId, request.merchantId, request.branchId]

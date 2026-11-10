@@ -23,6 +23,19 @@ integration("PostgreSQL scheduled task outbox", () => {
   let orderId = "";
   let customerId = "";
 
+  async function addVerifiedCapture(paymentReference: string) {
+    const capturedAtUtc = "2026-11-08T09:59:00.000Z";
+    await pool.query(
+      `INSERT INTO verified_order_payment_captures
+       (id,tenant_id,order_id,provider_key,provider_event_id,provider_payment_reference,
+        amount_minor,currency,captured_at,idempotency_key)
+       VALUES ($1,'platform',$2,'integration_test',$3,$4,10000,'SAR',$5,$6)`,
+      ["capture-" + randomUUID(), orderId, "event-" + randomUUID(), paymentReference,
+        capturedAtUtc, "capture-idem-" + randomUUID()]
+    );
+    return capturedAtUtc;
+  }
+
   beforeEach(async () => {
     const suffix = randomUUID();
     orderId = "scheduled-order-" + suffix;
@@ -115,10 +128,12 @@ integration("PostgreSQL scheduled task outbox", () => {
 
   it("commits payment-confirmed order state and outbox tasks atomically", async () => {
     const scheduledTask = task();
+    const paymentReference = "provider-" + randomUUID();
+    const paymentCapturedAtUtc = await addVerifiedCapture(paymentReference);
     const result = await commitScheduledOrderAndTasks({
       order: {
-        orderId, tenantId: "platform", paymentReference: "provider-" + randomUUID(),
-        paymentCapturedAtUtc: "2026-11-08T09:59:00.000Z",
+        orderId, tenantId: "platform", paymentReference,
+        paymentCapturedAtUtc,
         confirmedAtUtc: "2026-11-08T10:00:00.000Z", fulfillmentVersion: 1
       },
       tasks: [scheduledTask],
@@ -138,9 +153,11 @@ integration("PostgreSQL scheduled task outbox", () => {
 
   it("serializes concurrent confirmation retries without duplicating outbox work", async () => {
     const scheduledTask = task();
+    const paymentReference = "provider-" + randomUUID();
+    const paymentCapturedAtUtc = await addVerifiedCapture(paymentReference);
     const confirmation = {
-      orderId, tenantId: "platform", paymentReference: "provider-" + randomUUID(),
-      paymentCapturedAtUtc: "2026-11-08T09:59:00.000Z",
+      orderId, tenantId: "platform", paymentReference,
+      paymentCapturedAtUtc,
       confirmedAtUtc: "2026-11-08T10:00:00.000Z", fulfillmentVersion: 1
     };
     const commit = () => commitScheduledOrderAndTasks({

@@ -15,6 +15,23 @@ type OutboxRow = {
 };
 const iso = (value: Date | string) => new Date(value).toISOString();
 
+async function requireVerifiedCapture(
+  client: PostgresClient,
+  order: ScheduledOrderConfirmation
+): Promise<void> {
+  const capture = await client.query<{ id: string }>(
+    `SELECT p.id
+     FROM verified_order_payment_captures p
+     JOIN customer_orders o ON o.tenant_id = p.tenant_id AND o.id = p.order_id
+     WHERE p.tenant_id = $1 AND p.order_id = $2
+       AND p.provider_payment_reference = $3 AND p.captured_at = $4
+       AND p.amount_minor = o.total_minor AND p.currency = o.currency
+     LIMIT 1`,
+    [order.tenantId, order.orderId, order.paymentReference, order.paymentCapturedAtUtc]
+  );
+  if (capture.rowCount !== 1) throw new Error("scheduled_payment_capture_evidence_missing");
+}
+
 function fromRow(row: OutboxRow): ScheduledTaskOutboxRecord {
   return {
     id: row.id, idempotencyKey: row.idempotency_key, orderId: row.order_id,
@@ -166,6 +183,7 @@ export class PostgresScheduledOrderTransactionRunner implements ScheduledOrderTr
         [order.tenantId, order.orderId]
       );
       if (!parent.rowCount) throw new Error("scheduled_order_not_found");
+      await requireVerifiedCapture(client, order);
       const existing = await client.query<{
         payment_reference: string; payment_captured_at: Date | string;
         confirmed_at: Date | string; fulfillment_version: number;
@@ -216,6 +234,7 @@ export class PostgresScheduledOrderTransactionRunner implements ScheduledOrderTr
             [order.tenantId, order.orderId]
           );
           if (!orderRow.rowCount) throw new Error("scheduled_order_not_found");
+          await requireVerifiedCapture(client, order);
           const existing = await client.query<{
             payment_reference: string; payment_captured_at: Date | string;
             confirmed_at: Date | string; fulfillment_version: number;

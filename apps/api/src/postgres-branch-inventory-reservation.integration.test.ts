@@ -49,8 +49,16 @@ integration("PostgreSQL branch inventory reservations", () => {
       ["item-" + id, tenantId, id, suborderId, branchId, variantId, sku, quantity]
     );
     const capturedAtUtc = new Date().toISOString();
+    const paymentReference = "payment-" + id;
+    await pool.query(
+      `INSERT INTO verified_order_payment_captures
+       (id,tenant_id,order_id,provider_key,provider_event_id,provider_payment_reference,
+        amount_minor,currency,captured_at,idempotency_key)
+       VALUES ($1,'platform',$2,'integration_test',$3,$4,10000,'SAR',$5,$6)`,
+      ["capture-" + id, id, "event-" + id, paymentReference, capturedAtUtc, "capture-idem-" + id]
+    );
     const paymentCapture = {
-      orderId: id, tenantId: "platform", paymentReference: "payment-" + id,
+      orderId: id, tenantId: "platform", paymentReference,
       paymentCapturedAtUtc: capturedAtUtc, confirmedAtUtc: capturedAtUtc,
       fulfillmentVersion: 1
     };
@@ -90,6 +98,7 @@ integration("PostgreSQL branch inventory reservations", () => {
     await pool.query("DELETE FROM inventory_reservations WHERE merchant_id = $1", [merchantId]);
     await pool.query("DELETE FROM customer_order_items WHERE merchant_id = $1", [merchantId]);
     await pool.query("DELETE FROM scheduled_order_confirmations WHERE order_id = ANY($1::text[])", [orderIds]);
+    await pool.query("DELETE FROM verified_order_payment_captures WHERE order_id = ANY($1::text[])", [orderIds]);
     await pool.query("DELETE FROM merchant_suborders WHERE merchant_id = $1", [merchantId]);
     await pool.query("DELETE FROM customer_orders WHERE id = ANY($1::text[])", [orderIds]);
     await pool.query("DELETE FROM branch_inventory WHERE merchant_id = $1", [merchantId]);
