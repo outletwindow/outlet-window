@@ -371,3 +371,8 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Inspected failed GitHub Actions run #1326 logs; all 30 PostgreSQL acceptance scripts and Compose validation passed, while TypeScript failed on the fallback HMAC verifier's required `signatureHeader: string | undefined` property.
 - [x] Corrected the fallback verifier call to pass the required property explicitly while keeping the provider-specific verifier interface optional.
 - [ ] Re-run and confirm typecheck, lint, unit tests, and build on the corrected branch head.
+
+
+## CI execution efficiency
+- [x] Added a branch-scoped GitHub Actions concurrency group so newer commits cancel superseded push/PR runs for the same branch instead of queueing redundant full PostgreSQL/typecheck/test/build pipelines.
+- [ ] Confirm the latest branch-head workflow completes with all checks green.
