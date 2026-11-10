@@ -1,10 +1,10 @@
 import { MoyasarPaymentIntentClient } from "../../../packages/domain/src/moyasar-payment-intent-client.js";
 
 export interface MoyasarCheckoutEnvironment {
-  MOYASAR_SECRET_KEY?: string;
-  MOYASAR_PAYMENT_CALLBACK_URL?: string;
-  MOYASAR_WEBHOOK_SECRET?: string;
-  MOYASAR_EXPECT_LIVE?: string;
+  MOYASAR_SECRET_KEY?: string | undefined;
+  MOYASAR_PAYMENT_CALLBACK_URL?: string | undefined;
+  MOYASAR_WEBHOOK_SECRET?: string | undefined;
+  MOYASAR_EXPECT_LIVE?: string | undefined;
 }
 
 export interface MoyasarCheckoutRuntimeConfig {

@@ -22,7 +22,12 @@ if (production && !databaseUrl) {
   throw new Error("DATABASE_URL is required in production; refusing to start without persistent IAM storage");
 }
 const moyasarExpectedLiveMode = process.env.MOYASAR_EXPECT_LIVE;
-const moyasarCheckoutConfig = createMoyasarCheckoutRuntimeConfig(process.env);
+const moyasarCheckoutConfig = createMoyasarCheckoutRuntimeConfig({
+  MOYASAR_SECRET_KEY: process.env.MOYASAR_SECRET_KEY,
+  MOYASAR_PAYMENT_CALLBACK_URL: process.env.MOYASAR_PAYMENT_CALLBACK_URL,
+  MOYASAR_WEBHOOK_SECRET: process.env.MOYASAR_WEBHOOK_SECRET,
+  MOYASAR_EXPECT_LIVE: process.env.MOYASAR_EXPECT_LIVE
+});
 if (production && moyasarExpectedLiveMode !== "true" && moyasarExpectedLiveMode !== "false") {
   throw new Error("MOYASAR_EXPECT_LIVE must be explicitly set to true or false in production");
 }
