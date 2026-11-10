@@ -342,3 +342,14 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [ ] Add provider registry wiring in the API composition root and map deployment secret-manager references to the Moyasar webhook secret.
 - [ ] Add a trusted Moyasar payment-intent creation/fetch adapter and verify webhook payment IDs against server-created intents; do not treat the webhook body as sufficient proof of payment.
 - [ ] Add end-to-end sandbox tests for purchase, authorization then capture, partial capture, duplicate delivery, refunds, voids, and test/live key separation.
+
+
+## Moyasar API runtime wiring — development increment (2026-11-10)
+- [x] API capture route now recognizes Moyasar's native `payment_captured` event name in addition to the existing provider-neutral `payment.captured` event.
+- [x] Added API route coverage proving native Moyasar capture events are sent to the trusted capture processor and bypass the payment-adjustment inbox.
+- [x] Added injectable provider-specific webhook verifiers to the PostgreSQL API composition root.
+- [x] Registered the Moyasar capture decoder and shared-secret verifier in the API server composition root.
+- [x] Added `MOYASAR_WEBHOOK_SECRET` to the environment example and passed it only to the API service through Compose; a blank value keeps the provider unavailable (fail-closed).
+- [ ] Verify CI for the new provider route, decoder, verifier, TypeScript, full tests, database acceptance suite, and Compose validation.
+- [ ] Provision the secret in the deployment secret manager and register the HTTPS webhook URL in Moyasar dashboard; no credential or live endpoint is present in this repository.
+- [ ] Implement authenticated server-side payment creation and authoritative payment fetch/reconciliation before production activation.
