@@ -426,3 +426,7 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Added a PostgreSQL store that reserves the attempt before the provider call and atomically records the provider intent mapping with the created state.
 - [x] Registered migration 0032 in the migration runner and API readiness gate; added unit and PostgreSQL acceptance coverage.
 - [ ] The attempt store is not yet wired to an authenticated customer checkout endpoint. Customer ownership verification, server-side order amount lookup, Moyasar sandbox contract execution, and frontend payment completion remain pending.
+
+- [x] Added migration `0033_payment_intent_creation_attempt_expiry`: only a provider-reconciled intent whose database expiry has passed can move from `created` to `expired`; the provider reference and immutable intent mapping remain available for late webhooks.
+- [x] Expired attempts no longer block a fresh payment attempt with a new idempotency key, while replaying the original key still returns its original expired attempt.
+- [ ] Authenticated customer checkout, order ownership enforcement, sandbox payment, and frontend fulfillment remain pending.

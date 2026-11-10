@@ -48,7 +48,8 @@ async function main(): Promise<void> {
       { version: "0029_initial_payment_capture_webhook_inbox", file: "0029_initial_payment_capture_webhook_inbox.sql" },
       { version: "0030_checkout_recovery_cases", file: "0030_checkout_recovery_cases.sql" },
       { version: "0031_positive_verified_payment_capture", file: "0031_positive_verified_payment_capture.sql" },
-      { version: "0032_payment_intent_creation_attempts", file: "0032_payment_intent_creation_attempts.sql" }
+      { version: "0032_payment_intent_creation_attempts", file: "0032_payment_intent_creation_attempts.sql" },
+      { version: "0033_payment_intent_creation_attempt_expiry", file: "0033_payment_intent_creation_attempt_expiry.sql" }
     ].map(async migration => ({
       version: migration.version,
       sql: await readFile(resolve(process.cwd(), `../../database/migrations/${migration.file}`), "utf8")

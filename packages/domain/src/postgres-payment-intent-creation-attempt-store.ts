@@ -7,13 +7,13 @@ export interface BeginPaymentIntentAttemptInput {
 }
 export type BeginPaymentIntentAttemptResult =
   | {outcome:"dispatch";attemptId:string}
-  | {outcome:"duplicate";attemptId:string;status:"dispatching"|"outcome_unknown"|"created"|"rejected"}
+  | {outcome:"duplicate";attemptId:string;status:"dispatching"|"outcome_unknown"|"created"|"rejected"|"expired"}
   | {outcome:"order_attempt_exists";attemptId:string;status:"dispatching"|"outcome_unknown"|"created"}
   | {outcome:"identity_collision"};
 type AttemptRow = {
   id:string;tenant_id:string;order_id:string;provider_key:string;idempotency_key:string;
   amount_minor:string|number;currency:string;
-  status:"dispatching"|"outcome_unknown"|"created"|"rejected";
+  status:"dispatching"|"outcome_unknown"|"created"|"rejected"|"expired";
   provider_payment_reference:string|null;expires_at:Date|string|null;
 };
 const valid=(x:BeginPaymentIntentAttemptInput)=>Boolean(x.tenantId.trim()&&x.orderId.trim())&&
@@ -79,6 +79,18 @@ export class PostgresPaymentIntentCreationAttemptStore {
        WHERE id=$1 AND status='outcome_unknown' RETURNING id`,
       [input.attemptId,input.failureCode,input.providerReconciliationReference]);
     return r.rowCount===1?"updated":"not_unknown";
+  }
+  /** Call only after an authoritative provider lookup confirms this intent has expired. */
+  async markProviderExpired(input:{attemptId:string;providerReconciliationReference:string}):
+    Promise<"expired"|"not_expired">{
+    if(!input.providerReconciliationReference.trim()||input.providerReconciliationReference.length>240)
+      throw new Error("INVALID_PAYMENT_INTENT_RECONCILIATION");
+    const r=await this.pool.query(
+      `UPDATE payment_intent_creation_attempts
+       SET status='expired',failure_code='PROVIDER_INTENT_EXPIRED',provider_reconciliation_reference=$2
+       WHERE id=$1 AND status='created' AND expires_at <= clock_timestamp() RETURNING id`,
+      [input.attemptId,input.providerReconciliationReference]);
+    return r.rowCount===1?"expired":"not_expired";
   }
   /** Persists the provider reference and attempt state in one database transaction. */
   async markCreated(input:{attemptId:string;providerPaymentReference:string;expiresAtUtc:string}):

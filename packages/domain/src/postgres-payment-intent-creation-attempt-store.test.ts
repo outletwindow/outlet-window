@@ -37,6 +37,21 @@ describe("durable payment-intent creation attempts",()=>{
   await store.markReconciledRejected({attemptId:"attempt-1",failureCode:"PROVIDER_CONFIRMED_ABSENT",providerReconciliationReference:"reconciliation-123"});
   expect(query.mock.calls[1]?.[0]).toContain("provider_reconciliation_reference");
  });
+ it("expires a created intent only after provider reconciliation and database expiry",async()=>{
+  const query=vi.fn(async(_sql:string)=>({rows:[{id:"attempt-1"}],rowCount:1}));
+  const store=new PostgresPaymentIntentCreationAttemptStore({query,connect:vi.fn()} as unknown as PostgresPool);
+  await expect(store.markProviderExpired({attemptId:"attempt-1",providerReconciliationReference:"provider-check-123"}))
+   .resolves.toBe("expired");
+  expect(query.mock.calls[0]?.[0]).toContain("expires_at <= clock_timestamp()");
+  expect(query.mock.calls[0]?.[0]).toContain("status='created'");
+ });
+ it("rejects empty provider expiration evidence before database access",async()=>{
+  const query=vi.fn(async()=>({rows:[],rowCount:0}));
+  const store=new PostgresPaymentIntentCreationAttemptStore({query,connect:vi.fn()} as unknown as PostgresPool);
+  await expect(store.markProviderExpired({attemptId:"attempt-1",providerReconciliationReference:" "}))
+   .rejects.toThrow("INVALID_PAYMENT_INTENT_RECONCILIATION");
+  expect(query).not.toHaveBeenCalled();
+ });
  it("validates input before database access",async()=>{
   const query=vi.fn(async()=>({rows:[],rowCount:0}));
   const store=new PostgresPaymentIntentCreationAttemptStore({query,connect:vi.fn()} as unknown as PostgresPool);
