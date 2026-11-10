@@ -547,6 +547,58 @@ describe("Outlet Window API foundation", () => {
     } finally { await protectedApp.close(); }
   });
 
+  it("creates a customer payment intent only for the authenticated order owner and forwards the idempotency key", async () => {
+    const customer: Actor = {
+      id: "customer-payment-1", role: "customer", active: true,
+      grants: [{ resource: "customer.order", actions: ["update"], scope: { orderId: "payment-order-1" } }]
+    };
+    const create = vi.fn(async () => ({
+      outcome: "created" as const, providerPaymentReference: "provider-intent-1",
+      clientSecret: "pi_secret_test_secret_123456", expiresAtUtc: "2026-11-10T22:30:00.000Z",
+      amountMinor: 12500, currency: "SAR"
+    }));
+    const protectedApp = buildApp({
+      resolveActor: async () => customer,
+      customerPaymentIntentCheckout: { create }
+    });
+    await protectedApp.ready();
+    try {
+      const denied = await protectedApp.inject({
+        method: "POST", url: "/api/v1/customer/orders/payment-order-other/payment-intents",
+        headers: { "idempotency-key": "checkout-key-0001" }
+      });
+      expect(denied.statusCode).toBe(403);
+      expect(create).not.toHaveBeenCalled();
+
+      const created = await protectedApp.inject({
+        method: "POST", url: "/api/v1/customer/orders/payment-order-1/payment-intents",
+        headers: { "idempotency-key": "checkout-key-0001" }
+      });
+      expect(created.statusCode).toBe(201);
+      expect(created.json()).toMatchObject({ outcome: "created", amountMinor: 12500, currency: "SAR" });
+      expect(create).toHaveBeenCalledWith({
+        customerId: "customer-payment-1", orderId: "payment-order-1", idempotencyKey: "checkout-key-0001"
+      });
+    } finally { await protectedApp.close(); }
+  });
+
+  it("requires an idempotency key before creating a customer payment intent", async () => {
+    const customer: Actor = {
+      id: "customer-payment-2", role: "customer", active: true,
+      grants: [{ resource: "customer.order", actions: ["update"], scope: { orderId: "payment-order-2" } }]
+    };
+    const create = vi.fn();
+    const protectedApp = buildApp({ resolveActor: async () => customer, customerPaymentIntentCheckout: { create } });
+    await protectedApp.ready();
+    try {
+      const response = await protectedApp.inject({
+        method: "POST", url: "/api/v1/customer/orders/payment-order-2/payment-intents"
+      });
+      expect(response.statusCode).toBe(400);
+      expect(create).not.toHaveBeenCalled();
+    } finally { await protectedApp.close(); }
+  });
+
   it("requires a verified customer grant before changing a delivery destination", async () => {
     let updates = 0;
     const customer: Actor = {

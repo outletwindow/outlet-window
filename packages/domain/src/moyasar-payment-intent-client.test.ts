@@ -72,6 +72,17 @@ describe("Moyasar payment intent client", () => {
     })).rejects.toThrow("MOYASAR_PAYMENT_INTENT_PROVIDER_REJECTED");
   });
 
+  it("treats provider 5xx and gateway timeout responses as ambiguous without retrying", async () => {
+    for (const status of [408, 500, 502, 503]) {
+      const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(response({ message: "temporary failure" }, status));
+      const client = new MoyasarPaymentIntentClient({ secretKey: "sk_test_0123456789", fetchImpl });
+      await expect(client.createIntent({
+        amountMinor: 100, currency: "SAR", callbackUrl: "https://shop.example.com/return"
+      })).rejects.toThrow("MOYASAR_PAYMENT_INTENT_OUTCOME_UNKNOWN");
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    }
+  });
+
   it("treats transport failures as ambiguous and never retries automatically", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockRejectedValue(new Error("network reset"));
     const client = new MoyasarPaymentIntentClient({ secretKey: "sk_test_0123456789", fetchImpl });
