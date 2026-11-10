@@ -399,3 +399,8 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Registered migration 0031 in the migration runner and API readiness gate; the initial-capture worker also refuses to start until this migration is applied.
 - [x] Added PostgreSQL acceptance SQL to prove zero-value capture evidence is rejected and the named positive-amount constraint exists; CI now runs this acceptance check.
 - [ ] Await CI for the new migration, acceptance SQL, typecheck, lint, tests, and build.
+
+## Verified capture collision regression (2026-11-10)
+- [x] Corrected the multi-match conflict path: when a provider event identity and another uniqueness identity resolve to different capture rows, the store now returns `identity_collision` (fail-closed) instead of treating the expected ambiguity as a lookup infrastructure error.
+- [x] The existing regression test covers two conflicting capture rows; CI previously exposed the mismatch between the test's expected collision outcome and the store's error path.
+- [ ] Re-run the full CI pipeline after this correction.
