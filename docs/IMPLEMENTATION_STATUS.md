@@ -382,3 +382,9 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Kept intent creation expiry validation intact; only the post-capture evidence lookup is no longer expiry-gated. Exact provider reference, amount, currency, and the order's `awaiting_payment` state remain mandatory.
 - [x] Added a regression test for a confirmed capture webhook delivered after the payment-intent expiry.
 - [ ] Re-run CI on the updated branch and verify the delayed-webhook test in the full PostgreSQL/typecheck/lint/test/build pipeline.
+
+## Payment identity collision hardening (2026-11-10)
+- [x] Removed first-row-only conflict resolution from provider payment-intent creation. If a provider payment reference and tenant idempotency key point to different existing intents, the store now sees both and returns an identity collision rather than potentially accepting whichever row sorts first.
+- [x] Applied the same fail-closed rule to verified payment-capture persistence and the durable initial-capture inbox reconciliation path; conflict lookups now inspect every matching identity instead of masking a second conflicting record with `LIMIT 1`.
+- [x] Added a regression test for a split identity conflict in verified capture persistence, alongside the payment-intent collision test.
+- [ ] Run the complete CI workflow on the updated branch and confirm all PostgreSQL acceptance checks, tests, lint, typecheck, and build.
