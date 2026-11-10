@@ -20,6 +20,10 @@ if (!Number.isInteger(port) || port < 1 || port > 65_535) {
 if (production && !databaseUrl) {
   throw new Error("DATABASE_URL is required in production; refusing to start without persistent IAM storage");
 }
+const moyasarExpectedLiveMode = process.env.MOYASAR_EXPECT_LIVE;
+if (production && moyasarExpectedLiveMode !== "true" && moyasarExpectedLiveMode !== "false") {
+  throw new Error("MOYASAR_EXPECT_LIVE must be explicitly set to true or false in production");
+}
 
 const pool = databaseUrl ? new Pool({
   connectionString: databaseUrl,
@@ -67,6 +71,10 @@ const app = pool
       pool,
       digestToken: async secret => createHash("sha256").update(secret, "utf8").digest("hex"),
       grantsForAssignments,
+      paymentWebhookSecretResolver: async providerKey =>
+        providerKey === "moyasar" ? (process.env.MOYASAR_WEBHOOK_SECRET ?? null) : null,
+      paymentCaptureDecoders: new Map([["moyasar", moyasarPaymentCaptureDecoder]]),
+      paymentCaptureWebhookVerifiers: new Map([["moyasar", createMoyasarWebhookVerifier(moyasarExpectedLiveMode === "true")]]),
       ...(sallaOAuthFlow === undefined ? {} : { sallaOAuthFlow })
     })
   : buildApp();
