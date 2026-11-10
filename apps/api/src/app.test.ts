@@ -844,8 +844,12 @@ describe("signed payment provider webhook intake", () => {
 
   it("does not allow a non-customer actor to start customer checkout", async () => {
     const create = vi.fn();
+    const nonCustomerWithOrderGrant: Actor = {
+      ...merchantActor,
+      grants: [{ resource: "customer.order", actions: ["update"], scope: { orderId: "order-1" } }]
+    };
     const app = buildApp({
-      resolveActor: async () => merchantActor,
+      resolveActor: async () => nonCustomerWithOrderGrant,
       customerPaymentIntentCheckout: { create }
     });
     await app.ready();
