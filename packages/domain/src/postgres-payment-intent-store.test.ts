@@ -18,7 +18,7 @@ describe("PostgreSQL server-owned payment intents",()=>{
     expect(query.mock.calls[0]?.[0]).toContain("ON CONFLICT DO NOTHING");
   });
 
-  it("resolves only exact provider reference, amount and currency while payable and unexpired",async()=>{
+  it("resolves only exact provider reference, amount and currency while the order remains payable, including delayed webhooks",async()=>{
     const query=vi.fn(async(_sql:string,_values?:readonly unknown[])=>({rows:[{id:"intent-1",tenant_id:"tenant-1",order_id:"order-1"}],rowCount:1}));
     const store=new PostgresPaymentIntentStore({query,connect:vi.fn()} as unknown as PostgresPool,undefined,now);
     await expect(store.findExpectedOrder({
