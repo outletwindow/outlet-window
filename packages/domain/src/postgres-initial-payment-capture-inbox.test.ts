@@ -62,6 +62,39 @@ describe("PostgresInitialPaymentCaptureInbox", () => {
     expect(query).not.toHaveBeenCalled();
   });
 
+  it("marks ambiguous capture-ledger identities as a terminal conflict", async () => {
+    const clientQuery = vi.fn()
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // BEGIN
+      .mockResolvedValueOnce({ rows: [{
+        id: "receipt-1", provider_key: "psp-a", provider_event_id: "evt-1",
+        payment_intent_id: "intent-1", provider_payment_reference: "pay-1",
+        amount_minor: "12500", currency: "SAR", captured_at: new Date(base.capturedAtUtc),
+        attempt_count: 1, status: "processing", lease_owner: "worker-1", lease_valid: true
+      }], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{
+        tenant_id: "tenant-1", order_id: "order-1", provider_key: "psp-a",
+        provider_payment_reference: "pay-1", amount_minor: "12500", currency: "SAR",
+        created_at: new Date("2026-11-09T11:00:00.000Z"),
+        expires_at: new Date("2026-11-09T13:00:00.000Z"), order_status: "awaiting_payment"
+      }], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // capture insert conflict
+      .mockResolvedValueOnce({ rows: [
+        { id: "capture-event", tenant_id: "tenant-1", order_id: "order-1" },
+        { id: "capture-key", tenant_id: "tenant-1", order_id: "order-other" }
+      ], rowCount: 2 })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 }) // fail receipt
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 }); // COMMIT
+    const client = { query: clientQuery, release: vi.fn() } as unknown as PostgresClient;
+    const pool = { query: vi.fn(), connect: vi.fn().mockResolvedValue(client) } as unknown as PostgresPool;
+    const store = new PostgresInitialPaymentCaptureInbox(pool);
+    await expect(store.applyClaimed({ receiptId: "receipt-1", workerId: "worker-1" })).resolves.toBe("conflict");
+    expect(clientQuery.mock.calls.some(call =>
+      String(call[0]).includes("failure_code=$2") && call[1]?.[1] === "CAPTURE_IDENTITY_COLLISION"
+    )).toBe(true);
+    expect(clientQuery.mock.calls.at(-1)?.[0]).toBe("COMMIT");
+    expect(client.release).toHaveBeenCalledOnce();
+  });
+
   it("does not apply a receipt after its processing lease expires", async () => {
     const clientQuery = vi.fn()
       .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // BEGIN
