@@ -31,7 +31,7 @@ export class PostgresVerifiedOrderPaymentCaptureStore {
         !/^[a-zA-Z0-9._-]{1,100}$/.test(input.providerKey) ||
         !/^[a-zA-Z0-9._:-]{1,240}$/.test(input.providerEventId) ||
         !input.providerPaymentReference.trim() || input.providerPaymentReference.length > 240 ||
-        !Number.isSafeInteger(input.amountMinor) || input.amountMinor < 0 ||
+        !Number.isSafeInteger(input.amountMinor) || input.amountMinor <= 0 ||
         !/^[A-Z]{3}$/.test(input.currency) ||
         !Number.isFinite(Date.parse(input.capturedAtUtc)) ||
         !/^[a-zA-Z0-9._:-]{8,240}$/.test(input.idempotencyKey)) {
