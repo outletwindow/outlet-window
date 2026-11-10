@@ -24,6 +24,8 @@ import { PostgresFulfillmentHandoverInbox } from "../../../packages/domain/src/p
 import { PostgresFulfillmentProviderScopeAuthorizer } from "../../../packages/domain/src/postgres-fulfillment-provider-scope-authorizer.js";
 import { PostgresMerchantOrderItemPreparationStore } from "../../../packages/domain/src/postgres-merchant-order-item-preparation.js";
 import { PostgresPaymentIntentStore } from "../../../packages/domain/src/postgres-payment-intent-store.js";
+import { PostgresCustomerPaymentIntentCheckout } from "../../../packages/domain/src/postgres-customer-payment-intent-checkout.js";
+import type { MoyasarPaymentIntentClient } from "../../../packages/domain/src/moyasar-payment-intent-client.js";
 import { PostgresVerifiedOrderPaymentCaptureStore } from "../../../packages/domain/src/postgres-verified-order-payment-capture.js";
 import { PostgresInitialPaymentCaptureInbox } from "../../../packages/domain/src/postgres-initial-payment-capture-inbox.js";
 import { VerifiedOrderPaymentCaptureWebhookProcessor, type PaymentCaptureEventDecoder, type PaymentCaptureWebhookVerifier } from "../../../packages/domain/src/verified-order-payment-capture-webhook.js";
@@ -38,6 +40,8 @@ export interface PostgresApiOptions {
   version?: string;
   customerDeliveryDestinations?: CustomerDeliveryDestinationService;
   customerPaymentAdjustments?: CustomerPaymentAdjustmentActions;
+  moyasarPaymentIntentClient?: Pick<MoyasarPaymentIntentClient,"createIntent">;
+  paymentCallbackUrl?: string;
   merchantCatalog?: MerchantCatalogRepository;
   merchantCatalogImport?: MerchantCatalogImportService;
   commerceConnectors?: CommerceConnectorRegistry;
@@ -122,6 +126,7 @@ export function buildPostgresApp(options: PostgresApiOptions) {
       };
     })(),
     ...(options.customerDeliveryDestinations === undefined ? {} : { customerDeliveryDestinations: options.customerDeliveryDestinations }),
+    ...(options.moyasarPaymentIntentClient === undefined || options.paymentCallbackUrl === undefined ? {} : { customerPaymentIntentCheckout: new PostgresCustomerPaymentIntentCheckout(options.pool,options.moyasarPaymentIntentClient,options.paymentCallbackUrl) }),
     readinessCheck: async () => {
       const requiredMigrations = [
         "0001_identity_access_sessions",

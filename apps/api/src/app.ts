@@ -62,6 +62,7 @@ export interface MerchantCatalogRepository {
   listProducts(tenantId: string, limit?: number): Promise<Array<Record<string, unknown>>>;
 }
 
+export interface CustomerPaymentIntentCheckout { create(input:{customerId:string;orderId:string;idempotencyKey:string}):Promise<import("../../../packages/domain/src/postgres-customer-payment-intent-checkout.js").CustomerPaymentIntentCheckoutResult>; }
 export interface CustomerPaymentAdjustmentActions {
   consent(input: { orderId: string; adjustmentId: string; customerId: string }): Promise<{ outcome: string }>;
   decline(input: { orderId: string; adjustmentId: string; customerId: string }): Promise<{ outcome: string }>;
@@ -121,6 +122,7 @@ export interface AppOptions {
   merchantOrderItemPreparation?: { record(input: RecordPreparationCheckInput): Promise<RecordPreparationCheckResult> };
   customerDeliveryDestinations?: CustomerDeliveryDestinationService;
   customerPaymentAdjustments?: CustomerPaymentAdjustmentActions;
+  customerPaymentIntentCheckout?: CustomerPaymentIntentCheckout;
   integrationHub?: IntegrationHub;
   merchantCatalog?: MerchantCatalogRepository;
   /** Resolve merchant tenant ownership from trusted persistence after authorization. */
@@ -696,6 +698,23 @@ app.patch<{
         quoteReference: updated.quote.quoteReference, expiresAtUtc: updated.quote.expiresAtUtc
       }
     });
+  });
+
+  app.post<{Params:{orderId:string}}>("/api/v1/customer/orders/:orderId/payment-intents",async(request,reply)=>{
+    const auth=await authorizeRequest(request,options,{resource:"customer.order",action:"update",scope:{orderId:request.params.orderId}});
+    if(!auth.actor)return sendAuthorizationFailure(reply,auth.statusCode,auth.decision.reason);
+    if(auth.actor.role!=="customer")return reply.code(403).send({error:"customer_only"});
+    if(!options.customerPaymentIntentCheckout)return reply.code(503).send({error:"payment_checkout_unavailable"});
+    const key=request.headers["idempotency-key"]; if(typeof key!=="string")return reply.code(400).send({error:"idempotency_key_required"});
+    const result=await options.customerPaymentIntentCheckout.create({customerId:auth.actor.id,orderId:request.params.orderId,idempotencyKey:key});
+    if(result.outcome==="not_found")return reply.code(404).send({error:"order_not_found"});
+    if(result.outcome==="order_not_payable")return reply.code(409).send({error:"order_not_payable"});
+    if(result.outcome==="attempt_exists")return reply.code(409).send({error:"payment_attempt_exists"});
+    if(result.outcome==="idempotency_conflict")return reply.code(409).send({error:"idempotency_conflict"});
+    if(result.outcome==="outcome_unknown")return reply.code(202).send({outcome:"outcome_unknown"});
+    if(result.outcome==="provider_rejected")return reply.code(502).send({error:"payment_provider_rejected"});
+    if(result.outcome==="persistence_conflict")return reply.code(503).send({error:"payment_intent_persistence_conflict"});
+    return reply.code(201).send(result);
   });
 
   app.post<{

@@ -96,3 +96,5 @@ export * from "./postgres-payment-intent-creation-attempt-store.js";
 
 export * from "./postgres-initial-payment-capture-inbox.js";
 export * from "./postgres-checkout-recovery-case-store.js";
+
+export * from "./postgres-customer-payment-intent-checkout.js";
