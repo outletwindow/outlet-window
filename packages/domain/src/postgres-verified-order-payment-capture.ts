@@ -67,7 +67,8 @@ export class PostgresVerifiedOrderPaymentCaptureStore {
       [input.providerKey, input.providerEventId, input.providerPaymentReference,
         input.tenantId, input.orderId, input.idempotencyKey]
     );
-    if (existing.rowCount !== 1) throw new Error("VERIFIED_CAPTURE_CONFLICT_LOOKUP_FAILED");
+    if (existing.rowCount === 0) throw new Error("VERIFIED_CAPTURE_CONFLICT_LOOKUP_FAILED");
+    if (existing.rowCount !== 1) return { outcome: "identity_collision" };
     const row = existing.rows[0]!;
     const same = row.tenant_id === input.tenantId && row.order_id === input.orderId &&
       row.provider_key === input.providerKey && row.provider_event_id === input.providerEventId &&
