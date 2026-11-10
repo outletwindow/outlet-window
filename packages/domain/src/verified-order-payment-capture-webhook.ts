@@ -85,7 +85,7 @@ export class VerifiedOrderPaymentCaptureWebhookProcessor {
         })
       : verifyPaymentProviderWebhook({
           rawBody: input.rawBody,
-          ...(input.signatureHeader === undefined ? {} : { signatureHeader: input.signatureHeader }),
+          signatureHeader: input.signatureHeader,
           secret,
           ...(this.dependencies.now === undefined ? {} : { nowUtc: this.dependencies.now() })
         });
