@@ -6,6 +6,8 @@ import { grantsForAssignments } from "./permissions.js";
 import { SallaOAuthHttpClient } from "../../../packages/domain/src/salla-oauth-http-client.js";
 import { SallaOAuthFlowService, PostgresSallaOAuthStateStore, PostgresSallaOAuthTokenVault, PostgresSallaRefreshLock } from "../../../packages/domain/src/postgres-salla-oauth.js";
 import { PostgresIntegrationRegistryStore } from "../../../packages/domain/src/postgres-integration-registry-store.js";
+import { moyasarWebhookVerifier } from "../../../packages/domain/src/moyasar-payment-webhook-verifier.js";
+import { moyasarPaymentCaptureDecoder } from "../../../packages/domain/src/moyasar-payment-capture-decoder.js";
 
 const port = Number.parseInt(process.env.PORT ?? "3000", 10);
 const host = process.env.HOST ?? "0.0.0.0";
