@@ -388,3 +388,8 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Applied the same fail-closed rule to verified payment-capture persistence and the durable initial-capture inbox reconciliation path; conflict lookups now inspect every matching identity instead of masking a second conflicting record with `LIMIT 1`.
 - [x] Added a regression test for a split identity conflict in verified capture persistence, alongside the payment-intent collision test.
 - [ ] Run the complete CI workflow on the updated branch and confirm all PostgreSQL acceptance checks, tests, lint, typecheck, and build.
+
+## Verified payment capture validation (2026-11-10)
+- [x] Tightened the verified-capture persistence boundary to reject zero-value captures. Provider webhook decoding already rejects non-positive capture amounts; the database-facing domain store now enforces the same invariant independently.
+- [x] Added a regression assertion that zero-value capture evidence is rejected before any database write.
+- [ ] Confirm the updated payment identity-collision and zero-value capture tests pass in the complete CI pipeline.
