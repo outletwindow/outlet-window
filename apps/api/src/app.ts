@@ -311,7 +311,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       return reply.code(400).send({ error: "invalid_webhook_event" });
     }
     const eventType = (body as { type?: unknown }).type;
-    if (eventType === "payment.captured") {
+    if (eventType === "payment.captured" || (providerKey === "moyasar" && eventType === "payment_captured")) {
       if (!options.paymentCaptureWebhookHandler) {
         return reply.code(503).send({ error: "payment_capture_processor_unavailable" });
       }
