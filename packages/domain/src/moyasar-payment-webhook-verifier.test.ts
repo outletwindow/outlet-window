@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { moyasarWebhookVerifier } from "./moyasar-payment-webhook-verifier.js";
+import { createMoyasarWebhookVerifier, moyasarWebhookVerifier } from "./moyasar-payment-webhook-verifier.js";
 
 describe("Moyasar webhook verifier", () => {
   const secret = "moyasar-endpoint-shared-secret";
@@ -24,6 +24,12 @@ describe("Moyasar webhook verifier", () => {
     })).toBe(false);
     expect(moyasarWebhookVerifier.verify({ rawBody: "{", secret })).toBe(false);
     expect(moyasarWebhookVerifier.verify({ rawBody: "x".repeat(65_537), secret })).toBe(false);
+  });
+
+  it("binds the endpoint to the configured test/live mode", () => {
+    const liveBody = JSON.stringify({ ...JSON.parse(body), live: true });
+    expect(createMoyasarWebhookVerifier(true).verify({ rawBody: liveBody, secret })).toBe(true);
+    expect(createMoyasarWebhookVerifier(false).verify({ rawBody: liveBody, secret })).toBe(false);
   });
 
   it("does not accept arrays or non-object JSON as webhook envelopes", () => {
