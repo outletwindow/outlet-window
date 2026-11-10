@@ -26,7 +26,7 @@ import { PostgresMerchantOrderItemPreparationStore } from "../../../packages/dom
 import { PostgresPaymentIntentStore } from "../../../packages/domain/src/postgres-payment-intent-store.js";
 import { PostgresVerifiedOrderPaymentCaptureStore } from "../../../packages/domain/src/postgres-verified-order-payment-capture.js";
 import { PostgresInitialPaymentCaptureInbox } from "../../../packages/domain/src/postgres-initial-payment-capture-inbox.js";
-import { VerifiedOrderPaymentCaptureWebhookProcessor, type PaymentCaptureEventDecoder } from "../../../packages/domain/src/verified-order-payment-capture-webhook.js";
+import { VerifiedOrderPaymentCaptureWebhookProcessor, type PaymentCaptureEventDecoder, type PaymentCaptureWebhookVerifier } from "../../../packages/domain/src/verified-order-payment-capture-webhook.js";
 
 export interface PostgresApiOptions {
   pool: PostgresPool;
@@ -44,6 +44,7 @@ export interface PostgresApiOptions {
   paymentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
   paymentCaptureWebhookHandler?: PaymentCaptureWebhookHandler;
   paymentCaptureDecoders?: ReadonlyMap<string, PaymentCaptureEventDecoder>;
+  paymentCaptureWebhookVerifiers?: ReadonlyMap<string, PaymentCaptureWebhookVerifier>;
   fulfillmentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
   fulfillmentWebhookAuthorizationResolver?: NonNullable<AppOptions["fulfillmentWebhookAuthorizationResolver"]>;
   sallaOAuthFlow?: SallaOAuthFlow;
@@ -61,6 +62,7 @@ export function buildPostgresApp(options: PostgresApiOptions) {
       ? new VerifiedOrderPaymentCaptureWebhookProcessor({
           secretResolver: options.paymentWebhookSecretResolver,
           decoders: options.paymentCaptureDecoders,
+          ...(options.paymentCaptureWebhookVerifiers === undefined ? {} : { webhookVerifiers: options.paymentCaptureWebhookVerifiers }),
           orderResolver: new PostgresPaymentIntentStore(options.pool),
           captureStore: new PostgresVerifiedOrderPaymentCaptureStore(options.pool),
           inboxStore: new PostgresInitialPaymentCaptureInbox(options.pool),
