@@ -331,3 +331,14 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [ ] Wire `moyasarWebhookVerifier` into the deployment's provider registry and secret-manager resolver; no Moyasar credentials or live endpoint are configured.
 - [ ] Implement and verify the Moyasar-specific payment-capture event decoder against the account's enabled webhook event schema and sandbox payloads; this verifier alone does not make Moyasar payments operational.
 - [ ] Run Moyasar sandbox contract tests and confirm webhook registration, retry handling, event deduplication, and canonical payment-status reconciliation before enabling live traffic.
+
+
+## Moyasar capture webhook decoder — development increment (2026-11-10)
+- [x] Added a Moyasar-specific decoder that accepts only `payment_captured` events and requires the nested payment status to be `captured`.
+- [x] Maps the provider event ID, payment ID, captured amount (including partial captures), currency, and captured timestamp into the canonical capture contract.
+- [x] Rejects `payment_paid`, `payment_authorized`, refund, void, 3DS, malformed, invalid-timestamp, zero-capture, and malformed-currency events from the initial-capture path.
+- [x] Tightened webhook envelope validation to require event ID/type, valid creation timestamp, live-mode boolean, object data, account name, and non-empty shared secret.
+- [x] Exported the verifier and decoder from the domain package.
+- [ ] Add provider registry wiring in the API composition root and map deployment secret-manager references to the Moyasar webhook secret.
+- [ ] Add a trusted Moyasar payment-intent creation/fetch adapter and verify webhook payment IDs against server-created intents; do not treat the webhook body as sufficient proof of payment.
+- [ ] Add end-to-end sandbox tests for purchase, authorization then capture, partial capture, duplicate delivery, refunds, voids, and test/live key separation.
