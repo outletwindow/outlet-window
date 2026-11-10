@@ -153,7 +153,8 @@ export function buildPostgresApp(options: PostgresApiOptions) {
         "0027_verified_order_payment_captures",
         "0028_provider_payment_intents",
         "0029_initial_payment_capture_webhook_inbox",
-        "0030_checkout_recovery_cases"
+        "0030_checkout_recovery_cases",
+        "0031_positive_verified_payment_capture"
       ];
       const result = await options.pool.query<{ version: string }>(
         "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",
