@@ -31,7 +31,7 @@ describe("durable payment-intent creation attempts",()=>{
    .resolves.toEqual({outcome:"order_attempt_exists",attemptId:"attempt-1",status:"outcome_unknown"});
  });
  it("records provider-confirmed absence only with a reconciliation reference",async()=>{
-  const query=vi.fn(async()=>({rows:[{id:"attempt-1"}],rowCount:1}));
+  const query=vi.fn(async(_sql:string)=>({rows:[{id:"attempt-1"}],rowCount:1}));
   const store=new PostgresPaymentIntentCreationAttemptStore({query,connect:vi.fn()} as unknown as PostgresPool);
   await expect(store.markOutcomeUnknown("attempt-1")).resolves.toBe("updated");
   await store.markReconciledRejected({attemptId:"attempt-1",failureCode:"PROVIDER_CONFIRMED_ABSENT",providerReconciliationReference:"reconciliation-123"});
