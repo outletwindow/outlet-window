@@ -42,7 +42,7 @@ export class PostgresPaymentIntentStore implements PaymentCaptureOrderResolver {
       `SELECT id,tenant_id,order_id,provider_key,provider_payment_reference,amount_minor,currency,idempotency_key,expires_at
        FROM provider_payment_intents
        WHERE (provider_key=$1 AND provider_payment_reference=$2) OR (tenant_id=$3 AND idempotency_key=$4)
-       ORDER BY created_at LIMIT 1`,
+       ORDER BY created_at`,
       [input.providerKey,input.providerPaymentReference,input.tenantId,input.idempotencyKey]
     );
     if (existing.rowCount !== 1) return {outcome:"identity_collision"};
