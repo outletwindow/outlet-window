@@ -113,4 +113,62 @@ describe("authenticated customer payment-intent checkout",()=>{
   expect(db.poolQuery.mock.calls.some(([sql])=>String(sql).includes("SET status='outcome_unknown'"))).toBe(true);
   expect(provider.createIntent).toHaveBeenCalledOnce();
  });
+
+ it("recovers the existing client secret only for an exact idempotent replay",async()=>{
+  const db=transactionalPool({beginAttempt:false});
+  db.poolQuery.mockImplementation(async(sql:string)=>{
+   if(sql.includes("FROM customer_orders"))return {rows:[payableOrder],rowCount:1};
+   if(sql.includes("INSERT INTO payment_intent_creation_attempts"))return {rows:[],rowCount:0};
+   if(sql.includes("FROM payment_intent_creation_attempts"))return {rows:[{
+    id:"attempt-1",tenant_id:"tenant-1",order_id:"order-1",provider_key:"moyasar",
+    idempotency_key:"checkout-key-0001",amount_minor:12500,currency:"SAR",status:"created",
+    provider_payment_reference:intent.id,expires_at:new Date(intent.expiresAtUtc)
+   }],rowCount:1};
+   throw new Error("UNEXPECTED_POOL_QUERY");
+  });
+  const provider={createIntent:vi.fn(),fetchIntent:vi.fn(async()=>({...intent,status:"created" as const}))};
+  const checkout=new PostgresCustomerPaymentIntentCheckout(db.pool,provider,callbackUrl);
+  await expect(checkout.create({customerId:"customer-1",orderId:"order-1",idempotencyKey:"checkout-key-0001"}))
+   .resolves.toEqual({outcome:"created",providerPaymentReference:intent.id,clientSecret:intent.clientSecret,
+    expiresAtUtc:intent.expiresAtUtc,amountMinor:12500,currency:"SAR"});
+  expect(provider.createIntent).not.toHaveBeenCalled();
+  expect(provider.fetchIntent).toHaveBeenCalledWith(intent.id);
+ });
+ it("does not return a secret for an already fulfilled intent",async()=>{
+  const db=transactionalPool({beginAttempt:false});
+  db.poolQuery.mockImplementation(async(sql:string)=>{
+   if(sql.includes("FROM customer_orders"))return {rows:[payableOrder],rowCount:1};
+   if(sql.includes("INSERT INTO payment_intent_creation_attempts"))return {rows:[],rowCount:0};
+   if(sql.includes("FROM payment_intent_creation_attempts"))return {rows:[{
+    id:"attempt-1",tenant_id:"tenant-1",order_id:"order-1",provider_key:"moyasar",
+    idempotency_key:"checkout-key-0001",amount_minor:12500,currency:"SAR",status:"created",
+    provider_payment_reference:intent.id,expires_at:new Date(intent.expiresAtUtc)
+   }],rowCount:1};
+   throw new Error("UNEXPECTED_POOL_QUERY");
+  });
+  const provider={createIntent:vi.fn(),fetchIntent:vi.fn(async()=>({...intent,status:"fulfilled" as const}))};
+  const checkout=new PostgresCustomerPaymentIntentCheckout(db.pool,provider,callbackUrl);
+  await expect(checkout.create({customerId:"customer-1",orderId:"order-1",idempotencyKey:"checkout-key-0001"}))
+   .resolves.toEqual({outcome:"attempt_exists"});
+  expect(provider.createIntent).not.toHaveBeenCalled();
+ });
+ it("returns recovery unavailable when provider lookup fails transiently",async()=>{
+  const db=transactionalPool({beginAttempt:false});
+  db.poolQuery.mockImplementation(async(sql:string)=>{
+   if(sql.includes("FROM customer_orders"))return {rows:[payableOrder],rowCount:1};
+   if(sql.includes("INSERT INTO payment_intent_creation_attempts"))return {rows:[],rowCount:0};
+   if(sql.includes("FROM payment_intent_creation_attempts"))return {rows:[{
+    id:"attempt-1",tenant_id:"tenant-1",order_id:"order-1",provider_key:"moyasar",
+    idempotency_key:"checkout-key-0001",amount_minor:12500,currency:"SAR",status:"created",
+    provider_payment_reference:intent.id,expires_at:new Date(intent.expiresAtUtc)
+   }],rowCount:1};
+   throw new Error("UNEXPECTED_POOL_QUERY");
+  });
+  const provider={createIntent:vi.fn(),fetchIntent:vi.fn().mockRejectedValue(new Error("provider unavailable"))};
+  const checkout=new PostgresCustomerPaymentIntentCheckout(db.pool,provider,callbackUrl);
+  await expect(checkout.create({customerId:"customer-1",orderId:"order-1",idempotencyKey:"checkout-key-0001"}))
+   .resolves.toEqual({outcome:"recovery_unavailable"});
+  expect(provider.createIntent).not.toHaveBeenCalled();
+ });
+
 });

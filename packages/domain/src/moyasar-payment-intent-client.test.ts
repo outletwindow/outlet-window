@@ -111,4 +111,38 @@ describe("Moyasar payment intent client", () => {
       })).rejects.toThrow("MOYASAR_PAYMENT_INTENT_INVALID_RESPONSE");
     }
   });
+
+  it("fetches an existing intent with server-only authentication for recovery", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(response(validPayload, 200));
+    const client = new MoyasarPaymentIntentClient({ secretKey: "sk_test_0123456789abcdef", fetchImpl, now: () => now });
+    await expect(client.fetchIntent(validPayload.id)).resolves.toEqual({
+      id: validPayload.id, amount: 12500, currency: "SAR", clientSecret: validPayload.client_secret,
+      expiresAtUtc: validPayload.expires_at, status: "created"
+    });
+    const [url, init] = fetchImpl.mock.calls[0]!;
+    expect(url).toBe(`https://api.moyasar.com/v1/payment_intents/${validPayload.id}`);
+    expect(init?.method).toBe("GET");
+    expect((init?.headers as Record<string,string>).authorization).toBe(
+      `Basic ${Buffer.from("sk_test_0123456789abcdef:").toString("base64")}`
+    );
+    expect(init?.redirect).toBe("error");
+  });
+
+  it("rejects a mismatched provider intent identity", async () => {
+    const payload = {...validPayload,id:"00000000-0000-4000-8000-000000000000"};
+    const client = new MoyasarPaymentIntentClient({
+      secretKey: "sk_test_0123456789", fetchImpl: vi.fn<typeof fetch>().mockResolvedValue(response(payload,200)), now: () => now
+    });
+    await expect(client.fetchIntent(validPayload.id)).rejects.toThrow("MOYASAR_PAYMENT_INTENT_FETCH_INVALID_RESPONSE");
+  });
+
+  it("preserves fulfilled lifecycle state instead of treating it as a reusable checkout", async () => {
+    const client = new MoyasarPaymentIntentClient({
+      secretKey: "sk_test_0123456789",
+      fetchImpl: vi.fn<typeof fetch>().mockResolvedValue(response({...validPayload,status:"fulfilled"},200)), now: () => now
+    });
+    await expect(client.fetchIntent(validPayload.id)).resolves.toMatchObject({status:"fulfilled"});
+  });
+
+
 });

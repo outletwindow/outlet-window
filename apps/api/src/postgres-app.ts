@@ -40,7 +40,7 @@ export interface PostgresApiOptions {
   version?: string;
   customerDeliveryDestinations?: CustomerDeliveryDestinationService;
   customerPaymentAdjustments?: CustomerPaymentAdjustmentActions;
-  moyasarPaymentIntentClient?: Pick<MoyasarPaymentIntentClient,"createIntent">;
+  moyasarPaymentIntentClient?: Pick<MoyasarPaymentIntentClient,"createIntent">&Partial<Pick<MoyasarPaymentIntentClient,"fetchIntent">>;
   paymentCallbackUrl?: string;
   merchantCatalog?: MerchantCatalogRepository;
   merchantCatalogImport?: MerchantCatalogImportService;

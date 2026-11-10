@@ -714,6 +714,7 @@ app.patch<{
     if(result.outcome==="outcome_unknown")return reply.code(202).send({outcome:"outcome_unknown"});
     if(result.outcome==="provider_rejected")return reply.code(502).send({error:"payment_provider_rejected"});
     if(result.outcome==="persistence_conflict")return reply.code(503).send({error:"payment_intent_persistence_conflict"});
+    if(result.outcome==="recovery_unavailable")return reply.code(503).send({error:"payment_intent_recovery_unavailable"});
     return reply.code(201).send(result);
   });
 

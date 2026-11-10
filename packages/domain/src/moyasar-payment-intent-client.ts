@@ -6,6 +6,9 @@ export interface MoyasarPaymentIntent {
   expiresAtUtc: string;
 }
 
+export type MoyasarPaymentIntentStatus = "created" | "fulfilled" | "canceled";
+export interface RetrievedMoyasarPaymentIntent extends MoyasarPaymentIntent { status: MoyasarPaymentIntentStatus; }
+
 export interface MoyasarPaymentIntentRequest {
   amountMinor: number;
   currency: string;
@@ -55,6 +58,41 @@ export class MoyasarPaymentIntentClient {
     if (!Number.isSafeInteger(this.timeoutMs) || this.timeoutMs < 100 || this.timeoutMs > 30_000) {
       throw new Error("INVALID_MOYASAR_TIMEOUT");
     }
+  }
+
+
+  /** Server-side lookup used only to recover an exact idempotent checkout replay. */
+  async fetchIntent(intentId: string): Promise<RetrievedMoyasarPaymentIntent> {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(intentId)) {
+      throw new Error("INVALID_MOYASAR_PAYMENT_INTENT_ID");
+    }
+    let response: Response;
+    try {
+      response = await this.fetchImpl(`https://api.moyasar.com/v1/payment_intents/${encodeURIComponent(intentId)}`, {
+        method: "GET",
+        headers: {
+          authorization: `Basic ${Buffer.from(`${this.options.secretKey}:`, "utf8").toString("base64")}`,
+          accept: "application/json"
+        },
+        redirect: "error",
+        signal: AbortSignal.timeout(this.timeoutMs)
+      });
+    } catch { throw new Error("MOYASAR_PAYMENT_INTENT_FETCH_OUTCOME_UNKNOWN"); }
+    if (!response.ok) {
+      if (response.status === 408 || response.status >= 500) throw new Error("MOYASAR_PAYMENT_INTENT_FETCH_OUTCOME_UNKNOWN");
+      throw new Error("MOYASAR_PAYMENT_INTENT_FETCH_REJECTED");
+    }
+    let payload: MoyasarIntentResponse;
+    try { payload = await response.json() as MoyasarIntentResponse; }
+    catch { throw new Error("MOYASAR_PAYMENT_INTENT_FETCH_INVALID_RESPONSE"); }
+    const expiry = typeof payload.expires_at === "string" ? Date.parse(payload.expires_at) : Number.NaN;
+    if (payload.id !== intentId || !Number.isSafeInteger(payload.amount) || (payload.amount as number) < 100 ||
+        typeof payload.currency !== "string" || !/^[A-Z]{3}$/.test(payload.currency) ||
+        typeof payload.client_secret !== "string" || !/^pi_secret_[A-Za-z0-9_-]{12,}$/.test(payload.client_secret) ||
+        (payload.status !== "created" && payload.status !== "fulfilled" && payload.status !== "canceled") ||
+        !Number.isFinite(expiry)) throw new Error("MOYASAR_PAYMENT_INTENT_FETCH_INVALID_RESPONSE");
+    return { id: intentId, amount: payload.amount as number, currency: payload.currency,
+      clientSecret: payload.client_secret, expiresAtUtc: new Date(expiry).toISOString(), status: payload.status };
   }
 
   async createIntent(input: MoyasarPaymentIntentRequest): Promise<MoyasarPaymentIntent> {

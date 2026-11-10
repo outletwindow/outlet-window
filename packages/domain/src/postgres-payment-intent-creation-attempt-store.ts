@@ -7,7 +7,7 @@ export interface BeginPaymentIntentAttemptInput {
 }
 export type BeginPaymentIntentAttemptResult =
   | {outcome:"dispatch";attemptId:string}
-  | {outcome:"duplicate";attemptId:string;status:"dispatching"|"outcome_unknown"|"created"|"rejected"|"expired"}
+  | {outcome:"duplicate";attemptId:string;status:"dispatching"|"outcome_unknown"|"created"|"rejected"|"expired";providerPaymentReference:string|null;expiresAtUtc:string|null}
   | {outcome:"order_attempt_exists";attemptId:string;status:"dispatching"|"outcome_unknown"|"created"}
   | {outcome:"identity_collision"};
 type AttemptRow = {
@@ -46,7 +46,7 @@ export class PostgresPaymentIntentCreationAttemptStore {
       const r=exact[0]!;
       const same=r.order_id===input.orderId&&r.provider_key===input.providerKey&&
         Number(r.amount_minor)===input.amountMinor&&r.currency===input.currency;
-      return same?{outcome:"duplicate",attemptId:r.id,status:r.status}:{outcome:"identity_collision"};
+      return same?{outcome:"duplicate",attemptId:r.id,status:r.status,providerPaymentReference:r.provider_payment_reference,expiresAtUtc:r.expires_at===null?null:new Date(r.expires_at).toISOString()}:{outcome:"identity_collision"};
     }
     const active=found.rows.filter((r):r is AttemptRow & {
       status:"dispatching"|"outcome_unknown"|"created"

@@ -4,12 +4,12 @@ import type { MoyasarPaymentIntentClient } from "./moyasar-payment-intent-client
 
 export type CustomerPaymentIntentCheckoutResult =
  | { outcome:"created"; providerPaymentReference:string; clientSecret:string; expiresAtUtc:string; amountMinor:number; currency:string }
- | { outcome:"not_found"|"order_not_payable"|"attempt_exists"|"idempotency_conflict"|"outcome_unknown"|"provider_rejected"|"persistence_conflict" };
+ | { outcome:"not_found"|"order_not_payable"|"attempt_exists"|"idempotency_conflict"|"outcome_unknown"|"provider_rejected"|"persistence_conflict"|"recovery_unavailable" };
 
 /** Authenticated server-side checkout. The callback URL is fixed by trusted server configuration. */
 export class PostgresCustomerPaymentIntentCheckout {
  private readonly attempts:PostgresPaymentIntentCreationAttemptStore;
- constructor(private readonly pool:PostgresPool, private readonly provider:Pick<MoyasarPaymentIntentClient,"createIntent">, private readonly callbackUrl:string) {
+ constructor(private readonly pool:PostgresPool, private readonly provider:Pick<MoyasarPaymentIntentClient,"createIntent">&Partial<Pick<MoyasarPaymentIntentClient,"fetchIntent">>, private readonly callbackUrl:string) {
   const callback=new URL(callbackUrl);
   if(callback.protocol!=="https:"||callback.username||callback.password) throw new Error("INVALID_PAYMENT_CALLBACK_URL");
   this.attempts=new PostgresPaymentIntentCreationAttemptStore(pool);
@@ -23,6 +23,17 @@ export class PostgresCustomerPaymentIntentCheckout {
   if(order.status!=="awaiting_payment"||!Number.isSafeInteger(amountMinor)||amountMinor<100) return {outcome:"order_not_payable"};
   const attempt=await this.attempts.begin({tenantId:order.tenant_id,orderId:input.orderId,providerKey:"moyasar",idempotencyKey:input.idempotencyKey,amountMinor,currency});
   if(attempt.outcome==="identity_collision") return {outcome:"idempotency_conflict"};
+  if(attempt.outcome==="duplicate") {
+   if(attempt.status!=="created"||!attempt.providerPaymentReference||!attempt.expiresAtUtc||!this.provider.fetchIntent)
+    return {outcome:"attempt_exists"};
+   let recovered;
+   try { recovered=await this.provider.fetchIntent(attempt.providerPaymentReference); }
+   catch { return {outcome:"recovery_unavailable"}; }
+   if(recovered.status!=="created"||recovered.amount!==amountMinor||recovered.currency!==currency||
+      Date.parse(recovered.expiresAtUtc)<=Date.now()) return {outcome:"attempt_exists"};
+   return {outcome:"created",providerPaymentReference:recovered.id,clientSecret:recovered.clientSecret,
+    expiresAtUtc:recovered.expiresAtUtc,amountMinor,currency};
+  }
   if(attempt.outcome!=="dispatch") return {outcome:"attempt_exists"};
   let intent;
   try { intent=await this.provider.createIntent({amountMinor,currency,callbackUrl:this.callbackUrl,description:"Outlet Window order "+input.orderId}); }

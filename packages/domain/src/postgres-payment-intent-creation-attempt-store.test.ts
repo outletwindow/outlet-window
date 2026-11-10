@@ -13,7 +13,7 @@ describe("durable payment-intent creation attempts",()=>{
    id:"attempt-1",tenant_id:"tenant-1",order_id:"order-1",provider_key:"moyasar",idempotency_key:"checkout-intent-001",
    amount_minor:12500,currency:"SAR",status:"outcome_unknown",provider_payment_reference:null,expires_at:null}],rowCount:1});
   const store=new PostgresPaymentIntentCreationAttemptStore({query,connect:vi.fn()} as unknown as PostgresPool);
-  await expect(store.begin(input)).resolves.toEqual({outcome:"duplicate",attemptId:"attempt-1",status:"outcome_unknown"});
+  await expect(store.begin(input)).resolves.toEqual({outcome:"duplicate",attemptId:"attempt-1",status:"outcome_unknown",providerPaymentReference:null,expiresAtUtc:null});
  });
  it("fails closed when an idempotency key is reused for a different order",async()=>{
   const query=vi.fn(async(sql:string)=>sql.includes("INSERT")?{rows:[],rowCount:0}:{rows:[{
