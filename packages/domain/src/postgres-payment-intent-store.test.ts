@@ -27,6 +27,23 @@ describe("PostgreSQL server-owned payment intents",()=>{
     expect(query.mock.calls[0]?.[0]).toContain("i.amount_minor=$3 AND i.currency=$4");
   });
 
+  it("fails closed when provider reference and idempotency key resolve to different intents",async()=>{
+    const query=vi.fn(async(sql:string)=>sql.includes("INSERT")
+      ? {rows:[],rowCount:0}
+      : {rows:[
+          {id:"intent-provider-ref",tenant_id:"tenant-1",order_id:"order-1",provider_key:"psp-a",
+            provider_payment_reference:"provider-ref-1",amount_minor:12500,currency:"SAR",
+            idempotency_key:"other-idempotency",expires_at:new Date("2026-11-09T12:15:00.000Z")},
+          {id:"intent-idempotency",tenant_id:"tenant-1",order_id:"order-2",provider_key:"psp-a",
+            provider_payment_reference:"other-provider-ref",amount_minor:12500,currency:"SAR",
+            idempotency_key:"intent-idempotency-1",expires_at:new Date("2026-11-09T12:15:00.000Z")}
+        ],rowCount:2});
+    const store=new PostgresPaymentIntentStore(
+      {query,connect:vi.fn()} as unknown as PostgresPool,()=> "new-intent",now
+    );
+    await expect(store.recordCreatedIntent(input)).resolves.toEqual({outcome:"identity_collision"});
+  });
+
   it("resolves a provider-confirmed capture after intent expiry when webhook delivery is delayed",async()=>{
     const query=vi.fn(async(_sql:string,_values?:readonly unknown[])=>({
       rows:[{id:"intent-1",tenant_id:"tenant-1",order_id:"order-1"}],rowCount:1
