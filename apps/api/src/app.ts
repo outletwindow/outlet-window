@@ -60,6 +60,7 @@ export interface CustomerDeliveryDestinationService {
 export interface MerchantCatalogRepository {
   createProduct(input: CatalogProductInput): Promise<CatalogProductRecord>;
   listProducts(tenantId: string, limit?: number): Promise<Array<Record<string, unknown>>>;
+  setProductPublication?(input: { tenantId: string; productId: string; published: boolean }): Promise<{ outcome: "updated"; publishedAt: string | null } | { outcome: "not_found" }>;
 }
 
 export interface CustomerPaymentIntentCheckout { create(input:{customerId:string;orderId:string;idempotencyKey:string}):Promise<import("../../../packages/domain/src/postgres-customer-payment-intent-checkout.js").CustomerPaymentIntentCheckoutResult>; }
@@ -1147,6 +1148,31 @@ app.patch<{
     const inventory = await options.branchInventoryReader.list({ tenantId, merchantId, branchId, limit });
     return reply.code(200).send({ inventory });
   });
+
+  app.put<{ Params: { merchantId: string; productId: string }; Body: { published: boolean } }>(
+    "/api/v1/merchants/:merchantId/catalog/products/:productId/publication", async (request, reply) => {
+      const { merchantId, productId } = request.params;
+      const access = await authorizeRequest(request, options, {
+        resource: "merchant.integration", action: "update", scope: { merchantId }
+      });
+      if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
+      if (!["merchant_owner", "merchant_admin"].includes(access.actor.role)) return reply.code(403).send({ error: "merchant_admin_only" });
+      if (!options.merchantCatalog?.setProductPublication) return reply.code(503).send({ error: "catalog_publication_unavailable" });
+      if (!request.body || typeof request.body.published !== "boolean") return reply.code(400).send({ error: "invalid_publication_request" });
+      const tenantId = await options.resolveMerchantTenantId?.(merchantId);
+      if (!tenantId) return reply.code(404).send({ error: "merchant_not_found" });
+      const result = await options.merchantCatalog.setProductPublication({ tenantId, productId, published: request.body.published });
+      if (result.outcome === "not_found") return reply.code(404).send({ error: "catalog_product_not_found" });
+      if (options.auditEvents) await options.auditEvents.append(createAuditEvent({
+        id: randomUUID(), type: "catalog.product.publication_changed", category: "catalog_governance",
+        occurredAt: new Date().toISOString(), actor: { id: access.actor.id, type: "merchant_user", role: access.actor.role },
+        action: request.body.published ? "catalog.product.publish" : "catalog.product.unpublish",
+        outcome: "success", resourceType: "commerce_catalog_product", resourceId: productId,
+        tenantId, merchantId, correlationId: request.id, source: "api", severity: "info",
+        metadata: { published: request.body.published, publishedAt: result.publishedAt }
+      }));
+      return reply.code(200).send({ productId, published: request.body.published, publishedAt: result.publishedAt });
+    });
 
   app.post<{
     Params: { merchantId: string; branchId: string };

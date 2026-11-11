@@ -99,6 +99,20 @@ export class PostgresMerchantCatalog {
     }
   }
 
+  async setProductPublication(input: { tenantId: string; productId: string; published: boolean }): Promise<{ outcome: "updated"; publishedAt: string | null } | { outcome: "not_found" }> {
+    if (!input.tenantId.trim() || !input.productId.trim()) throw new Error("invalid_catalog_publication_scope");
+    const result = await this.pool.query<{ published_at: Date | string | null }>(
+      `UPDATE commerce_catalog_products
+       SET published_at = CASE WHEN $3 THEN COALESCE(published_at, clock_timestamp()) ELSE NULL END,
+           publication_updated_at = clock_timestamp(), updated_at = clock_timestamp()
+       WHERE tenant_id = $1 AND id = $2 RETURNING published_at`,
+      [input.tenantId, input.productId, input.published]
+    );
+    const row = result.rows[0];
+    if (!row) return { outcome: "not_found" };
+    return { outcome: "updated", publishedAt: row.published_at === null ? null : new Date(row.published_at).toISOString() };
+  }
+
   async listProducts(tenantId: string, limit = 50): Promise<Array<Record<string, unknown>>> {
     const result = await this.pool.query<Record<string, unknown>>(
       `SELECT p.id,p.integration_id AS "integrationId",p.provider_key AS "providerKey",

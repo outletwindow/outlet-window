@@ -9,7 +9,7 @@ const merchantOwner: Actor = {
   role: "merchant_owner",
   active: true,
   grants: [
-    { resource: "merchant.integration", actions: ["read", "create"], scope: { merchantId: "merchant-1" } }
+    { resource: "merchant.integration", actions: ["read", "create", "update"], scope: { merchantId: "merchant-1" } }
   ]
 };
 
@@ -140,6 +140,23 @@ describe("merchant catalog API", () => {
       method: "GET", url: "/api/v1/merchants/merchant-1/catalog/products?limit=1000"
     });
     expect(invalid.statusCode).toBe(400);
+  });
+
+  it("publishes only within the resolved tenant and records an audit event", async () => {
+    let received: unknown;
+    const app = buildApp({
+      resolveActor: async () => merchantOwner, resolveMerchantTenantId: async () => "tenant-actual",
+      auditEvents: { append: async () => "inserted" as const },
+      merchantCatalog: {
+        createProduct: async () => { throw new Error("unused"); }, listProducts: async () => [],
+        setProductPublication: async input => { received = input; return { outcome: "updated" as const, publishedAt: "2026-11-11T10:00:00.000Z" }; }
+      }
+    });
+    apps.push(app); await app.ready();
+    const response = await app.inject({ method: "PUT", url: "/api/v1/merchants/merchant-1/catalog/products/p-1/publication", payload: { published: true } });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ productId: "p-1", published: true });
+    expect(received).toEqual({ tenantId: "tenant-actual", productId: "p-1", published: true });
   });
 
   it("fails closed when catalog storage is not configured", async () => {
