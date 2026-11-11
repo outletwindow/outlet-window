@@ -460,3 +460,5 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [ ] This is an interactive prototype with illustrative catalog data only. Customer authentication, live merchant catalog/inventory, branch selection, API persistence, checkout, and payment execution are not connected.
 - [ ] Before production rollout, add API-backed catalog/search, authenticated customer sessions, durable cart/order creation, accessibility/browser tests, deployment routing, and Moyasar sandbox completion flow.
 - [ ] Merchant, shopper, courier, admin, and owner applications remain separate future workstreams.
+
+- [x] Customer web prototype commit `94d107d162fdb8d2e3450a103364ff114e12106d` passed push CI run `43005903028` (#1455) and pull-request CI run `43005915690` (#1456), including PostgreSQL acceptance, Compose validation, typecheck, lint, unit tests, and build.
