@@ -415,9 +415,12 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Validates server-calculated minor-unit amount (Moyasar minimum 100), ISO currency, HTTPS callback URL, provider response identity/status/amount/currency, one-hour expiry window, and client-secret shape.
 - [x] Does not return provider error bodies or include credentials in error messages; transport failures are surfaced as an ambiguous outcome and are never automatically retried.
 - [x] Added unit tests for successful request/authentication, invalid key and request rejection, provider rejection, ambiguous network failure, and malformed/mismatched/expired responses.
-- [ ] This is a transport/client layer only: it is not yet exposed through an authenticated customer checkout route, and the client secret is not yet returned to a customer.
-- [ ] Before wiring checkout, add durable creation-attempt/reconciliation semantics. Moyasar's current Payment Intent create reference documents no idempotency field for this endpoint; an ambiguous timeout must not be blindly retried. The customer/order ownership check and server-side persisted-order amount lookup are also required.
-- [ ] Frontend fulfillment with the publishable key and client secret, callback handling, and end-to-end sandbox payment remain pending.
+- [x] Exposed the client through `POST /api/v1/customer/orders/:orderId/payment-intents`; the route requires a verified customer actor, an order-scoped update grant, and an `Idempotency-Key`, and returns the client secret only to that authenticated customer.
+- [x] Added PostgreSQL-backed checkout orchestration that loads the order by both order ID and authenticated customer ID, derives amount/currency from the persisted order, reserves a durable attempt before provider dispatch, persists the provider reference, and fails closed on ambiguous outcomes and idempotency collisions.
+- [x] Added exact idempotent replay recovery through an authoritative provider intent fetch; mismatched, fulfilled, canceled, expired, or unavailable intents do not return a client secret.
+- [x] Wired the runtime Moyasar client and trusted HTTPS callback configuration into the PostgreSQL API composition root; the route remains unavailable unless the required server configuration and database are present.
+- [x] Added API authorization/idempotency route tests and PostgreSQL checkout orchestration tests for ownership, payable status, provider rejection, ambiguous outcomes, persistence conflicts, and exact replay.
+- [ ] Frontend payment completion with the publishable key/client secret, callback UX, and Moyasar sandbox contract tests remain pending; no live credentials or production payment activation are claimed.
 
 ## Durable payment-intent creation attempts (2026-11-10)
 - [x] Added migration `0032_payment_intent_creation_attempts` with tenant/order binding, server-calculated amount/currency snapshot validation, one active attempt per order/provider, and unique idempotency.
@@ -425,8 +428,16 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Database transitions are fail-closed; an ambiguous attempt can become rejected only with a provider reconciliation reference. Attempt rows cannot be deleted or truncated.
 - [x] Added a PostgreSQL store that reserves the attempt before the provider call and atomically records the provider intent mapping with the created state.
 - [x] Registered migration 0032 in the migration runner and API readiness gate; added unit and PostgreSQL acceptance coverage.
-- [ ] The attempt store is not yet wired to an authenticated customer checkout endpoint. Customer ownership verification, server-side order amount lookup, Moyasar sandbox contract execution, and frontend payment completion remain pending.
+- [x] Wired the attempt store to the authenticated customer checkout endpoint with customer/order ownership verification and server-side persisted-order amount lookup; the endpoint and persistence path are covered by automated tests.
+- [ ] Moyasar sandbox contract execution and frontend payment completion remain pending.
 
 - [x] Added migration `0033_payment_intent_creation_attempt_expiry`: only a provider-reconciled intent whose database expiry has passed can move from `created` to `expired`; the provider reference and immutable intent mapping remain available for late webhooks.
 - [x] Expired attempts no longer block a fresh payment attempt with a new idempotency key, while replaying the original key still returns its original expired attempt.
-- [ ] Authenticated customer checkout, order ownership enforcement, sandbox payment, and frontend fulfillment remain pending.
+- [x] Authenticated customer checkout and order ownership enforcement are implemented and covered by automated tests.
+- [ ] Sandbox payment execution and frontend fulfillment remain pending.
+
+
+## CI verification — 2026-11-11
+- [x] Branch-head commit `3f4e90feaf6074a5e0a57709cb9451fd06bd3a72` passed GitHub Actions CI run `43003351531` (run number 1450).
+- [x] PostgreSQL acceptance checks, Compose validation, TypeScript typecheck, lint, tests, and build all completed successfully.
+- [ ] Continue with frontend payment completion and Moyasar sandbox contract validation; do not enable live payment traffic until provider sandbox evidence and production secret configuration are verified.
