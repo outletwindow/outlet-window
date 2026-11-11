@@ -451,3 +451,12 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [ ] Next engineering increment: define and implement the first production UI application boundary and connect it to authenticated API contracts, beginning with the customer checkout/payment completion flow. UI framework and deployment target must be selected before creating app packages.
 - [ ] Moyasar sandbox execution, callback experience, provider-side reconciliation evidence, and secret-manager configuration remain pending. Do not enable live payment traffic without explicit operational verification.
 - [ ] Keep PR #1 open and unmerged pending review and acceptance of the next implementation milestones.
+
+## Customer web prototype — 2026-11-11
+- [x] Added the first customer-facing web application package at `apps/customer-web` using native HTML, CSS, and ES modules to avoid introducing an unapproved framework dependency.
+- [x] Added bilingual Arabic/English responsive catalog UI, category filtering, product search, and a multi-product cart with quantity updates.
+- [x] Cart arithmetic uses integer minor units and validates product identifiers and quantities; unit tests cover product identity, add/update/remove behavior, subtotal arithmetic, and invalid inputs.
+- [x] Added a deterministic build script that produces a static distributable in `apps/customer-web/dist`; workspace CI discovers the package through the existing `apps/*` workspace glob.
+- [ ] This is an interactive prototype with illustrative catalog data only. Customer authentication, live merchant catalog/inventory, branch selection, API persistence, checkout, and payment execution are not connected.
+- [ ] Before production rollout, add API-backed catalog/search, authenticated customer sessions, durable cart/order creation, accessibility/browser tests, deployment routing, and Moyasar sandbox completion flow.
+- [ ] Merchant, shopper, courier, admin, and owner applications remain separate future workstreams.
