@@ -72,8 +72,8 @@ integration("PostgreSQL scheduled task outbox", () => {
     await pool.query("DELETE FROM scheduled_task_inbox WHERE order_id = $1", [orderId]);
     await pool.query("DELETE FROM scheduled_task_outbox WHERE order_id = $1", [orderId]);
     await pool.query("DELETE FROM scheduled_order_confirmations WHERE order_id = $1", [orderId]);
-    await pool.query("DELETE FROM verified_order_payment_captures WHERE order_id = $1", [orderId]);
-    await pool.query("DELETE FROM customer_orders WHERE id = $1", [orderId]);
+    // Verified provider captures are immutable audit evidence; retain the capture and its parent order.
+    // beforeEach assigns a fresh UUID-backed order ID, so retained fixtures cannot collide.
   }
 
   afterEach(async () => { await cleanup(); });

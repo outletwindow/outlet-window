@@ -98,9 +98,9 @@ integration("PostgreSQL branch inventory reservations", () => {
     await pool.query("DELETE FROM inventory_reservations WHERE merchant_id = $1", [merchantId]);
     await pool.query("DELETE FROM customer_order_items WHERE merchant_id = $1", [merchantId]);
     await pool.query("DELETE FROM scheduled_order_confirmations WHERE order_id = ANY($1::text[])", [orderIds]);
-    await pool.query("DELETE FROM verified_order_payment_captures WHERE order_id = ANY($1::text[])", [orderIds]);
+    // Verified provider captures are immutable audit evidence and intentionally outlive test cleanup.
+    // Keep their parent customer_orders as well; each test uses fresh UUID-backed order IDs.
     await pool.query("DELETE FROM merchant_suborders WHERE merchant_id = $1", [merchantId]);
-    await pool.query("DELETE FROM customer_orders WHERE id = ANY($1::text[])", [orderIds]);
     await pool.query("DELETE FROM branch_inventory WHERE merchant_id = $1", [merchantId]);
     await pool.query("DELETE FROM merchant_branches WHERE merchant_id = $1", [merchantId]);
     await pool.query("DELETE FROM merchants WHERE id = $1", [merchantId]);
