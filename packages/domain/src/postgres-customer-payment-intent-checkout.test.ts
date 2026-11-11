@@ -8,7 +8,7 @@ describe("authenticated customer payment-intent checkout",()=>{
  const payableOrder={tenant_id:"tenant-1",status:"awaiting_payment",total_minor:"12500",currency:"SAR"};
  const intent={id:"8f4d1c3e-6a52-4f0b-9a1e-2c7b5d8e0f31",amount:12500,currency:"SAR",
   clientSecret:"pi_secret_7Kq2mXbN9vT4wPzR1sYcHdLjF6aGuE8oQ3iK5nB0xVtZrWyM",
-  expiresAtUtc:"2026-11-10T22:30:00.000Z"};
+  expiresAtUtc:new Date(Date.now()+60*60*1000).toISOString()};
  function transactionalPool(options:{failIntentInsert?:boolean;beginAttempt?:boolean}={}){
   const poolQuery=vi.fn(async(sql:string)=>{
    if(sql.includes("FROM customer_orders"))return {rows:[payableOrder],rowCount:1};
