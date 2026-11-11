@@ -462,3 +462,13 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [ ] Merchant, shopper, courier, admin, and owner applications remain separate future workstreams.
 
 - [x] Customer web prototype commit `94d107d162fdb8d2e3450a103364ff114e12106d` passed push CI run `43005903028` (#1455) and pull-request CI run `43005915690` (#1456), including PostgreSQL acceptance, Compose validation, typecheck, lint, unit tests, and build.
+
+## Customer catalog API boundary review — 2026-11-11
+- [x] Rechecked the current merchant catalog routes: product reads are merchant-owner/admin-only and tenant-scoped; they are not a customer-facing discovery API.
+- [x] Rechecked branch inventory reads: they are authorization-scoped to a merchant and branch, and the PostgreSQL reader requires the merchant and branch to be active.
+- [x] Confirmed the normalized catalog currently has no explicit customer-publication/visibility state. Product source/integration metadata is retained in the merchant catalog, so exposing the existing list endpoint or its raw records to customers would be an unsafe boundary.
+- [x] Confirmed branch stock is stored separately from catalog variants and must be joined by tenant, merchant, branch, and product-variant identity before customer availability can be represented.
+- [ ] Add an explicit merchant-controlled publication lifecycle (unpublished by default, publish/unpublish auditability) before exposing products to customer discovery.
+- [ ] Add a public branch-catalog read model that returns only published products from active merchants/branches, joins branch inventory, and exposes customer-safe fields only; do not expose provider credentials, integration IDs, source hashes, or internal identifiers unnecessarily.
+- [ ] Define stock freshness/confidence and sellable-quantity rules, then cover tenant isolation, inactive merchant/branch, unpublished product, missing inventory, stale/low-confidence inventory, and variant-level availability in PostgreSQL acceptance tests.
+- [ ] Connect the customer prototype to this read contract only after the API contract and publication rules are implemented and tested. Keep demo data clearly labelled until then.
