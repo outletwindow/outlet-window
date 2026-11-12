@@ -56,6 +56,12 @@ Each product variant must support:
 - Reconcile reservations with merchant inventory.
 - Treat external merchant stock changes as possible conflicts.
 
+## 6A. Scheduled Order Reservation
+
+For scheduled orders, the order and payment confirmation happen at checkout; the inventory reservation request is sent to the selected branch immediately, not at the later preparation time. Where the merchant integration supports hard reservations, reserve the exact variant and quantity atomically and record reservation expiry. The merchant may receive an early reservation notification while the picking/preparation task remains queued until the calculated release time.
+
+If a hard reservation is not supported, mark availability as unguaranteed and revalidate before preparation. A reservation failure must trigger an exception and customer alternatives, not a false confirmation. Suggested alternatives may include another authorized branch, another variant or a similar product, with price and time differences shown for customer approval.
+
 ## 7. Inventory Synchronization
 - Support webhooks where available.
 - Support scheduled polling.
@@ -125,3 +131,8 @@ Each product variant must support:
 
 ## 15. Implementation Status
 Specification only. No merchant POS, ERP, inventory API or live stock integration is claimed to be operational.
+\n\n## 15. Implementation note (development branch)\nA PostgreSQL branch inventory ledger and atomic platform-side reservation adapter have been added, together with order item lines and reservation records. The adapter locks all requested variant rows and reserves all requested lines in one transaction, or none. This prevents two Outlet Window transactions from allocating the same final unit. It does not by itself prove that an external POS/ERP has accepted a hard reservation; external merchant acknowledgement, stock synchronization, expiry/release, reconciliation, and checkout wiring remain pending.\n
+
+Reservation lifecycle support now includes idempotent release, expiry and consumption persistence. These transitions update the platform stock allocation ledger atomically. A background expiry scheduler, stock synchronization adapters, external merchant hard-reservation acknowledgement and full reconciliation remain pending.
+
+Reservation finalization also requires an explicit reason for release or a verified handover reference for consumption. The database enforces these fields so reserved quantities cannot be silently removed from the ledger. Payment capture and refunds remain separate provider workflows.

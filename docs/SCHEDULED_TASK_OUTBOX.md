@@ -51,7 +51,9 @@ A production adapter is not accepted until tests prove:
 ## Current status
 Implemented in the domain package: outbox record contract, store port, creation validation, bounded retry-time calculation, lease validation, and unit tests.
 
-Not implemented: database schema/migrations, unique constraints, transactional adapter, queue broker, worker runtime, dead-letter operations UI, monitoring, and production reconciliation. Database and infrastructure vendor choices remain pending owner approval.
+Implemented and CI-accepted on development commit `0c037ce401b57a3e697f7843cbd93c436dee3606`: PostgreSQL migration `0006_scheduled_task_outbox.sql` creates the durable outbox, payment-capture confirmation record, and idempotent internal task inbox. `PostgresScheduledTaskOutboxStore` implements unique-key enqueue, `FOR UPDATE SKIP LOCKED` claims, lease expiry recovery, compare-and-swap acknowledgement/retry/dead-letter updates, and tenant-scoped reads. `PostgresScheduledOrderTransactionRunner` commits the payment-capture confirmation and initial outbox tasks in one database transaction. The scheduled worker process (`pnpm worker:scheduled`) delivers due outbox envelopes into the durable inbox with the same idempotency key.
+
+Important boundary: the worker currently guarantees durable, idempotent handoff into the inbox. It does not itself reserve merchant inventory, prepare goods, allocate couriers, collect products, charge, or refund. Those task consumers, alert delivery, operator review UI, authorized remediation, and production deployment/managed database provisioning remain unimplemented. The order remains `awaiting_payment` until the inventory reservation consumer records its outcome; payment capture is recorded separately.
 
 ## Atomic order confirmation boundary
 The domain package also exposes an application port for committing an already-paid scheduled order and its initial outbox tasks:
@@ -82,3 +84,15 @@ The reader port requires tenant and order scope. A production adapter must enfor
 Implemented contract and unit tests: `packages/domain/src/scheduled-task-reconciliation.ts` and `scheduled-task-reconciliation.test.ts`.
 
 Not implemented: persisted task reader, scheduled reconciliation worker, alert delivery, operator review UI, or automated remediation.
+
+
+## Inventory reservation ordering
+Provider-confirmed payment evidence is now persistable before inventory allocation. The branch inventory adapter requires this evidence and reserves the exact persisted merchant suborder lines atomically. The application checkout orchestrator must call these stages in order: persist verified payment capture evidence, reserve branch inventory, then enqueue timed preparation/dispatch tasks. The current repository adapters provide these boundaries but are not yet composed into a live checkout API route.
+
+
+## Merchant-targeted task envelopes
+Timed tasks may carry a merchant target (`merchantTenantId`, `suborderId`, `merchantId`, `branchId`). Idempotency keys are scoped to the suborder, allowing a multi-merchant parent order to create independent preparation/dispatch work without key collisions. Before publishing a targeted envelope into the durable inbox, the PostgreSQL publisher verifies that the suborder belongs to the parent order and matches the exact merchant tenant and branch. The inbox row remains scoped to the platform parent order; merchant ownership is carried in the validated payload for the eventual consumer.
+
+
+## Durable inbox consumer processing
+Migration `0008_scheduled_task_inbox_leases` adds `available_at`, lease token and expiry fields. A PostgreSQL inbox store claims due rows with `FOR UPDATE SKIP LOCKED`, recovers expired processing leases, and uses lease-token compare-and-swap for completion, retry and dead-letter. The generic worker validates targeted envelopes and dispatches to injected idempotent handlers. Real merchant preparation, shopper collection and courier dispatch provider handlers remain to be supplied and configured; the generic worker alone does not perform those external actions.

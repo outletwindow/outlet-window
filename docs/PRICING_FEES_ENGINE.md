@@ -127,3 +127,72 @@ Simulations are advisory and never modify live pricing automatically.
 
 ## 14. Implementation Status
 Specification only. No final prices, commercial rates, tax treatment or live pricing rules have been approved or deployed.
+
+## 15. Implemented quote calculation foundation
+- Deterministic pure quote calculator uses integer minor currency units and never invents tax, delivery or commission rates.
+- Each quote carries a rule ID/version, currency, component breakdown, creation time and expiry.
+- Rejects invalid currencies, fractional/negative component amounts, unsafe integer overflow, invalid quote windows and discounts exceeding the component sum.
+- Quote usability is bounded by its original validity window; expiry cannot be extended by the client.
+- Unit tests cover arithmetic, validation, overflow and expiry.
+- Still not a live pricing service: market-specific rules, road-distance provider, tax configuration, merchant contracts, approval workflow, persistence and customer checkout integration remain to be implemented and reviewed.
+
+## 16. Database-backed delivery quote resolver
+- Resolves active service areas by tenant, country, city and effective window.
+- Rejects coordinates outside every configured service area.
+- Resolves only active, approved pricing rules matching service area, service code and currency.
+- Confirms that at least one active merchant branch is assigned to the area and returns the eligible branch list.
+- Calculates a versioned, expiring quote using the configured `fixed_plus_distance` rule and integer minor units.
+- Fails closed for missing rules, malformed configuration, invalid coordinates and missing eligible branches.
+- PostgreSQL migration 0011 adds service areas, branch assignments, versioned pricing rules, approval fields and append-only rule events. CI acceptance tests verify approval gates, immutable approved snapshots and audit immutability.
+- Important limitation: the current distance basis is straight-line distance from the service-area center, not road distance. The resolver returns eligible branches but does not yet rank them by branch-to-customer road ETA. It is a backend foundation, not yet wired into the production checkout or delivery-destination API. Production use requires a trusted routing provider, branch geocoordinates, tenant/merchant ownership enforcement, authorized admin approval workflows and payment-provider integration.
+
+## 17. Road ETA branch ranking contract
+- Added a provider-neutral routing contract for obtaining road distance and travel duration from each eligible branch to the customer destination.
+- Branches are ranked by ETA, then road distance, then stable merchant/branch identifiers.
+- Unavailable routes are excluded; stale estimates older than five minutes and malformed provider responses are discarded.
+- Duplicate branch candidates and invalid coordinates are rejected.
+- Unit tests cover ranking, unavailable routes, stale estimates and invalid inputs.
+- No routing vendor credentials or endpoint are configured. This contract is not a live maps integration and must be connected to an approved routing provider before using ETA for customer promises or dispatch decisions.
+
+## 18. Branch geolocation and quote-to-routing composition
+- Migration 0012 adds optional latitude/longitude columns to merchant branches, with paired-coordinate and geographic-range constraints.
+- Merchant branch create/update writes accept optional coordinates and validate the pair and ranges before SQL.
+- `PostgresDeliveryQuoteService.quoteWithRoadEta` resolves the quote, loads only geocoded active branches assigned to the selected service area, and ranks them through the injected routing provider.
+- API readiness now requires migrations 0011 and 0012.
+- Historical note superseded by section 19: the road-ETA quote path now fails closed unless at least one branch has a fresh valid route. Branches without coordinates are excluded from ETA ranking. A production routing provider is still not configured.
+
+## 19. Road-distance-based branch selection and delivery pricing
+- `quoteWithRoadEta` now requires a fresh road route for at least one geocoded eligible branch.
+- Selects the lowest-ETA branch (road distance and stable IDs break ties) and returns the selected merchant/branch identifiers.
+- Recalculates the delivery fee from the selected branch's provider-reported road distance using the approved versioned fixed-plus-distance rule, rather than using the service-area center estimate.
+- The final quote retains the original quote expiry and rule version; if no valid route or valid pricing rule exists, the operation fails closed.
+- Unit tests assert the selected branch, road distance and recalculated integer fee.
+- A production routing provider is still not configured. Do not expose this as a customer quote until a trusted provider is wired and its route freshness, coverage, rate limits and service terms are verified.
+
+## 20. Secure HTTP routing gateway adapter
+- Added a provider-neutral HTTP adapter for a deployment-controlled routing gateway.
+- Requires HTTPS, bearer credentials, redirect rejection and bounded request timeout (250–15,000 ms).
+- Sends origin/destination coordinates in metric units; normalizes valid distance, duration and provider reference into a fresh estimate.
+- Treats no-route responses as unavailable, classifies transient HTTP failures without logging or exposing provider response bodies, and rejects malformed payloads.
+- Unit tests cover request shape, HTTPS/credential enforcement, timeout validation, no-route behavior, malformed data and transient errors.
+- This is an adapter contract only. No external map vendor is selected or configured, no production credentials exist in the repository, and live road ETA remains unavailable until deployment supplies an approved gateway and secrets.
+
+## 21. Routing measurement timestamp integrity
+- The HTTP routing gateway response must include its own `estimatedAtUtc` measurement timestamp.
+- The adapter no longer stamps a fresh local time onto a received route. It preserves the gateway timestamp so the domain's five-minute freshness check can reject stale routes.
+- Negative distances and durations, missing/invalid timestamps, empty references and malformed payloads are rejected as unavailable.
+- Unit tests cover provider timestamp preservation and missing timestamp rejection.
+- The gateway contract must return UTC ISO-8601 timestamps for when the route was calculated, not when the response was relayed.
+
+## 22. Routing gateway response hardening
+- Response bodies are capped at 16 KiB and malformed JSON is treated as an unavailable route rather than bubbling a parser exception into the API.
+- Measurement timestamps must be explicit UTC ISO-8601 values ending in `Z`; offset-local timestamps are rejected.
+- Unit tests cover malformed JSON, oversized responses and non-UTC timestamps.
+
+## 23. Customer-approved payment adjustment ledger
+- Migration 0013 adds a durable adjustment intent for additional charges or refunds caused by a repriced destination or order edit.
+- Each intent records the old and proposed totals, exact positive delta, currency, immutable quote reference, idempotency key, expiry and explicit consent fields.
+- Provider-confirmed status requires a provider reference and confirmation timestamp. No row can claim provider confirmation without both.
+- Append-only events retain the lifecycle history; composite tenant-scoped foreign keys prevent cross-tenant event attachment.
+- CI acceptance tests cover persistence, arithmetic consistency and append-only history.
+- This is a consent/evidence ledger only. It does not call a payment provider, authorize a charge, issue a refund, or change an order total. Those actions must wait for explicit customer consent and independently verified provider evidence.

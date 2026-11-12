@@ -3,12 +3,12 @@
 ## 1. Purpose
 Define the logical database architecture for a global, multi-merchant commerce and logistics platform. The initial implementation is planned for Jubail, Saudi Arabia, with a design that supports future countries and cities.
 
-## 2. Database Technology
+## 2. Database Technology — Initial Owner Direction
 - Primary relational database: PostgreSQL.
-- ORM candidate: Prisma.
-- Redis may be used for caching, queues, and short-lived operational data.
-- Object storage for product images, invoices, and delivery evidence.
-- Database migrations must be version-controlled and reviewed.
+- Initial managed hosting target: Amazon RDS for PostgreSQL, subject to region availability, compliance review, cost review, and owner approval before production provisioning.
+- The persistence adapter uses a small PostgreSQL-compatible query interface and does not force an ORM.
+- Redis and object storage remain separate future decisions; neither is required for the identity/session schema migration.
+- Database migrations are version-controlled and must be reviewed and tested before production rollout.
 
 ## 3. Core Design Principles
 - Use stable unique identifiers for all records.
@@ -252,7 +252,36 @@ Each domain owns its records and business rules. Other domains access data throu
 - Validate order, inventory, payment, shopper, courier, and handover workflows end to end.
 
 ## 22. Implementation Status
-This document defines the logical database design only. The production schema, migrations, database infrastructure, and integrations have not yet been implemented.
+The first PostgreSQL identity/access/session schema migration and a PostgreSQL-compatible persistence adapter are now present in the development branch. No database instance, credentials, network, backup policy, production deployment, or live database acceptance test has been provisioned; the adapter is not yet connected to the running API.
 
 Project: Outlet Window
 Phase: Phase 0 - Database Architecture
+
+## 23. Identity persistence and access-control adapter boundary
+The domain package defines database-agnostic ports for:
+- Creating an identity without duplicating a principal identifier.
+- Updating account status with an expected-current-status condition to prevent lost updates.
+- Assigning a role with an explicit scope and validity window.
+- Revoking a session only for the owning principal.
+- Reading an identity, time-valid role assignments, and a session by principal/session pair.
+
+Validation rules require human identities to have a valid email or E.164-style phone number; service principals may omit human contact details. Role scopes must be explicit. Branch scope requires a merchant scope; city scope requires a country; platform-wide scope must be explicitly platform-only. Role validity windows use a half-open interval: validFrom is inclusive and validUntil is exclusive.
+
+These are contracts and validation helpers, not authentication. Password hashing, passkeys, MFA, identity-provider integration, session token issuance, database constraints, persistent adapters, and API middleware remain unimplemented. Raw passwords, bearer tokens, OTPs, and recovery secrets must never be stored in these identity records.
+
+## 24. Session security and token lifecycle
+The domain package defines a storage boundary for sessions:
+- Store only a cryptographic digest of an opaque bearer token; never persist the raw token.
+- Bind every session to its principal and a session family.
+- Validate absolute expiry, idle expiry, revocation, principal ownership, and allowed authentication methods.
+- Rotate a session using compare-and-swap against the active prior session and its expected token digest.
+- Revoke the complete session family on logout/security events/token-reuse detection/password reset.
+- Keep token generation, hashing, secure cookie policy, and cryptographic primitives in approved infrastructure adapters.
+
+The current code supplies contracts and validation only. It does not issue tokens, hash secrets, set cookies, perform password/passkey authentication, implement MFA, detect token reuse by itself, or persist/revoke sessions in a live database. The production adapter must make rotation and family revocation atomic and audit every security-sensitive outcome.
+
+
+## 24. PostgreSQL IAM schema and adapter (development branch)
+The initial migration creates identities, scoped role assignments, sessions, unique contact indexes, expiry indexes, and foreign-key constraints. The adapter implements identity/session readers and transactional writers, including compare-and-swap account status updates, session rotation under row lock, and family revocation. It accepts a PostgreSQL-compatible pool supplied by the host; it does not create a pool or load secrets.
+
+Acceptance remains pending: run the migration against a real PostgreSQL instance, add integration tests using a disposable database, validate concurrent session rotation and rollback, connect the API composition root to the adapter, and configure encrypted backups/restore drills. No production data store is live yet.

@@ -1,0 +1,207 @@
+name: CI
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches: ["main", "work/**"]
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  api:
+    name: API build, tests, and typecheck
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: outlet_window_test
+          POSTGRES_USER: outlet_window
+          POSTGRES_PASSWORD: ci_only_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U outlet_window -d outlet_window_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.20.0
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install --yes postgresql-client
+      - name: Apply versioned IAM migration through application runner
+        env:
+          DATABASE_URL: postgres://outlet_window:ci_only_password@127.0.0.1:5432/outlet_window_test
+        run: pnpm --filter @outlet-window/api db:migrate
+      - name: Verify IAM schema constraints and tenant-scoped records
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0001_identity_access_sessions.integration.sql
+      - name: Verify merchant and branch tenant constraints
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0002_merchants_branches.integration.sql
+      - name: Verify append-only audit event isolation
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0003_audit_events.integration.sql
+      - name: Verify customer order and suborder constraints
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0004_customer_orders.integration.sql
+      - name: Verify platform and merchant order tenant isolation
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0005_marketplace_order_tenancy.integration.sql
+      - name: Verify durable scheduled task outbox constraints
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0006_scheduled_task_outbox.integration.sql
+      - name: Verify branch inventory and reservation constraints
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0007_branch_inventory_reservations.integration.sql
+      - name: Verify recoverable scheduled inbox lease constraints
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0008_scheduled_task_inbox_leases.integration.sql
+      - name: Verify durable fulfillment provider receipt constraints
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0009_fulfillment_provider_receipts.integration.sql
+      - name: Verify five-second paid order editing and delivery destination constraints
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0010_customer_order_editing_and_delivery_destination.integration.sql
+      - name: Verify service areas and pricing rule governance
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0011_service_areas_and_pricing_rules.integration.sql
+      - name: Verify branch geolocation constraints
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0012_branch_geolocation.integration.sql
+      - name: Verify customer payment adjustment consent and immutable event constraints
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0013_payment_adjustment_consents.integration.sql
+      - name: Verify durable payment provider webhook deduplication
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0014_payment_provider_webhook_inbox.integration.sql
+      - name: Verify multi-provider integration registry and event inbox
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0015_multi_provider_integration_hub.integration.sql
+      - name: Verify normalized payment webhook worker envelope and lease constraints
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0016_payment_webhook_worker_envelope.integration.sql
+      - name: Verify tenant-isolated commerce catalog and variant constraints
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0018_commerce_catalog.integration.sql
+      - name: Verify Salla OAuth state and encrypted token vault constraints
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0019_salla_oauth_vault.integration.sql
+      - name: Verify inventory reservation line branch ownership
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0020_inventory_reservation_line_scope.integration.sql
+      - name: Verify one-time inventory handover evidence
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0021_unique_inventory_handover_evidence.integration.sql
+      - name: Verify durable fulfillment handover event inbox deduplication
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0022_fulfillment_handover_event_inbox.integration.sql
+      - name: Verify carrier provider branch scope authorization
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0023_fulfillment_provider_branch_scopes.integration.sql
+      - name: Verify merchant order item preparation check constraints
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0024_merchant_order_item_preparation_checks.integration.sql
+      - name: Verify immutable merchant preparation evidence
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0025_immutable_preparation_check_evidence.integration.sql
+      - name: Verify preparation evidence cannot be truncated
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0026_block_preparation_evidence_truncate.integration.sql
+      - name: Verify immutable exact-match verified order payment captures
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0027_verified_order_payment_captures.integration.sql
+      - name: Verify immutable server-owned provider payment intents
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0028_provider_payment_intents.integration.sql
+      - name: Verify durable initial payment capture webhook inbox
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0029_initial_payment_capture_webhook_inbox.integration.sql
+      - name: Verify durable paid checkout recovery cases
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0030_checkout_recovery_cases.integration.sql
+      - name: Verify verified payment captures must be positive
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0031_positive_verified_payment_capture.integration.sql
+      - name: Verify durable payment intent creation attempts
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0032_payment_intent_creation_attempts.integration.sql
+      - name: Verify reconciled payment intent expiry and retry eligibility
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0033_payment_intent_creation_attempt_expiry.integration.sql
+      - name: Verify merchant catalog publication lifecycle
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0034_catalog_product_publication.integration.sql
+      - name: Verify customer catalog publication, branch scope, and live stock filters
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0035_customer_catalog_discovery.integration.sql
+      - name: Verify durable customer cart ownership and branch-scoped lines
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0036_customer_durable_carts.integration.sql
+      - name: Validate automatic runtime Compose configuration
+        env:
+          DATABASE_URL: postgres://outlet_window:ci_only_password@127.0.0.1:5432/outlet_window_test
+          MOYASAR_EXPECT_LIVE: "false"
+        run: docker compose -f compose.yaml config --quiet
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Lint
+        run: pnpm lint
+      - name: Test
+        env:
+          DATABASE_URL: postgres://outlet_window:ci_only_password@127.0.0.1:5432/outlet_window_test
+        run: pnpm test
+      - name: Build
+        run: pnpm build

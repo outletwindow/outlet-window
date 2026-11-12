@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#174b55">
+  <meta name="description" content="Outlet Window customer shopping experience prototype">
+  <title>Outlet Window | تجربة العميل</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="#" aria-label="Outlet Window home"><span class="brand-mark">OW</span><span>Outlet Window</span></a>
+    <div class="header-actions">
+      <button id="language-toggle" class="quiet-button" type="button">English</button>
+      <button id="cart-toggle" class="cart-button" type="button" aria-expanded="false" aria-controls="cart-panel"><span data-copy="cart">سلتك</span><span id="cart-count" class="count">0</span></button>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-copy">
+        <span class="eyebrow">OUTLET WINDOW</span>
+        <h1 data-copy="tagline">اكتشف منتجات متاجر متعددة في تجربة واحدة</h1>
+        <p data-copy="notice">لم يتم ربط تسجيل الدخول أو المخزون المباشر أو الدفع بعد.</p>
+      </div>
+      <div class="hero-art" aria-hidden="true"><span>🛍️</span><span>📦</span><span>👟</span></div>
+    </section>
+
+    <div class="demo-banner"><span class="demo-dot"></span><span data-copy="demo">واجهة تجريبية — المنتجات والأسعار للعرض فقط</span></div>
+
+    <section class="catalog-section">
+      <div class="section-heading">
+        <div><span class="eyebrow" data-copy="categories">تسوق حسب الفئة</span><h2 data-copy="featured">مختارات لك</h2></div>
+        <label class="search-wrap"><span class="sr-only" data-copy="search">ابحث عن منتج أو فئة...</span><input id="search" type="search" placeholder="ابحث عن منتج أو فئة..."></label>
+      </div>
+      <nav id="category-list" class="category-list" aria-label="Product categories">
+        <button class="category-chip selected" data-category="all" type="button" data-copy="all">الكل</button>
+        <button class="category-chip" data-category="fashion" type="button" data-copy="fashion">الأزياء</button>
+        <button class="category-chip" data-category="accessories" type="button" data-copy="accessories">الإكسسوارات</button>
+        <button class="category-chip" data-category="shoes" type="button" data-copy="shoes">الأحذية</button>
+      </nav>
+      <div id="product-grid" class="product-grid" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <aside id="cart-panel" class="cart-panel" hidden aria-label="Shopping cart">
+    <div class="cart-heading"><h2 data-copy="cart">سلتك</h2><button id="cart-close" class="icon-button" type="button" aria-label="Close cart">×</button></div>
+    <div id="cart-items" class="cart-items"></div>
+    <div class="cart-total"><span data-copy="subtotal">المجموع الفرعي</span><strong id="subtotal">٠ ر.س</strong></div>
+    <button id="checkout-button" class="checkout-button" type="button" disabled data-copy="checkout">متابعة إلى الدفع</button>
+  </aside>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <footer class="site-footer"><span>© <span id="year">2026</span> Outlet Window</span><span data-copy="demo">واجهة تجريبية — المنتجات والأسعار للعرض فقط</span></footer>
+</body>
+</html>

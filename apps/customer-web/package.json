@@ -1,0 +1,12 @@
+{
+  "name": "@outlet-window/customer-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test",
+    "typecheck": "node --check src/app.js && node --check src/catalog.js",
+    "lint": "node --check src/app.js && node --check src/catalog.js && node --check scripts/build.mjs"
+  }
+}
