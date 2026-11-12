@@ -483,3 +483,5 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Added PostgreSQL acceptance coverage for unpublished, inactive, stale, low-confidence, sold-out, and cross-merchant cases; CI runs it against PostgreSQL 16.
 - [ ] Configure a real API origin, merchant, and branch in a deployed environment and run browser-level smoke tests with live synchronized stock.
 - [ ] Checkout remains non-operational; implement server-side stock revalidation/reservation and the payment callback flow before enabling order submission or payment collection.
+
+- [x] Added local browser cart persistence for valid in-stock variants; stale or unavailable variant IDs are pruned when the live branch catalog reloads. Cross-device/account cart synchronization remains pending.

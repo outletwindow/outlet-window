@@ -1,4 +1,4 @@
-import { catalog as demoCatalog, formatPrice, addToCart, updateCartQuantity, cartSubtotal, normalizePublishedProducts } from "./catalog.js";
+import { catalog as demoCatalog, formatPrice, addToCart, updateCartQuantity, cartSubtotal, normalizePublishedProducts, restoreCart, serializeCart } from "./catalog.js";
 
 const copy = {
   ar: {
@@ -35,6 +35,7 @@ let catalogMode = "demo";
 let catalogLoading = false;
 let catalogFailed = false;
 let cart = new Map();
+const CART_STORAGE_KEY = "outlet-window-cart:v1";
 
 const $ = (selector) => document.querySelector(selector);
 const productGrid = $("#product-grid");
@@ -170,6 +171,15 @@ function renderCart() {
   }
 }
 
+function readSavedCart(products) {
+  try { return restoreCart(window.localStorage.getItem(CART_STORAGE_KEY), products); }
+  catch { return new Map(); }
+}
+function saveCart() {
+  try { window.localStorage.setItem(CART_STORAGE_KEY, serializeCart(cart)); }
+  catch { /* Storage can be unavailable in private browsing or restricted contexts. */ }
+}
+
 function showToast(message) {
   toast.textContent = message;
   toast.hidden = false;
@@ -181,6 +191,7 @@ productGrid.addEventListener("click", (event) => {
   const button = event.target.closest("button[data-add]");
   if (!button) return;
   cart = addToCart(cart, button.dataset.add, 1, catalog);
+  saveCart();
   renderCart();
   showToast(t("added"));
 });
@@ -189,6 +200,7 @@ cartItems.addEventListener("click", (event) => {
   const button = event.target.closest("button[data-quantity]");
   if (!button) return;
   cart = updateCartQuantity(cart, button.dataset.quantity, Number(button.dataset.value), catalog);
+  saveCart();
   renderCart();
 });
 
@@ -220,8 +232,8 @@ $("#checkout-button").addEventListener("click", () => showToast(t("checkoutNotic
 async function loadBranchCatalog() {
   const config = document.body.dataset;
   const configured = Boolean(config.apiBaseUrl || config.merchantId || config.branchId);
-  if (!configured) return;
-  if (!config.apiBaseUrl || !config.merchantId || !config.branchId) { catalogFailed = true; catalogMode = "live"; renderShell(); return; }
+  if (!configured) { cart = readSavedCart(catalog); renderShell(); return; }
+  if (!config.apiBaseUrl || !config.merchantId || !config.branchId) { catalogFailed = true; catalogMode = "live"; cart = new Map(); renderShell(); return; }
   let endpoint;
   try {
     const base = new URL(config.apiBaseUrl, window.location.href);
@@ -234,9 +246,11 @@ async function loadBranchCatalog() {
     if (!response.ok) throw new Error(`Catalog request failed: ${response.status}`);
     const payload = await response.json();
     catalog = normalizePublishedProducts(payload);
+    cart = readSavedCart(catalog);
+    saveCart();
     catalogFailed = false;
   } catch {
-    catalog = []; catalogFailed = true;
+    catalog = []; cart = new Map(); catalogFailed = true;
   } finally {
     catalogLoading = false; renderShell();
   }

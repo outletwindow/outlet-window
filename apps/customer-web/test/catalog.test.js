@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { catalog, addToCart, updateCartQuantity, cartSubtotal, formatPrice, normalizePublishedProducts } from "../src/catalog.js";
+import { catalog, addToCart, updateCartQuantity, cartSubtotal, formatPrice, normalizePublishedProducts, restoreCart, serializeCart } from "../src/catalog.js";
 
 test("catalog uses unique product identifiers and valid minor-unit prices", () => {
   const ids = catalog.map((product) => product.id);
@@ -96,4 +96,23 @@ test("published catalog safely converts PostgreSQL bigint JSON strings", () => {
 test("currency formatting respects zero- and three-decimal currencies", () => {
   assert.match(formatPrice(1250, "JPY", "ja-JP"), /1,250/);
   assert.match(formatPrice(1250, "KWD", "en-KW"), /1\.250/);
+});
+
+test("cart serialization persists valid variant quantities and prunes unavailable variants", () => {
+  const liveProducts = normalizePublishedProducts({ products: [{
+    id: "p-1", title: "Shirt", currency: "SAR", priceMinor: 10000,
+    variants: [
+      { id: "v-m", sizeLabel: "M", inStock: true },
+      { id: "v-l", sizeLabel: "L", inStock: true }
+    ]
+  }] });
+  const serialized = serializeCart(new Map([["v-m", 2], ["v-l", 1]]));
+  const restored = restoreCart(serialized, [liveProducts[0]]);
+  assert.deepEqual([...restored.entries()], [["v-m", 2]]);
+  assert.deepEqual([...restoreCart("not-json", liveProducts).entries()], []);
+  assert.deepEqual([...restoreCart(JSON.stringify([["v-m", 0], ["v-l", "2"]]), liveProducts).entries()], []);
+});
+
+test("cart serialization rejects invalid quantities", () => {
+  assert.throws(() => serializeCart(new Map([["jacket-001", 0]])), /invalid entry/);
 });

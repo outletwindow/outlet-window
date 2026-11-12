@@ -60,3 +60,30 @@ export function cartSubtotal(cart, products = catalog) {
   }
   return total;
 }
+
+export function serializeCart(cart) {
+  const entries = [...cart.entries()];
+  for (const [productId, quantity] of entries) {
+    if (typeof productId !== "string" || !Number.isSafeInteger(quantity) || quantity < 1) {
+      throw new TypeError("Cart contains an invalid entry");
+    }
+  }
+  return JSON.stringify(entries);
+}
+
+export function restoreCart(serialized, products = catalog) {
+  if (typeof serialized !== "string") return new Map();
+  let entries;
+  try { entries = JSON.parse(serialized); } catch { return new Map(); }
+  if (!Array.isArray(entries)) return new Map();
+  const available = new Set(products.map((product) => product.id));
+  const restored = new Map();
+  for (const entry of entries) {
+    if (!Array.isArray(entry) || entry.length !== 2) continue;
+    const [productId, quantity] = entry;
+    if (typeof productId !== "string" || !available.has(productId) ||
+        !Number.isSafeInteger(quantity) || quantity < 1 || restored.has(productId)) continue;
+    restored.set(productId, quantity);
+  }
+  return restored;
+}
