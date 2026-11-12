@@ -36,7 +36,7 @@ describe("PostgresCustomerCartStore",()=>{
  it("rolls back when a variant is unavailable or not published",async()=>{
   const s=setup();
   s.query.mockImplementation(async(sql:string,values?:readonly unknown[])=>{
-   s.calls.push({sql,values});
+   s.calls.push({sql,...(values===undefined?{}:{values})});
    if(sql.includes("SELECT COALESCE(v.currency")) return {rows:[],rowCount:0};
    return {rows:[],rowCount:0};
   });
