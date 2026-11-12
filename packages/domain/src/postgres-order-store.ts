@@ -181,7 +181,6 @@ export class PostgresOrderStore {
             return stored.id === requested.id &&
               stored.merchant_id === requested.merchantId &&
               stored.branch_id === requested.branchId &&
-              stored.status === requested.status &&
               String(stored.subtotal_minor) === String(requested.subtotalMinor) &&
               canonicalJson(stored.metadata ?? {}) === canonicalJson(requested.metadata ?? {});
           });
