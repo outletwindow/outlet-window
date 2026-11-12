@@ -512,5 +512,14 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Cart writes use a customer-scoped advisory transaction lock, enforce one active cart and one currency per cart, cap each line at 99 units, and roll back when the persisted cart projection cannot be read.
 - [x] Added unit coverage and a PostgreSQL schema acceptance test for customer ownership, branch-scoped lines, duplicate active-cart rejection, and quantity constraints.
 - [x] CI passed on `9e27049` (GitHub Actions runs `43230813321` and `43230804785`): PostgreSQL migration/acceptance, typecheck, lint, tests, and build succeeded.
-- [ ] Expose the cart store through authenticated customer cart API routes with an explicit customer-identity authorization scope; the persistence adapter is not yet wired to the API.
+- [x] Exposed the cart store through authenticated customer GET/POST/DELETE API routes, wired it into the PostgreSQL composition root, and added explicit `customerId` authorization scope plus cross-customer denial tests.
 - [ ] Connect the customer UI to the API and implement server-validated order creation and checkout orchestration. The cart is not yet a checkout or payment flow.
+
+
+## Transactional customer order persistence adapter — 2026-11-12
+- [x] Added PostgreSQL order persistence for the parent order, merchant suborders, and immutable order item lines in one transaction.
+- [x] Validates order/suborder identifiers, item quantities, currencies, line subtotals, metadata JSON safety, and active merchant branch scope before commit.
+- [x] Serializes idempotent order creation and compares persisted parent, suborder, and item-line identities and values before returning an exact replay; mismatched reuse returns an idempotency conflict.
+- [x] Unit tests and CI typecheck, lint, tests, and build passed on `41429a2` (GitHub Actions run `43231909128`).
+- [ ] The order store is not yet exposed as a customer API or wired to the durable cart. A trusted application service must reload published variants and authoritative current prices, validate currency and branch stock, recompute order totals and delivery charges, and create the order from a server-side cart snapshot.
+- [ ] Connect order creation to exact inventory reservation, trusted payment authorization/capture, multi-merchant recovery/compensation, and fulfillment outbox commits before enabling checkout.
