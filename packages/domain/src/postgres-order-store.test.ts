@@ -16,7 +16,7 @@ const order: CreateCustomerOrderInput = {
   }]
 };
 
-function database(options: { existing?: boolean; existingTotal?: string; unavailableBranch?: boolean } = {}) {
+function database(options: { existing?: boolean; existingTotal?: string; existingSuborderStatus?: string; unavailableBranch?: boolean } = {}) {
   const statements: string[] = [];
   const query = vi.fn(async <Row>(sql: string, _args?: readonly unknown[]) => {
     statements.push(sql);
@@ -28,7 +28,7 @@ function database(options: { existing?: boolean; existingTotal?: string; unavail
       rowCount = rows.length;
     } else if (sql.includes("FROM merchant_suborders") && sql.includes("ORDER BY id")) {
       rows = [{ id: "suborder-1", merchant_id: "merchant-1", branch_id: "branch-1",
-        status: "pending_validation", subtotal_minor: "12900", metadata: { channel: "store" } }];
+        status: options.existingSuborderStatus ?? "pending_validation", subtotal_minor: "12900", metadata: { channel: "store" } }];
       rowCount = 1;
     } else if (sql.includes("FROM customer_order_items WHERE order_id")) {
       rows = [{
@@ -78,6 +78,14 @@ describe("PostgresOrderStore", () => {
 
   it("returns already_exists only when the persisted order lines also match", async () => {
     const db = database({ existing: true });
+    const result = await new PostgresOrderStore(db.pool).create(order);
+    expect(result).toEqual({ outcome: "already_exists", orderId: "persisted-order" });
+    expect(db.statements.some(sql => sql.includes("INSERT INTO customer_orders"))).toBe(false);
+    expect(db.statements.at(-1)).toBe("COMMIT");
+  });
+
+  it("keeps idempotent order creation stable after a suborder lifecycle transition", async () => {
+    const db = database({ existing: true, existingSuborderStatus: "preparing" });
     const result = await new PostgresOrderStore(db.pool).create(order);
     expect(result).toEqual({ outcome: "already_exists", orderId: "persisted-order" });
     expect(db.statements.some(sql => sql.includes("INSERT INTO customer_orders"))).toBe(false);
