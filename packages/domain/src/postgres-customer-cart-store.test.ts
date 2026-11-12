@@ -6,8 +6,9 @@ function setup() {
  const calls:Array<{sql:string;values?:readonly unknown[]}>=[];
  const query=vi.fn(async(sql:string,values?:readonly unknown[]):Promise<PostgresQueryResult<any>>=>{
   calls.push({sql,...(values===undefined?{}:{values})});
-  if(sql.includes("SELECT COALESCE(v.currency")) return {rows:[{merchant_tenant_id:"merchant-tenant-1",currency:"SAR",price_minor:"12900"}],rowCount:1};
+  if(sql.includes("COALESCE(v.currency,p.currency)")) return {rows:[{merchant_tenant_id:"merchant-tenant-1",currency:"SAR",price_minor:"12900"}],rowCount:1};
   if(sql.includes("INSERT INTO customer_carts")) return {rows:[{id:"cart-1",customer_id:"customer-1",currency:"SAR",version:1}],rowCount:1};
+  if(sql.includes("DELETE FROM customer_cart_items")) return {rows:[{cart_id:"cart-1"}],rowCount:1};
   if(sql.includes("SELECT quantity FROM customer_cart_items")) return {rows:[],rowCount:0};
   if(sql.includes("SELECT id,customer_id,currency,version FROM customer_carts")) return {rows:[{id:"cart-1",customer_id:"customer-1",currency:"SAR",version:2}],rowCount:1};
   if(sql.includes("FROM customer_cart_items ci")) return {rows:[{id:"item-1",merchant_id:"merchant-1",branch_id:"branch-1",product_variant_id:"variant-1",quantity:2,title:"Shirt",sku:"SKU-1",currency:"SAR",price_minor:"12900",in_stock:true}],rowCount:1};
