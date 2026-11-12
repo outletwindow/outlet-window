@@ -51,7 +51,12 @@ export class PostgresCustomerPaymentIntentCheckout {
    await this.attempts.markOutcomeUnknown(attempt.attemptId);
    return {outcome:"persistence_conflict"};
   }
-  if(saved!=="created") return {outcome:"persistence_conflict"};
+  if(saved!=="created") {
+   // The provider may already own this intent even when the durable reference could not be linked.
+   // Keep the attempt explicitly unresolved; never leave it looking safe to dispatch again.
+   await this.attempts.markOutcomeUnknown(attempt.attemptId);
+   return {outcome:"persistence_conflict"};
+  }
   return {outcome:"created",providerPaymentReference:intent.id,clientSecret:intent.clientSecret,expiresAtUtc:intent.expiresAtUtc,amountMinor,currency};
  }
 }
