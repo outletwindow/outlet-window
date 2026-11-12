@@ -65,7 +65,7 @@ describe("PostgreSQL branch inventory reservation idempotency", () => {
             merchant_id: "merchant-1", branch_id: "branch-1"
           } as Row], rowCount: 1 };
         }
-        if (sql.includes("FROM customer_order_items oi") && sql.includes("ORDER BY oi.product_variant_id")) {
+        if (sql.includes("FROM customer_order_items oi") && !sql.includes("commerce_catalog_variants")) {
           return { rows: [{
             product_variant_id: "catalog-variant-1", sku: "SKU-1", quantity: 2
           } as Row], rowCount: 1 };
