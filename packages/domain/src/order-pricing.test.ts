@@ -21,6 +21,23 @@ describe("deterministic pricing quotes", () => {
     });
   });
 
+  it("excludes informational discount components from subtotal and subtracts the discount once", () => {
+    const quote = calculatePricingQuote({
+      ...base,
+      components: [...base.components, { kind: "discount", amountMinor: 500, label: "Promotion" }]
+    });
+    expect(quote.subtotalMinor).toBe(30_475);
+    expect(quote.discountMinor).toBe(500);
+    expect(quote.totalMinor).toBe(29_975);
+  });
+
+  it("rejects discount components that disagree with the explicit discount total", () => {
+    expect(() => calculatePricingQuote({
+      ...base,
+      components: [...base.components, { kind: "discount", amountMinor: 400, label: "Promotion" }]
+    })).toThrow("discount_component_mismatch");
+  });
+
   it("rejects negative, fractional, excessive discounts and unsafe totals", () => {
     expect(() => calculatePricingQuote({ ...base, discountMinor: -1 })).toThrow("invalid_discount");
     expect(() => calculatePricingQuote({ ...base, discountMinor: 40_000 })).toThrow("invalid_discount");
