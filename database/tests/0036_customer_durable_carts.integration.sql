@@ -19,8 +19,8 @@ INSERT INTO branch_inventory
 VALUES ('ow-cart-merchant','ow-cart-branch','ow-cart-external-variant','OW-CART-SKU',5,0,'merchant_portal',now(),'high');
 INSERT INTO customer_carts (id,tenant_id,customer_id,status,currency)
 VALUES ('ow-cart-a','platform','ow-cart-customer','active','SAR');
-INSERT INTO customer_cart_items (id,tenant_id,cart_id,merchant_id,branch_id,product_variant_id,quantity)
-VALUES ('ow-cart-item-a','platform','ow-cart-a','ow-cart-merchant','ow-cart-branch','ow-cart-variant',2);
+INSERT INTO customer_cart_items (id,tenant_id,cart_id,merchant_tenant_id,merchant_id,branch_id,product_variant_id,quantity)
+VALUES ('ow-cart-item-a','platform','ow-cart-a','ow-cart-merchant','ow-cart-merchant','ow-cart-branch','ow-cart-variant',2);
 DO $$
 DECLARE cart_count integer; item_count integer;
 BEGIN
@@ -41,8 +41,8 @@ BEGIN
  EXCEPTION WHEN unique_violation THEN NULL;
  END;
  BEGIN
-  INSERT INTO customer_cart_items (id,tenant_id,cart_id,merchant_id,branch_id,product_variant_id,quantity)
-  VALUES ('ow-cart-invalid','platform','ow-cart-a','ow-cart-merchant','ow-cart-branch','ow-cart-variant',100);
+  INSERT INTO customer_cart_items (id,tenant_id,cart_id,merchant_tenant_id,merchant_id,branch_id,product_variant_id,quantity)
+  VALUES ('ow-cart-invalid','platform','ow-cart-a','ow-cart-merchant','ow-cart-merchant','ow-cart-branch','ow-cart-variant',100);
   RAISE EXCEPTION 'out-of-range cart quantity unexpectedly accepted';
  EXCEPTION WHEN check_violation THEN NULL;
  END;

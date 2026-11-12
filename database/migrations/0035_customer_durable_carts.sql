@@ -15,10 +15,14 @@ CREATE UNIQUE INDEX customer_carts_one_active_per_customer
 CREATE INDEX customer_carts_customer_updated_idx
   ON customer_carts (customer_id, updated_at DESC);
 
+ALTER TABLE commerce_catalog_variants
+  ADD CONSTRAINT commerce_catalog_variants_tenant_id_unique UNIQUE (tenant_id, id);
+
 CREATE TABLE customer_cart_items (
   id text PRIMARY KEY,
   tenant_id text NOT NULL,
   cart_id text NOT NULL,
+  merchant_tenant_id text NOT NULL,
   merchant_id text NOT NULL,
   branch_id text NOT NULL,
   product_variant_id text NOT NULL REFERENCES commerce_catalog_variants(id) ON DELETE RESTRICT,
@@ -26,6 +30,8 @@ CREATE TABLE customer_cart_items (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   FOREIGN KEY (tenant_id, cart_id) REFERENCES customer_carts (tenant_id, id) ON DELETE CASCADE,
+  FOREIGN KEY (merchant_tenant_id, merchant_id) REFERENCES merchants (tenant_id, id) ON DELETE RESTRICT,
+  FOREIGN KEY (merchant_tenant_id, product_variant_id) REFERENCES commerce_catalog_variants (tenant_id, id) ON DELETE RESTRICT,
   FOREIGN KEY (merchant_id, branch_id) REFERENCES merchant_branches (merchant_id, id) ON DELETE RESTRICT,
   UNIQUE (cart_id, merchant_id, branch_id, product_variant_id)
 );

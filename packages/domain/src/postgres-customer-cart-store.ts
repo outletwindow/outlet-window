@@ -51,8 +51,8 @@ export class PostgresCustomerCartStore {
     try {
       await client.query("BEGIN");
       await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", ["customer-cart:" + input.customerId]);
-      const eligible = await client.query<{ currency: string; price_minor: string | number }>(
-        `SELECT COALESCE(v.currency,p.currency) AS currency,
+      const eligible = await client.query<{ merchant_tenant_id: string; currency: string; price_minor: string | number }>(
+        `SELECT m.tenant_id AS merchant_tenant_id, COALESCE(v.currency,p.currency) AS currency,
                 COALESCE(v.price_minor,p.price_minor) AS price_minor
          FROM merchants m
          JOIN merchant_branches b ON b.merchant_id=m.id
@@ -101,11 +101,11 @@ export class PostgresCustomerCartStore {
         if (stock.rows[0]?.available !== true) throw new Error("customer_cart_variant_unavailable");
       }
       await client.query(
-        `INSERT INTO customer_cart_items (id,tenant_id,cart_id,merchant_id,branch_id,product_variant_id,quantity)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)
+        `INSERT INTO customer_cart_items (id,tenant_id,cart_id,merchant_tenant_id,merchant_id,branch_id,product_variant_id,quantity)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
          ON CONFLICT (cart_id,merchant_id,branch_id,product_variant_id)
          DO UPDATE SET quantity=EXCLUDED.quantity,updated_at=clock_timestamp()`,
-        [this.createId(),PLATFORM_TENANT,cartRow.id,input.merchantId,input.branchId,input.productVariantId,totalQuantity]
+        [this.createId(),PLATFORM_TENANT,cartRow.id,product.merchant_tenant_id,input.merchantId,input.branchId,input.productVariantId,totalQuantity]
       );
       await client.query("UPDATE customer_carts SET version=version+1,updated_at=clock_timestamp() WHERE id=$1",[cartRow.id]);
       await client.query("COMMIT");

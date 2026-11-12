@@ -6,7 +6,7 @@ function setup() {
  const calls:Array<{sql:string;values?:readonly unknown[]}>=[];
  const query=vi.fn(async(sql:string,values?:readonly unknown[]):Promise<PostgresQueryResult<any>>=>{
   calls.push({sql,values});
-  if(sql.includes("SELECT COALESCE(v.currency")) return {rows:[{currency:"SAR",price_minor:"12900"}],rowCount:1};
+  if(sql.includes("SELECT COALESCE(v.currency")) return {rows:[{merchant_tenant_id:"merchant-tenant-1",currency:"SAR",price_minor:"12900"}],rowCount:1};
   if(sql.includes("INSERT INTO customer_carts")) return {rows:[{id:"cart-1",customer_id:"customer-1",currency:"SAR",version:1}],rowCount:1};
   if(sql.includes("SELECT quantity FROM customer_cart_items")) return {rows:[],rowCount:0};
   if(sql.includes("SELECT id,customer_id,currency,version FROM customer_carts")) return {rows:[{id:"cart-1",customer_id:"customer-1",currency:"SAR",version:2}],rowCount:1};
