@@ -420,12 +420,10 @@ describe("Outlet Window API foundation", () => {
       const denied = await protectedApp.inject({ method: "POST", url: "/api/v1/merchants/merchant-1/branches/branch-2/orders/order-1/suborders/sub-1/transitions", payload: { nextStatus: "awaiting_payment", expectedVersion: 1 } });
       expect(denied.statusCode).toBe(403);
       expect(calls).toHaveLength(0);
-      const allowed = await protectedApp.inject({ method: "POST", url: "/api/v1/merchants/merchant-1/branches/branch-1/orders/order-1/suborders/sub-1/transitions", payload: { nextStatus: "awaiting_payment", expectedVersion: 1 } });
-      expect(allowed.statusCode).toBe(200);
-      expect(allowed.json()).toMatchObject({ suborder: { id: "sub-1", status: "awaiting_payment", version: 2 }, previousStatus: "pending_validation", parentStatus: "awaiting_payment" });
-      expect(calls[0]?.tenantId).toBe("tenant-merchant-1");
-      expect(calls[0]?.context).toMatchObject({ actorId: "principal-1", actorRole: "merchant_owner", paymentAuthorized: false });
-      expect(calls[0]?.auditEvent).toMatchObject({ actor: { id: "principal-1" }, tenantId: "tenant-merchant-1", branchId: "branch-1" });
+      const forbiddenCheckout = await protectedApp.inject({ method: "POST", url: "/api/v1/merchants/merchant-1/branches/branch-1/orders/order-1/suborders/sub-1/transitions", payload: { nextStatus: "awaiting_payment", expectedVersion: 1 } });
+      expect(forbiddenCheckout.statusCode).toBe(403);
+      expect(forbiddenCheckout.json()).toEqual({ error: "customer_checkout_transition_only" });
+      expect(calls).toHaveLength(0);
     } finally { await protectedApp.close(); }
   });
 
