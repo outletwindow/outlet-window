@@ -26,6 +26,7 @@ describe("PostgresCustomerCartStore",()=>{
   expect(s.calls[0]?.sql).toBe("BEGIN");
   expect(s.calls.some(x=>x.sql.includes("pg_advisory_xact_lock"))).toBe(true);
   expect(s.calls.some(x=>x.sql.includes("p.published_at IS NOT NULL"))).toBe(true);
+  expect(s.calls.some(x=>x.sql.includes("currency=COALESCE(customer_carts.currency,EXCLUDED.currency)"))).toBe(true);
   expect(s.calls.at(-1)?.sql).toBe("COMMIT");
   expect(s.client.release).toHaveBeenCalledOnce();
  });
@@ -62,6 +63,10 @@ describe("PostgresCustomerCartStore",()=>{
   const deletion=s.calls.find(x=>x.sql.includes("DELETE FROM customer_cart_items"));
   expect(deletion?.sql).toContain("c.customer_id=$3");
   expect(deletion?.values).toEqual(["item-other","platform","customer-1"]);
+  expect(s.calls.some(x=>x.sql.includes("pg_advisory_xact_lock"))).toBe(true);
+  const cartUpdate=s.calls.find(x=>x.sql.includes("SET currency=CASE WHEN EXISTS"));
+  expect(cartUpdate?.sql).toContain("ELSE NULL END");
+  expect(cartUpdate?.values).toEqual(["cart-1"]);
   expect(s.calls.at(-1)?.sql).toBe("COMMIT");
  });
 });
