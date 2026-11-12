@@ -53,7 +53,7 @@ export class PostgresBranchInventoryReservationAdapter implements InventoryReser
           row.branch_id === request.branchId;
         if (!same || row.status !== "reserved") throw new Error("inventory_reservation_idempotency_conflict");
         const lines = await client.query<OrderLineRow>(
-          "SELECT catalog_variant_id AS product_variant_id, sku, quantity FROM inventory_reservation_lines WHERE reservation_id = $1 ORDER BY catalog_variant_id",
+          "SELECT COALESCE(catalog_variant_id, product_variant_id) AS product_variant_id, sku, quantity FROM inventory_reservation_lines WHERE reservation_id = $1 ORDER BY product_variant_id",
           [row.id]
         );
         if (!sameLines(lines.rows, request.lines)) throw new Error("inventory_reservation_idempotency_conflict");
