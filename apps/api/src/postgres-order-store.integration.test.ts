@@ -30,6 +30,7 @@ integration("PostgresOrderStore marketplace tenancy", () => {
   });
 
   afterAll(async () => {
+    await pool.query("DELETE FROM customer_order_items WHERE order_id = $1", [orderId]);
     await pool.query("DELETE FROM merchant_suborders WHERE order_id = $1", [orderId]);
     await pool.query("DELETE FROM customer_orders WHERE id = $1", [orderId]);
     await pool.query("DELETE FROM merchant_branches WHERE merchant_id = ANY($1::text[])", [[merchantA, merchantB]]);
@@ -42,12 +43,22 @@ integration("PostgresOrderStore marketplace tenancy", () => {
     id: orderId, tenantId: "platform", customerId, idempotencyKey: "idem-" + suffix,
     currency: "SAR", totalMinor: 50000,
     suborders: [
-      { id: "sub-a-" + suffix, merchantId: merchantA, branchId: branchA, status: "pending_validation" as const, subtotalMinor: 20000 },
-      { id: "sub-b-" + suffix, merchantId: merchantB, branchId: branchB, status: "pending_validation" as const, subtotalMinor: 30000 }
+      {
+        id: "sub-a-" + suffix, merchantId: merchantA, branchId: branchA,
+        status: "pending_validation" as const, subtotalMinor: 20000,
+        items: [{ id: "item-a-" + suffix, productVariantId: "variant-a-" + suffix,
+          sku: "SKU-A-" + suffix, quantity: 2, unitPriceMinor: 10000, currency: "SAR" }]
+      },
+      {
+        id: "sub-b-" + suffix, merchantId: merchantB, branchId: branchB,
+        status: "pending_validation" as const, subtotalMinor: 30000,
+        items: [{ id: "item-b-" + suffix, productVariantId: "variant-b-" + suffix,
+          sku: "SKU-B-" + suffix, quantity: 1, unitPriceMinor: 30000, currency: "SAR" }]
+      }
     ]
   });
 
-  it("creates one platform parent with suborders isolated to separate merchant tenants", async () => {
+  it("creates one platform parent with merchant-scoped suborders and order lines", async () => {
     await expect(store.create(input())).resolves.toEqual({ outcome: "created", orderId });
     const parent = await pool.query<{ tenant_id: string }>(
       "SELECT tenant_id FROM customer_orders WHERE id = $1", [orderId]
@@ -60,6 +71,14 @@ integration("PostgresOrderStore marketplace tenancy", () => {
     expect(children.rows).toEqual([
       { tenant_id: merchantA, merchant_id: merchantA },
       { tenant_id: merchantB, merchant_id: merchantB }
+    ]);
+    const lines = await pool.query<{ tenant_id: string; suborder_id: string; merchant_id: string; sku: string; quantity: number }>(
+      "SELECT tenant_id, suborder_id, merchant_id, sku, quantity FROM customer_order_items WHERE order_id = $1 ORDER BY merchant_id",
+      [orderId]
+    );
+    expect(lines.rows).toEqual([
+      { tenant_id: merchantA, suborder_id: "sub-a-" + suffix, merchant_id: merchantA, sku: "SKU-A-" + suffix, quantity: 2 },
+      { tenant_id: merchantB, suborder_id: "sub-b-" + suffix, merchant_id: merchantB, sku: "SKU-B-" + suffix, quantity: 1 }
     ]);
   });
 
@@ -77,7 +96,12 @@ integration("PostgresOrderStore marketplace tenancy", () => {
     const failedId = "failed-order-" + suffix;
     await expect(store.create({
       ...input(), id: failedId, idempotencyKey: "failed-" + suffix,
-      suborders: [{ id: "failed-sub-" + suffix, merchantId: merchantA, branchId: "missing-branch", status: "pending_validation", subtotalMinor: 1 }]
+      suborders: [{
+        id: "failed-sub-" + suffix, merchantId: merchantA, branchId: "missing-branch",
+        status: "pending_validation", subtotalMinor: 1,
+        items: [{ id: "failed-item-" + suffix, productVariantId: "failed-variant-" + suffix,
+          sku: "FAILED-" + suffix, quantity: 1, unitPriceMinor: 1, currency: "SAR" }]
+      }]
     })).rejects.toThrow("Merchant branch is unavailable for order creation");
     const parent = await pool.query("SELECT id FROM customer_orders WHERE id = $1", [failedId]);
     expect(parent.rowCount).toBe(0);
