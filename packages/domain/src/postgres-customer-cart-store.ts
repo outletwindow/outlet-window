@@ -78,7 +78,7 @@ export class PostgresCustomerCartStore {
         `INSERT INTO customer_carts (id,tenant_id,customer_id,status,currency)
          VALUES ($1,$2,$3,'active',$4)
          ON CONFLICT (tenant_id,customer_id) WHERE status='active'
-         DO UPDATE SET updated_at=clock_timestamp()
+         DO UPDATE SET currency=COALESCE(customer_carts.currency,EXCLUDED.currency),updated_at=clock_timestamp()
          RETURNING id,customer_id,currency,version`,
         [this.createId(),PLATFORM_TENANT,input.customerId,product.currency]
       );
@@ -125,6 +125,7 @@ export class PostgresCustomerCartStore {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", ["customer-cart:" + input.customerId]);
       const removed = await client.query<{ cart_id: string }>(
         `DELETE FROM customer_cart_items i USING customer_carts c
          WHERE i.id=$1 AND i.cart_id=c.id AND c.tenant_id=$2
@@ -132,7 +133,10 @@ export class PostgresCustomerCartStore {
         [input.itemId,PLATFORM_TENANT,input.customerId]
       );
       if (removed.rowCount) await client.query(
-        "UPDATE customer_carts SET version=version+1,updated_at=clock_timestamp() WHERE id=$1",
+        `UPDATE customer_carts c
+         SET currency=CASE WHEN EXISTS (SELECT 1 FROM customer_cart_items i WHERE i.cart_id=c.id) THEN c.currency ELSE NULL END,
+             version=version+1,updated_at=clock_timestamp()
+         WHERE c.id=$1`,
         [removed.rows[0]!.cart_id]
       );
       const cart = await this.readCart(client,input.customerId);
