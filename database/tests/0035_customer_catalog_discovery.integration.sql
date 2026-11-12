@@ -78,7 +78,7 @@ BEGIN
          AND i.available_quantity - i.reserved_quantity > 0
      )
    ORDER BY p.updated_at DESC, p.id
-   LIMIT 1
+   LIMIT 100
  )
  SELECT count(*), count(DISTINCT p.id)
  INTO visible_count, visible_product_count
