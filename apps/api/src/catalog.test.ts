@@ -159,6 +159,30 @@ describe("merchant catalog API", () => {
     expect(received).toEqual({ tenantId: "tenant-actual", productId: "p-1", published: true });
   });
 
+  it("exposes customer-safe products through branch-scoped discovery", async () => {
+    let received: unknown;
+    const app = await makeApp({
+      createProduct: async () => { throw new Error("unused"); },
+      listProducts: async () => [],
+      listPublishedBranchProducts: async input => {
+        received = input;
+        return [{ id: "public-product-1", title: "Classic Shirt", variants: [{ id: "variant-1", sizeLabel: "M", inStock: true }] }];
+      }
+    });
+    const response = await app.inject({ method: "GET", url: "/api/v1/catalog/merchants/merchant-1/branches/branch-1/products?limit=12" });
+    expect(response.statusCode).toBe(200);
+    expect(received).toEqual({ merchantId: "merchant-1", branchId: "branch-1", limit: 12 });
+    expect(response.json().products).toEqual([
+      { id: "public-product-1", title: "Classic Shirt", variants: [{ id: "variant-1", sizeLabel: "M", inStock: true }] }
+    ]);
+  });
+
+  it("rejects invalid customer discovery limits", async () => {
+    const app = await makeApp({ createProduct: async () => { throw new Error("unused"); }, listProducts: async () => [] });
+    const response = await app.inject({ method: "GET", url: "/api/v1/catalog/merchants/merchant-1/branches/branch-1/products?limit=1000" });
+    expect(response.statusCode).toBe(400);
+  });
+
   it("fails closed when catalog storage is not configured", async () => {
     const app = buildApp({ resolveActor: async () => merchantOwner });
     apps.push(app);

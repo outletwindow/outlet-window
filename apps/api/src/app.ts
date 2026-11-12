@@ -61,6 +61,7 @@ export interface MerchantCatalogRepository {
   createProduct(input: CatalogProductInput): Promise<CatalogProductRecord>;
   listProducts(tenantId: string, limit?: number): Promise<Array<Record<string, unknown>>>;
   setProductPublication?(input: { tenantId: string; productId: string; published: boolean }): Promise<{ outcome: "updated"; publishedAt: string | null } | { outcome: "not_found" }>;
+  listPublishedBranchProducts?(input: { merchantId: string; branchId: string; limit: number }): Promise<Array<Record<string, unknown>>>;
 }
 
 export interface CustomerPaymentIntentCheckout { create(input:{customerId:string;orderId:string;idempotencyKey:string}):Promise<import("../../../packages/domain/src/postgres-customer-payment-intent-checkout.js").CustomerPaymentIntentCheckoutResult>; }
@@ -1018,6 +1019,22 @@ app.patch<{
       }
       throw error;
     }
+  });
+
+  app.get<{
+    Params: { merchantId: string; branchId: string };
+    Querystring: { limit?: string };
+  }>("/api/v1/catalog/merchants/:merchantId/branches/:branchId/products", async (request, reply) => {
+    const { merchantId, branchId } = request.params;
+    if (!/^[a-zA-Z0-9._:-]{1,160}$/.test(merchantId) || !/^[a-zA-Z0-9._:-]{1,160}$/.test(branchId)) {
+      return reply.code(400).send({ error: "invalid_catalog_scope" });
+    }
+    const rawLimit = request.query.limit;
+    const limit = rawLimit === undefined ? 50 : Number(rawLimit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) return reply.code(400).send({ error: "invalid_limit" });
+    if (!options.merchantCatalog?.listPublishedBranchProducts) return reply.code(503).send({ error: "customer_catalog_unavailable" });
+    const products = await options.merchantCatalog.listPublishedBranchProducts({ merchantId, branchId, limit });
+    return reply.code(200).send({ products });
   });
 
   app.get<{

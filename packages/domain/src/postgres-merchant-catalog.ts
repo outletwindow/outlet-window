@@ -113,6 +113,63 @@ export class PostgresMerchantCatalog {
     return { outcome: "updated", publishedAt: row.published_at === null ? null : new Date(row.published_at).toISOString() };
   }
 
+  /** Customer-safe projection: only explicitly published products with fresh, sellable stock at the exact branch. */
+  async listPublishedBranchProducts(input: { merchantId: string; branchId: string; limit: number }): Promise<Array<Record<string, unknown>>> {
+    if (!input.merchantId.trim() || !input.branchId.trim() ||
+        !Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 100) {
+      throw new Error("invalid_customer_catalog_scope");
+    }
+    const result = await this.pool.query<{
+      product_id: string; title: string; description: string | null; brand: string | null;
+      currency: string | null; price_minor: number | null; image_urls: string[];
+      variant_id: string; size_label: string | null; color_label: string | null;
+      variant_currency: string | null; variant_price_minor: number | null;
+    }>(
+      `SELECT p.id AS product_id, p.title, p.description, p.brand, p.currency,
+              p.price_minor, p.image_urls, v.id AS variant_id, v.size_label,
+              v.color_label, v.currency AS variant_currency, v.price_minor AS variant_price_minor
+       FROM merchants m
+       JOIN merchant_branches b ON b.merchant_id = m.id
+       JOIN commerce_catalog_products p ON p.tenant_id = m.tenant_id
+       JOIN commerce_catalog_variants v ON v.tenant_id = p.tenant_id AND v.product_id = p.id
+       JOIN branch_inventory i
+         ON i.merchant_id = b.merchant_id AND i.branch_id = b.id
+        AND i.product_variant_id = v.external_variant_id AND i.sku = v.sku
+       WHERE m.id = $1 AND b.id = $2
+         AND m.status = 'active' AND b.status = 'active'
+         AND p.published_at IS NOT NULL AND v.sku IS NOT NULL
+         AND i.availability_confidence IN ('high','medium')
+         AND i.last_synced_at >= clock_timestamp() - interval '30 minutes'
+         AND i.available_quantity - i.reserved_quantity > 0
+       ORDER BY p.updated_at DESC, p.id, v.id
+       LIMIT $3`,
+      [input.merchantId, input.branchId, input.limit]
+    );
+    const products = new Map<string, Record<string, unknown>>();
+    for (const row of result.rows) {
+      let product = products.get(row.product_id);
+      if (!product) {
+        product = {
+          id: row.product_id, title: row.title,
+          ...(row.description === null ? {} : { description: row.description }),
+          ...(row.brand === null ? {} : { brand: row.brand }),
+          currency: row.currency, priceMinor: row.price_minor,
+          imageUrls: row.image_urls, variants: []
+        };
+        products.set(row.product_id, product);
+      }
+      (product.variants as Array<Record<string, unknown>>).push({
+        id: row.variant_id,
+        ...(row.size_label === null ? {} : { sizeLabel: row.size_label }),
+        ...(row.color_label === null ? {} : { colorLabel: row.color_label }),
+        currency: row.variant_currency ?? row.currency,
+        priceMinor: row.variant_price_minor ?? row.price_minor,
+        inStock: true
+      });
+    }
+    return [...products.values()];
+  }
+
   async listProducts(tenantId: string, limit = 50): Promise<Array<Record<string, unknown>>> {
     const result = await this.pool.query<Record<string, unknown>>(
       `SELECT p.id,p.integration_id AS "integrationId",p.provider_key AS "providerKey",
