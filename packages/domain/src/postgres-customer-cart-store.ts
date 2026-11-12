@@ -56,7 +56,7 @@ export class PostgresCustomerCartStore {
                 COALESCE(v.price_minor,p.price_minor) AS price_minor
          FROM merchants m
          JOIN merchant_branches b ON b.merchant_id=m.id
-         JOIN commerce_catalog_variants v ON v.id=$4 AND v.tenant_id=m.tenant_id
+         JOIN commerce_catalog_variants v ON v.id=$3 AND v.tenant_id=m.tenant_id
          JOIN commerce_catalog_products p ON p.tenant_id=v.tenant_id AND p.id=v.product_id
          JOIN branch_inventory i ON i.merchant_id=m.id AND i.branch_id=b.id
            AND i.product_variant_id=v.external_variant_id AND i.sku=v.sku
@@ -66,9 +66,9 @@ export class PostgresCustomerCartStore {
            AND COALESCE(v.price_minor,p.price_minor) IS NOT NULL
            AND i.last_synced_at >= clock_timestamp()-interval '30 minutes'
            AND i.availability_confidence IN ('high','medium')
-           AND i.available_quantity-i.reserved_quantity >= $5
+           AND i.available_quantity-i.reserved_quantity >= $4
          FOR UPDATE OF m,b,i`,
-        [input.merchantId,input.branchId,input.productVariantId,input.productVariantId,input.quantity]
+        [input.merchantId,input.branchId,input.productVariantId,input.quantity]
       );
       const product = eligible.rows[0];
       if (!product) throw new Error("customer_cart_variant_unavailable");

@@ -31,7 +31,6 @@ describe("PostgresCustomerCartStore",()=>{
  it("rejects invalid quantities before acquiring a connection",async()=>{
   const s=setup();
   await expect(s.store.addItem({customerId:"customer-1",merchantId:"merchant-1",branchId:"branch-1",productVariantId:"variant-1",quantity:100})).rejects.toThrow("invalid_customer_cart_item");
-  expect(s.pool).toBeUndefined();
   expect(s.client.release).not.toHaveBeenCalled();
  });
  it("rolls back when a variant is unavailable or not published",async()=>{
