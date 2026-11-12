@@ -110,6 +110,24 @@ describe("PostgresOrderStore", () => {
     expect(db.pool.connect).not.toHaveBeenCalled();
   });
 
+  it("rejects duplicate product variants within one merchant suborder before opening a transaction", async () => {
+    const db = database();
+    const duplicate = {
+      ...order,
+      suborders: [{
+        ...order.suborders[0]!,
+        items: [
+          order.suborders[0]!.items[0]!,
+          { ...order.suborders[0]!.items[0]!, id: "item-2", quantity: 1, unitPriceMinor: 4300 }
+        ],
+        subtotalMinor: 17200
+      }]
+    };
+    await expect(new PostgresOrderStore(db.pool).create(duplicate))
+      .rejects.toThrow("A merchant suborder cannot contain duplicate product variants");
+    expect(db.pool.connect).not.toHaveBeenCalled();
+  });
+
   it("rejects an empty suborder line list", async () => {
     const db = database();
     const invalid = { ...order, suborders: [{ ...order.suborders[0]!, items: [] }] };
