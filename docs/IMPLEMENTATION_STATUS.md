@@ -481,5 +481,5 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Connected the customer web application to the customer discovery endpoint through deployment-time `data-api-base-url`, `data-merchant-id`, and `data-branch-id` configuration; it remains in clearly labelled demo mode when those attributes are empty.
 - [x] Added in-stock variant-level cart entries, safe handling of PostgreSQL bigint JSON strings, and currency-aware minor-unit formatting.
 - [x] Checkout remains non-operational and does not submit orders or collect payments; stock must be revalidated and reserved server-side before checkout is implemented.
-- [ ] Run PostgreSQL acceptance coverage for the actual branch discovery filters, including unpublished, inactive, stale, low-confidence, sold-out, and cross-merchant cases.
+- [x] Added PostgreSQL acceptance coverage for unpublished, inactive, stale, low-confidence, sold-out, and cross-merchant cases; CI runs the acceptance script against PostgreSQL 16.
 - [ ] Configure a real API origin, merchant, and branch in a deployed environment and run browser-level smoke tests with live synchronized stock.

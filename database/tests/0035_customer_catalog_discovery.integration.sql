@@ -51,10 +51,11 @@ VALUES
  ('ow-customer-merchant-b','ow-customer-branch-b','ext-other','OW-OTHER',5,0,'merchant_portal',now(),'high');
 
 DO $$
-DECLARE visible_count integer;
-DECLARE visible_product_count integer;
-DECLARE inactive_count integer;
-DECLARE cross_merchant_count integer;
+DECLARE
+ visible_count integer;
+ visible_product_count integer;
+ inactive_count integer;
+ cross_merchant_count integer;
 BEGIN
  WITH selected_products AS (
    SELECT p.id
