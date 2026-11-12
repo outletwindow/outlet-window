@@ -13,10 +13,10 @@ VALUES
  ('ow-customer-branch-b','ow-customer-merchant-b','Other Merchant Branch','DMM','active');
 
 INSERT INTO tenant_integrations
- (id,tenant_id,family,provider_key,display_name,status,capabilities)
+ (id,tenant_id,family,provider_key,display_name,status,capabilities,created_at,updated_at)
 VALUES
- ('ow-customer-integration-a','ow-customer-merchant-a','commerce','customer-test-pos','Customer Catalog Test POS A','connected','["catalog.read"]'),
- ('ow-customer-integration-b','ow-customer-merchant-b','commerce','customer-test-pos','Customer Catalog Test POS B','connected','["catalog.read"]');
+ ('ow-customer-integration-a','ow-customer-merchant-a','commerce','customer-test-pos','Customer Catalog Test POS A','connected','["catalog.read"]',now(),now()),
+ ('ow-customer-integration-b','ow-customer-merchant-b','commerce','customer-test-pos','Customer Catalog Test POS B','connected','["catalog.read"]',now(),now());
 
 INSERT INTO commerce_catalog_products
  (id,tenant_id,integration_id,provider_key,external_product_id,canonical_url,title,image_urls,source_type,source_captured_at,source_content_sha256,published_at,publication_updated_at)
