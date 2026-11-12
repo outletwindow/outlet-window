@@ -492,7 +492,7 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Confirmed the payment-intent endpoint requires an existing persisted order owned by the authenticated customer; it derives amount and currency from that order and does not create the order or reserve branch stock.
 - [x] Confirmed exact-variant PostgreSQL reservation and the reservation lifecycle exist as separate domain capabilities, but immediate checkout is not wired as one atomic application workflow.
 - [x] Confirmed that the customer browser cart remains a local convenience cache only; it is not an authority for price, stock, customer identity, order lines, or payment amount.
-- [ ] Implement a durable customer cart contract with authenticated account ownership and a bounded guest-session upgrade path; enforce tenant/merchant/branch scope and currency boundaries server-side.
+- [x] Implement the PostgreSQL durable customer cart persistence foundation with customer ownership, one active cart per customer, branch-scoped variant lines, merchant/variant tenant consistency, currency boundaries, and bounded quantities; guest-session upgrade and customer API exposure remain pending.
 - [ ] Implement customer order creation from a server-validated cart snapshot, resolving published variant identity, authoritative price, active branch, delivery quote, and sellable stock in one trusted transaction boundary.
 - [ ] Implement an idempotent immediate-checkout coordinator: create pending order, reserve exact branch stock atomically, obtain trusted payment authorization/capture evidence according to the selected payment flow, then commit order/suborder transitions and fulfillment outbox work.
 - [ ] Define explicit recovery/compensation for payment success with partial multi-branch reservation failure; never treat a browser response or client-supplied payment/stock flag as proof.
@@ -504,3 +504,13 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Reservation now revalidates stock freshness (maximum 30 minutes), confidence (medium/high), and active merchant/branch state inside the stock-locking transaction; stale or ineligible rows fail closed as unavailable.
 - [x] Added PostgreSQL integration acceptance cases for stale snapshots, low-confidence inventory, inactive branches, and suspended merchants.
 - [x] CI verification completed successfully on `bc8bc90` (GitHub Actions runs `43170888897` and `43170898183`): PostgreSQL integration checks, unit tests, typecheck, lint, and build passed. Immediate checkout orchestration, durable server cart/order creation, and payment recovery remain separate unfinished milestones.
+
+
+## Durable customer cart persistence foundation — 2026-11-12
+- [x] Added migration `0035_customer_durable_carts` and registered it in the application migration runner and PostgreSQL readiness gate.
+- [x] Added a PostgreSQL cart store to create/read an active customer cart, add quantity to an exact published variant at an active branch with fresh medium/high-confidence stock, and remove a line only when it belongs to the authenticated customer.
+- [x] Cart writes use a customer-scoped advisory transaction lock, enforce one active cart and one currency per cart, cap each line at 99 units, and roll back when the persisted cart projection cannot be read.
+- [x] Added unit coverage and a PostgreSQL schema acceptance test for customer ownership, branch-scoped lines, duplicate active-cart rejection, and quantity constraints.
+- [x] CI passed on `9e27049` (GitHub Actions runs `43230813321` and `43230804785`): PostgreSQL migration/acceptance, typecheck, lint, tests, and build succeeded.
+- [ ] Expose the cart store through authenticated customer cart API routes with an explicit customer-identity authorization scope; the persistence adapter is not yet wired to the API.
+- [ ] Connect the customer UI to the API and implement server-validated order creation and checkout orchestration. The cart is not yet a checkout or payment flow.
