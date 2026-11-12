@@ -109,6 +109,7 @@ export class PostgresOrderStore {
         throw new Error("A merchant suborder requires at least one order item");
       }
       let itemsSubtotal = 0;
+      const suborderVariantIds = new Set<string>();
       for (const item of suborder.items) {
         requireIdentifier(item.id, "Order item ID");
         requireIdentifier(item.productVariantId, "Product variant ID");
@@ -116,6 +117,10 @@ export class PostgresOrderStore {
         if (item.productVariantId.length > 200 || item.sku.length > 120) throw new Error("Invalid order item identifier length");
         if (itemIds.has(item.id)) throw new Error("Duplicate order item ID");
         itemIds.add(item.id);
+        if (suborderVariantIds.has(item.productVariantId)) {
+          throw new Error("A merchant suborder cannot contain duplicate product variants");
+        }
+        suborderVariantIds.add(item.productVariantId);
         if (!Number.isSafeInteger(item.quantity) || item.quantity < 1 ||
             !Number.isSafeInteger(item.unitPriceMinor) || item.unitPriceMinor < 0 ||
             item.currency !== input.currency || !/^[A-Z]{3}$/.test(item.currency)) {
