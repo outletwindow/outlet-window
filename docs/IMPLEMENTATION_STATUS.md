@@ -498,3 +498,9 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [ ] Define explicit recovery/compensation for payment success with partial multi-branch reservation failure; never treat a browser response or client-supplied payment/stock flag as proof.
 - [ ] Add PostgreSQL acceptance tests for cart ownership, cross-tenant isolation, price tampering, stale stock, concurrent last-unit checkout, duplicate order submission, partial multi-merchant failure, payment replay, and outbox commit rollback.
 - [ ] Connect the customer UI to the durable cart/order APIs only after these contracts and acceptance tests pass. Keep payment execution in sandbox until provider callbacks and reconciliation are verified.
+
+## Reservation-time stock eligibility hardening — 2026-11-12
+- [x] Rechecked the immediate PostgreSQL reservation adapter against the customer discovery eligibility contract.
+- [x] Reservation now revalidates stock freshness (maximum 30 minutes), confidence (medium/high), and active merchant/branch state inside the stock-locking transaction; stale or ineligible rows fail closed as unavailable.
+- [x] Added PostgreSQL integration acceptance cases for stale snapshots, low-confidence inventory, inactive branches, and suspended merchants.
+- [ ] Confirm CI completion before treating this hardening as verified; immediate checkout orchestration, durable server cart/order creation, and payment recovery remain separate unfinished milestones.

@@ -122,6 +122,40 @@ integration("PostgreSQL branch inventory reservations", () => {
     expect(stock.rows[0]?.reserved_quantity).toBe(1);
   });
 
+  it("rejects stale inventory snapshots at reservation time", async () => {
+    const request = await createPaidOrder(1);
+    await pool.query(
+      "UPDATE branch_inventory SET last_synced_at = now() - interval '31 minutes' WHERE merchant_id=$1 AND branch_id=$2 AND product_variant_id=$3",
+      [merchantId, branchId, variantId]
+    );
+    const result = await adapter.reserveExactVariants(request);
+    expect(result).toEqual({ outcome: "unavailable", unavailableLines: [variantId] });
+  });
+
+  it("rejects low-confidence inventory at reservation time", async () => {
+    const request = await createPaidOrder(1);
+    await pool.query(
+      "UPDATE branch_inventory SET availability_confidence = 'low' WHERE merchant_id=$1 AND branch_id=$2 AND product_variant_id=$3",
+      [merchantId, branchId, variantId]
+    );
+    const result = await adapter.reserveExactVariants(request);
+    expect(result).toEqual({ outcome: "unavailable", unavailableLines: [variantId] });
+  });
+
+  it("rejects reservations for an inactive branch", async () => {
+    const request = await createPaidOrder(1);
+    await pool.query("UPDATE merchant_branches SET status='inactive' WHERE merchant_id=$1 AND id=$2", [merchantId, branchId]);
+    const result = await adapter.reserveExactVariants(request);
+    expect(result).toEqual({ outcome: "unavailable", unavailableLines: [variantId] });
+  });
+
+  it("rejects reservations for a suspended merchant", async () => {
+    const request = await createPaidOrder(1);
+    await pool.query("UPDATE merchants SET status='suspended' WHERE id=$1", [merchantId]);
+    const result = await adapter.reserveExactVariants(request);
+    expect(result).toEqual({ outcome: "unavailable", unavailableLines: [variantId] });
+  });
+
   it("does not oversell when two paid orders reserve the final unit concurrently", async () => {
     const [a, b] = await Promise.all([createPaidOrder(1), createPaidOrder(1)]);
     const results = await Promise.all([

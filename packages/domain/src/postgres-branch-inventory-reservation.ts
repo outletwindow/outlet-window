@@ -95,13 +95,19 @@ export class PostgresBranchInventoryReservationAdapter implements InventoryReser
 
       const variantIds = request.lines.map(line => line.productVariantId).sort();
       const stock = await client.query<StockRow>(
-        `SELECT product_variant_id, sku, available_quantity, reserved_quantity
-         FROM branch_inventory
-         WHERE merchant_id = $1 AND branch_id = $2
-           AND product_variant_id = ANY($3::text[])
-         ORDER BY product_variant_id
-         FOR UPDATE`,
-        [request.merchantId, request.branchId, variantIds]
+        `SELECT i.product_variant_id, i.sku, i.available_quantity, i.reserved_quantity
+         FROM branch_inventory i
+         JOIN merchant_branches b
+           ON b.merchant_id = i.merchant_id AND b.id = i.branch_id
+         JOIN merchants m ON m.id = b.merchant_id
+         WHERE m.tenant_id = $1 AND m.id = $2 AND b.id = $3
+           AND m.status = 'active' AND b.status = 'active'
+           AND i.last_synced_at >= clock_timestamp() - interval '30 minutes'
+           AND i.availability_confidence IN ('high','medium')
+           AND i.product_variant_id = ANY($4::text[])
+         ORDER BY i.product_variant_id
+         FOR UPDATE OF i`,
+        [request.tenantId, request.merchantId, request.branchId, variantIds]
       );
       const stockByVariant = new Map(stock.rows.map(row => [row.product_variant_id, row]));
       const unavailable = request.lines.filter(line => {
