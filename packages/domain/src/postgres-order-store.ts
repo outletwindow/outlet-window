@@ -1,12 +1,23 @@
 import type { PostgresPool } from "./postgres-iam-store.js";
 import type { OrderStatus } from "./order-lifecycle.js";
 
+export interface CreateOrderItemInput {
+  id: string;
+  productVariantId: string;
+  sku: string;
+  sizeLabel?: string;
+  colorLabel?: string;
+  quantity: number;
+  unitPriceMinor: number;
+  currency: string;
+}
 export interface CreateOrderSuborderInput {
   id: string;
   merchantId: string;
   branchId: string;
   status: OrderStatus;
   subtotalMinor: number;
+  items: readonly CreateOrderItemInput[];
   metadata?: Readonly<Record<string, unknown>>;
 }
 export interface CreateCustomerOrderInput {
@@ -63,6 +74,10 @@ function requireIdentifier(value: string, field: string): void {
   }
 }
 
+function sortedItems<T extends { id: string }>(items: readonly T[]): T[] {
+  return [...items].sort((a, b) => a.id.localeCompare(b.id));
+}
+
 export class PostgresOrderStore {
   constructor(private readonly pool: PostgresPool) {}
 
@@ -78,16 +93,45 @@ export class PostgresOrderStore {
     }
     if (!/^[A-Z]{3}$/.test(input.currency)) throw new Error("Currency must be an ISO 4217 code");
     if (!Number.isSafeInteger(input.totalMinor) || input.totalMinor < 0) throw new Error("Invalid order total");
-    const ids = new Set<string>();
-    for (const item of input.suborders) {
-      requireIdentifier(item.id, "Suborder ID");
-      requireIdentifier(item.merchantId, "Merchant ID");
-      requireIdentifier(item.branchId, "Branch ID");
-      validateMetadata(item.metadata, "Suborder metadata");
-      if (ids.has(item.id)) throw new Error("Duplicate suborder ID");
-      ids.add(item.id);
-      if (!Number.isSafeInteger(item.subtotalMinor) || item.subtotalMinor < 0) {
+    const suborderIds = new Set<string>();
+    const itemIds = new Set<string>();
+    for (const suborder of input.suborders) {
+      requireIdentifier(suborder.id, "Suborder ID");
+      requireIdentifier(suborder.merchantId, "Merchant ID");
+      requireIdentifier(suborder.branchId, "Branch ID");
+      validateMetadata(suborder.metadata, "Suborder metadata");
+      if (suborderIds.has(suborder.id)) throw new Error("Duplicate suborder ID");
+      suborderIds.add(suborder.id);
+      if (!Number.isSafeInteger(suborder.subtotalMinor) || suborder.subtotalMinor < 0) {
         throw new Error("Invalid suborder subtotal");
+      }
+      if (!Array.isArray(suborder.items) || suborder.items.length === 0) {
+        throw new Error("A merchant suborder requires at least one order item");
+      }
+      let itemsSubtotal = 0;
+      for (const item of suborder.items) {
+        requireIdentifier(item.id, "Order item ID");
+        requireIdentifier(item.productVariantId, "Product variant ID");
+        requireIdentifier(item.sku, "SKU");
+        if (item.productVariantId.length > 200 || item.sku.length > 120) throw new Error("Invalid order item identifier length");
+        if (itemIds.has(item.id)) throw new Error("Duplicate order item ID");
+        itemIds.add(item.id);
+        if (!Number.isSafeInteger(item.quantity) || item.quantity < 1 ||
+            !Number.isSafeInteger(item.unitPriceMinor) || item.unitPriceMinor < 0 ||
+            item.currency !== input.currency || !/^[A-Z]{3}$/.test(item.currency)) {
+          throw new Error("Invalid order item price, quantity, or currency");
+        }
+        for (const [value, field] of [[item.sizeLabel, "Size label"], [item.colorLabel, "Color label"]] as const) {
+          if (value !== undefined && typeof value !== "string") throw new Error(`${field} must be text`);
+        }
+        const lineTotal = item.quantity * item.unitPriceMinor;
+        if (!Number.isSafeInteger(lineTotal) || !Number.isSafeInteger(itemsSubtotal + lineTotal)) {
+          throw new Error("Order item subtotal overflow");
+        }
+        itemsSubtotal += lineTotal;
+      }
+      if (itemsSubtotal !== suborder.subtotalMinor) {
+        throw new Error("Order item totals must equal the merchant suborder subtotal");
       }
     }
 
@@ -115,6 +159,16 @@ export class PostgresOrderStore {
            FROM merchant_suborders WHERE order_id = $1 ORDER BY id`,
           [row.id]
         );
+        const persistedItems = await client.query<{
+          id: string; suborder_id: string; product_variant_id: string; sku: string;
+          size_label: string | null; color_label: string | null; quantity: number;
+          unit_price_minor: string | number; currency: string;
+        }>(
+          `SELECT id, suborder_id, product_variant_id, sku, size_label, color_label,
+                  quantity, unit_price_minor, currency
+           FROM customer_order_items WHERE order_id = $1 ORDER BY suborder_id, id`,
+          [row.id]
+        );
         const requestedSuborders = [...input.suborders].sort((a, b) => a.id.localeCompare(b.id));
         const sameSuborders = persistedSuborders.rows.length === requestedSuborders.length &&
           persistedSuborders.rows.every((stored, index) => {
@@ -126,10 +180,26 @@ export class PostgresOrderStore {
               String(stored.subtotal_minor) === String(requested.subtotalMinor) &&
               canonicalJson(stored.metadata ?? {}) === canonicalJson(requested.metadata ?? {});
           });
+        const requestedItems = input.suborders.flatMap(suborder =>
+          suborder.items.map(item => ({ ...item, suborderId: suborder.id }))
+        ).sort((a, b) => a.suborderId.localeCompare(b.suborderId) || a.id.localeCompare(b.id));
+        const sameItems = persistedItems.rows.length === requestedItems.length &&
+          persistedItems.rows.every((stored, index) => {
+            const requested = requestedItems[index]!;
+            return stored.id === requested.id &&
+              stored.suborder_id === requested.suborderId &&
+              stored.product_variant_id === requested.productVariantId &&
+              stored.sku === requested.sku &&
+              stored.size_label === (requested.sizeLabel ?? null) &&
+              stored.color_label === (requested.colorLabel ?? null) &&
+              stored.quantity === requested.quantity &&
+              String(stored.unit_price_minor) === String(requested.unitPriceMinor) &&
+              stored.currency === requested.currency;
+          });
         const same = row.currency === input.currency &&
           String(row.total_minor) === String(input.totalMinor) &&
           canonicalJson(row.metadata ?? {}) === canonicalOrderMetadata &&
-          sameSuborders;
+          sameSuborders && sameItems;
         await client.query("COMMIT");
         return same
           ? { outcome: "already_exists", orderId: row.id }
@@ -143,19 +213,34 @@ export class PostgresOrderStore {
         [input.id, input.tenantId, input.customerId, input.idempotencyKey,
           input.currency, input.totalMinor, JSON.stringify(input.metadata ?? {})]
       );
-      for (const item of input.suborders) {
-        const inserted = await client.query(
+      for (const suborder of input.suborders) {
+        const inserted = await client.query<{ id: string; tenant_id: string }>(
           `INSERT INTO merchant_suborders
            (id, tenant_id, order_id, merchant_id, branch_id, status, subtotal_minor, metadata)
            SELECT $1, m.tenant_id, $2, m.id, b.id, $5, $6, $7::jsonb
            FROM merchants m
            JOIN merchant_branches b ON b.merchant_id = m.id
            WHERE m.id = $3 AND b.id = $4 AND m.status = 'active' AND b.status = 'active'
-           RETURNING id`,
-          [item.id, input.id, item.merchantId, item.branchId,
-            item.status, item.subtotalMinor, JSON.stringify(item.metadata ?? {})]
+           RETURNING id, tenant_id`,
+          [suborder.id, input.id, suborder.merchantId, suborder.branchId,
+            suborder.status, suborder.subtotalMinor, JSON.stringify(suborder.metadata ?? {})]
         );
-        if (inserted.rowCount !== 1) throw new Error("Merchant branch is unavailable for order creation");
+        const persistedSuborder = inserted.rows[0];
+        if (inserted.rowCount !== 1 || !persistedSuborder) {
+          throw new Error("Merchant branch is unavailable for order creation");
+        }
+        for (const item of suborder.items) {
+          await client.query(
+            `INSERT INTO customer_order_items
+             (id, tenant_id, order_id, suborder_id, merchant_id, branch_id,
+              product_variant_id, sku, size_label, color_label, quantity, unit_price_minor, currency)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+            [item.id, persistedSuborder.tenant_id, input.id, suborder.id,
+              suborder.merchantId, suborder.branchId, item.productVariantId, item.sku,
+              item.sizeLabel ?? null, item.colorLabel ?? null, item.quantity,
+              item.unitPriceMinor, item.currency]
+          );
+        }
       }
       await client.query("COMMIT");
       return { outcome: "created", orderId: input.id };
