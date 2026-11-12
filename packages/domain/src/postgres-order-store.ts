@@ -181,7 +181,7 @@ export class PostgresOrderStore {
               canonicalJson(stored.metadata ?? {}) === canonicalJson(requested.metadata ?? {});
           });
         const requestedItems = input.suborders.flatMap(suborder =>
-          suborder.items.map(item => ({ ...item, suborderId: suborder.id }))
+          suborder.items.map((item: CreateOrderItemInput) => ({ ...item, suborderId: suborder.id }))
         ).sort((a, b) => a.suborderId.localeCompare(b.suborderId) || a.id.localeCompare(b.id));
         const sameItems = persistedItems.rows.length === requestedItems.length &&
           persistedItems.rows.every((stored, index) => {
