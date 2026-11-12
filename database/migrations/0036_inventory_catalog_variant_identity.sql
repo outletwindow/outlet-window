@@ -8,8 +8,6 @@ UPDATE inventory_reservation_lines
 SET catalog_variant_id = product_variant_id
 WHERE catalog_variant_id IS NULL;
 
-ALTER TABLE inventory_reservation_lines
-  ALTER COLUMN catalog_variant_id SET NOT NULL;
 
 CREATE INDEX IF NOT EXISTS inventory_reservation_lines_catalog_variant_idx
   ON inventory_reservation_lines (reservation_id, catalog_variant_id);
