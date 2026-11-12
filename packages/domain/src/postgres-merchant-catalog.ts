@@ -121,9 +121,9 @@ export class PostgresMerchantCatalog {
     }
     const result = await this.pool.query<{
       product_id: string; title: string; description: string | null; brand: string | null;
-      currency: string | null; price_minor: string | number | null; image_urls: string[];
+      currency: string | null; price_minor: number | null; image_urls: string[];
       variant_id: string; size_label: string | null; color_label: string | null;
-      variant_currency: string | null; variant_price_minor: string | number | null;
+      variant_currency: string | null; variant_price_minor: number | null;
     }>(
       `WITH selected_products AS (
          SELECT p.id
@@ -166,12 +166,6 @@ export class PostgresMerchantCatalog {
        ORDER BY p.updated_at DESC, p.id, v.id`,
       [input.merchantId, input.branchId, input.limit]
     );
-    const safeMinor = (value: string | number | null): number | null => {
-      if (typeof value === "number") return Number.isSafeInteger(value) && value >= 0 ? value : null;
-      if (typeof value !== "string" || !/^\d+$/.test(value)) return null;
-      const parsed = Number(value);
-      return Number.isSafeInteger(parsed) ? parsed : null;
-    };
     const products = new Map<string, Record<string, unknown>>();
     for (const row of result.rows) {
       let product = products.get(row.product_id);
@@ -180,7 +174,7 @@ export class PostgresMerchantCatalog {
           id: row.product_id, title: row.title,
           ...(row.description === null ? {} : { description: row.description }),
           ...(row.brand === null ? {} : { brand: row.brand }),
-          currency: row.currency, priceMinor: safeMinor(row.price_minor),
+          currency: row.currency, priceMinor: row.price_minor,
           imageUrls: row.image_urls, variants: []
         };
         products.set(row.product_id, product);
@@ -190,7 +184,7 @@ export class PostgresMerchantCatalog {
         ...(row.size_label === null ? {} : { sizeLabel: row.size_label }),
         ...(row.color_label === null ? {} : { colorLabel: row.color_label }),
         currency: row.variant_currency ?? row.currency,
-        priceMinor: safeMinor(row.variant_price_minor ?? row.price_minor),
+        priceMinor: row.variant_price_minor ?? row.price_minor,
         inStock: true
       });
     }

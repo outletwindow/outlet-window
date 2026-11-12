@@ -472,3 +472,14 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [ ] Add a public branch-catalog read model that returns only published products from active merchants/branches, joins branch inventory, and exposes customer-safe fields only; do not expose provider credentials, integration IDs, source hashes, or internal identifiers unnecessarily.
 - [ ] Define stock freshness/confidence and sellable-quantity rules, then cover tenant isolation, inactive merchant/branch, unpublished product, missing inventory, stale/low-confidence inventory, and variant-level availability in PostgreSQL acceptance tests.
 - [ ] Connect the customer prototype to this read contract only after the API contract and publication rules are implemented and tested. Keep demo data clearly labelled until then.
+
+
+## Customer catalog API and frontend connection — 2026-11-12
+- [x] Added a public, branch-scoped discovery route that returns only published products from active merchants and branches, joined to exact branch inventory records.
+- [x] Availability is fail-closed: exact external variant ID and SKU match, fresh stock within 30 minutes, medium/high confidence, and positive sellable quantity after reservations.
+- [x] Added `Cache-Control: no-store` to the customer discovery response so intermediaries do not reuse an old stock snapshot.
+- [x] Connected the customer web application to the customer discovery endpoint through deployment-time `data-api-base-url`, `data-merchant-id`, and `data-branch-id` configuration; it remains in clearly labelled demo mode when those attributes are empty.
+- [x] Added in-stock variant-level cart entries, safe handling of PostgreSQL bigint JSON strings, and currency-aware minor-unit formatting.
+- [x] Checkout remains non-operational and does not submit orders or collect payments; stock must be revalidated and reserved server-side before checkout is implemented.
+- [ ] Run PostgreSQL acceptance coverage for the actual branch discovery filters, including unpublished, inactive, stale, low-confidence, sold-out, and cross-merchant cases.
+- [ ] Configure a real API origin, merchant, and branch in a deployed environment and run browser-level smoke tests with live synchronized stock.
