@@ -11,7 +11,7 @@ const copy = {
     loading: "جارٍ تحميل منتجات الفرع...", apiError: "تعذر تحميل منتجات الفرع. تحقق من إعدادات الاتصال وحاول مجدداً.",
     noProducts: "لا توجد منتجات منشورة ومتاحة في هذا الفرع حالياً.", live: "منتجات منشورة ومخزون الفرع",
     items: "منتجات", language: "English", remove: "إزالة", added: "أُضيف المنتج إلى السلة",
-    checkoutNotice: "هذه نسخة تجريبية. لم يتم إرسال طلب أو تحصيل أي مبلغ."
+    checkoutNotice: "الدفع غير متصل حالياً. لم يتم إنشاء طلب أو تحصيل أي مبلغ."
   },
   en: {
     brand: "Outlet Window", tagline: "Discover products from multiple stores in one place",
@@ -23,7 +23,7 @@ const copy = {
     loading: "Loading branch products...", apiError: "Could not load branch products. Check the connection settings and try again.",
     noProducts: "No published products are currently available at this branch.", live: "Published products and branch stock",
     items: "items", language: "العربية", remove: "Remove", added: "Added to cart",
-    checkoutNotice: "This is a demo. No order was submitted and no payment was collected."
+    checkoutNotice: "Checkout is not connected yet. No order was submitted and no payment was collected."
   }
 };
 
@@ -83,6 +83,7 @@ function renderProducts() {
     const empty = document.createElement("p");
     empty.className = "empty-state";
     empty.textContent = language === "ar" ? "لا توجد منتجات مطابقة." : "No matching products.";
+    empty.textContent = catalogMode === "live" ? t("noProducts") : (language === "ar" ? "لا توجد منتجات مطابقة." : "No matching products.");
     productGrid.append(empty);
     return;
   }
@@ -136,7 +137,7 @@ function renderCart() {
     const row = document.createElement("div");
     row.className = "cart-row";
     const title = document.createElement("span");
-    title.textContent = productName(product);
+    title.textContent = product.variantLabel ? `${productName(product)} — ${product.variantLabel}` : productName(product);
     const controls = document.createElement("div");
     controls.className = "quantity-controls";
     const minus = document.createElement("button");
@@ -239,5 +240,3 @@ async function loadBranchCatalog() {
 
 renderShell();
 void loadBranchCatalog();
-
-renderShell();

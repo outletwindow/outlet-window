@@ -1034,6 +1034,7 @@ app.patch<{
     if (!Number.isInteger(limit) || limit < 1 || limit > 100) return reply.code(400).send({ error: "invalid_limit" });
     if (!options.merchantCatalog?.listPublishedBranchProducts) return reply.code(503).send({ error: "customer_catalog_unavailable" });
     const products = await options.merchantCatalog.listPublishedBranchProducts({ merchantId, branchId, limit });
+    reply.header("cache-control", "no-store");
     return reply.code(200).send({ products });
   });
 

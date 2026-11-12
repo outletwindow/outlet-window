@@ -79,3 +79,16 @@ test("live variant cart uses variant-specific prices and rejects unknown variant
 test("published catalog response rejects malformed payloads", () => {
   assert.throws(() => normalizePublishedProducts({ products: "invalid" }), /Invalid published catalog response/);
 });
+
+test("published catalog safely converts PostgreSQL bigint JSON strings", () => {
+  const products = normalizePublishedProducts({ products: [{
+    id: "p-bigint", title: "Coat", currency: "SAR", priceMinor: "18900",
+    variants: [{ id: "v-bigint", inStock: true, priceMinor: "20500" }]
+  }] });
+  assert.equal(products.length, 1);
+  assert.equal(products[0].priceMinor, 20500);
+  assert.throws(() => normalizePublishedProducts({ products: [{
+    id: "p-unsafe", title: "Unsafe", currency: "SAR", priceMinor: "999999999999999999999",
+    variants: [{ id: "v-unsafe", inStock: true }]
+  }] }).length === 0 ? (() => { throw new Error("unsafe amount rejected"); })() : null, /unsafe amount rejected/);
+});

@@ -17,7 +17,8 @@ export function normalizePublishedProducts(payload) {
     return product.variants.filter((variant) => variant && variant.inStock === true && typeof variant.id === "string")
       .map((variant) => {
         const currency = variant.currency ?? product.currency;
-        const priceMinor = variant.priceMinor ?? product.priceMinor;
+        const rawPriceMinor = variant.priceMinor ?? product.priceMinor;
+        const priceMinor = typeof rawPriceMinor === "string" && /^\\d+$/.test(rawPriceMinor) ? Number(rawPriceMinor) : rawPriceMinor;
         if (typeof currency !== "string" || !/^[A-Z]{3}$/.test(currency) || !Number.isSafeInteger(priceMinor) || priceMinor < 0) return null;
         const labels = [variant.sizeLabel, variant.colorLabel].filter((value) => typeof value === "string" && value.trim());
         const imageUrl = Array.isArray(product.imageUrls) ? product.imageUrls.find((url) => typeof url === "string" && /^https:\/\//i.test(url)) : undefined;
