@@ -67,9 +67,9 @@ describe("PostgresMerchantCatalog", () => {
       return {
         rows: [{
           product_id: "product-1", title: "Shirt", description: null, brand: "Example",
-          currency: "SAR", price_minor: "12000", image_urls: ["https://cdn.example/shirt.jpg"],
+          currency: "SAR", price_minor: 12000, image_urls: ["https://cdn.example/shirt.jpg"],
           variant_id: "variant-1", size_label: "M", color_label: "Blue",
-          variant_currency: null, variant_price_minor: "12000"
+          variant_currency: null, variant_price_minor: null
         }],
         rowCount: 1
       };

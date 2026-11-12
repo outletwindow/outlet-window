@@ -87,8 +87,13 @@ test("published catalog safely converts PostgreSQL bigint JSON strings", () => {
   }] });
   assert.equal(products.length, 1);
   assert.equal(products[0].priceMinor, 20500);
-  assert.throws(() => normalizePublishedProducts({ products: [{
+  assert.deepEqual(normalizePublishedProducts({ products: [{
     id: "p-unsafe", title: "Unsafe", currency: "SAR", priceMinor: "999999999999999999999",
     variants: [{ id: "v-unsafe", inStock: true }]
-  }] }).length === 0 ? (() => { throw new Error("unsafe amount rejected"); })() : null, /unsafe amount rejected/);
+  }] }), []);
+});
+
+test("currency formatting respects zero- and three-decimal currencies", () => {
+  assert.match(formatPrice(1250, "JPY", "ja-JP"), /1,250/);
+  assert.match(formatPrice(1250, "KWD", "en-KW"), /1\.250/);
 });

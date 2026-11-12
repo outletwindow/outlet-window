@@ -7,7 +7,8 @@ export const catalog = [
 
 export function formatPrice(priceMinor, currency = "SAR", locale = "ar-SA") {
   if (!Number.isSafeInteger(priceMinor) || priceMinor < 0) throw new RangeError("priceMinor must be a non-negative safe integer");
-  return new Intl.NumberFormat(locale, { style: "currency", currency }).format(priceMinor / 100);
+  const fractionDigits = new Intl.NumberFormat(locale, { style: "currency", currency }).resolvedOptions().maximumFractionDigits;
+  return new Intl.NumberFormat(locale, { style: "currency", currency }).format(priceMinor / (10 ** fractionDigits));
 }
 
 export function normalizePublishedProducts(payload) {
@@ -18,7 +19,7 @@ export function normalizePublishedProducts(payload) {
       .map((variant) => {
         const currency = variant.currency ?? product.currency;
         const rawPriceMinor = variant.priceMinor ?? product.priceMinor;
-        const priceMinor = typeof rawPriceMinor === "string" && /^\\d+$/.test(rawPriceMinor) ? Number(rawPriceMinor) : rawPriceMinor;
+        const priceMinor = typeof rawPriceMinor === "string" && /^\d+$/.test(rawPriceMinor) ? Number(rawPriceMinor) : rawPriceMinor;
         if (typeof currency !== "string" || !/^[A-Z]{3}$/.test(currency) || !Number.isSafeInteger(priceMinor) || priceMinor < 0) return null;
         const labels = [variant.sizeLabel, variant.colorLabel].filter((value) => typeof value === "string" && value.trim());
         const imageUrl = Array.isArray(product.imageUrls) ? product.imageUrls.find((url) => typeof url === "string" && /^https:\/\//i.test(url)) : undefined;

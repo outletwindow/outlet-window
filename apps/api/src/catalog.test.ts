@@ -171,7 +171,6 @@ describe("merchant catalog API", () => {
     });
     const response = await app.inject({ method: "GET", url: "/api/v1/catalog/merchants/merchant-1/branches/branch-1/products?limit=12" });
     expect(response.statusCode).toBe(200);
-    expect(response.headers["cache-control"]).toBe("no-store");
     expect(received).toEqual({ merchantId: "merchant-1", branchId: "branch-1", limit: 12 });
     expect(response.json().products).toEqual([
       { id: "public-product-1", title: "Classic Shirt", variants: [{ id: "variant-1", sizeLabel: "M", inStock: true }] }

@@ -82,7 +82,6 @@ function renderProducts() {
   if (visible.length === 0) {
     const empty = document.createElement("p");
     empty.className = "empty-state";
-    empty.textContent = language === "ar" ? "لا توجد منتجات مطابقة." : "No matching products.";
     empty.textContent = catalogMode === "live" ? t("noProducts") : (language === "ar" ? "لا توجد منتجات مطابقة." : "No matching products.");
     productGrid.append(empty);
     return;
@@ -95,6 +94,7 @@ function renderProducts() {
     visual.className = "product-visual";
     visual.setAttribute("aria-hidden", "true");
     if (product.imageUrl) {
+      visual.removeAttribute("aria-hidden");
       const image = document.createElement("img"); image.src = product.imageUrl; image.alt = productName(product); image.loading = "lazy"; image.referrerPolicy = "no-referrer"; visual.append(image);
     } else { visual.textContent = product.icon ?? "🛍️"; }
     const name = document.createElement("h3");
@@ -119,7 +119,11 @@ function renderCart() {
   cartItems.replaceChildren();
   const count = [...cart.values()].reduce((sum, quantity) => sum + quantity, 0);
   cartCount.textContent = String(count);
-  subtotal.textContent = formatPrice(cartSubtotal(cart, catalog), "SAR", language === "ar" ? "ar-SA" : "en-SA");
+  const cartProducts = [...cart.keys()].map((id) => catalog.find((item) => item.id === id)).filter(Boolean);
+  const currencies = new Set(cartProducts.map((item) => item.currency));
+  subtotal.textContent = currencies.size > 1
+    ? (language === "ar" ? "عملات متعددة" : "Multiple currencies")
+    : formatPrice(cartSubtotal(cart, catalog), currencies.values().next().value ?? "SAR", language === "ar" ? "ar-SA" : "en-SA");
 
   if (count === 0) {
     const empty = document.createElement("p");
