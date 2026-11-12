@@ -3,10 +3,10 @@ import type {PostgresClient,PostgresPool,PostgresQueryResult} from "./postgres-i
 import {PostgresCustomerCartStore} from "./postgres-customer-cart-store.js";
 
 function setup() {
- const calls:Array<{sql:string;values?:readonly unknown[]}>=[];
+ const calls:Array<{sql:string;values?:readonly unknown[]}>= [];
  const query=vi.fn(async(sql:string,values?:readonly unknown[]):Promise<PostgresQueryResult<any>>=>{
   calls.push({sql,...(values===undefined?{}:{values})});
-  if(sql.includes("COALESCE(v.currency,p.currency)")) return {rows:[{merchant_tenant_id:"merchant-tenant-1",currency:"SAR",price_minor:"12900"}],rowCount:1};
+  if(sql.includes("FROM merchants m") && sql.includes("COALESCE(v.currency,p.currency)")) return {rows:[{merchant_tenant_id:"merchant-tenant-1",currency:"SAR",price_minor:"12900"}],rowCount:1};
   if(sql.includes("INSERT INTO customer_carts")) return {rows:[{id:"cart-1",customer_id:"customer-1",currency:"SAR",version:1}],rowCount:1};
   if(sql.includes("DELETE FROM customer_cart_items")) return {rows:[{cart_id:"cart-1"}],rowCount:1};
   if(sql.includes("SELECT quantity FROM customer_cart_items")) return {rows:[],rowCount:0};
@@ -38,8 +38,8 @@ describe("PostgresCustomerCartStore",()=>{
   const s=setup();
   s.query.mockImplementation(async(sql:string,values?:readonly unknown[])=>{
    s.calls.push({sql,...(values===undefined?{}:{values})});
-   if(sql.includes("SELECT COALESCE(v.currency")) return {rows:[],rowCount:0};
-   return {rows:[],rowCount:0};
+   if(sql.includes("FROM merchants m") && sql.includes("COALESCE(v.currency,p.currency)")) return {rows:[],rowCount:0};
+   return {rows:[],rowCount:1};
   });
   await expect(s.store.addItem({customerId:"customer-1",merchantId:"merchant-1",branchId:"branch-1",productVariantId:"variant-1",quantity:1})).rejects.toThrow("customer_cart_variant_unavailable");
   expect(s.calls.at(-1)?.sql).toBe("ROLLBACK");
