@@ -503,4 +503,4 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [x] Rechecked the immediate PostgreSQL reservation adapter against the customer discovery eligibility contract.
 - [x] Reservation now revalidates stock freshness (maximum 30 minutes), confidence (medium/high), and active merchant/branch state inside the stock-locking transaction; stale or ineligible rows fail closed as unavailable.
 - [x] Added PostgreSQL integration acceptance cases for stale snapshots, low-confidence inventory, inactive branches, and suspended merchants.
-- [ ] Confirm CI completion before treating this hardening as verified; immediate checkout orchestration, durable server cart/order creation, and payment recovery remain separate unfinished milestones.
+- [x] CI verification completed successfully on `bc8bc90` (GitHub Actions runs `43170888897` and `43170898183`): PostgreSQL integration checks, unit tests, typecheck, lint, and build passed. Immediate checkout orchestration, durable server cart/order creation, and payment recovery remain separate unfinished milestones.
