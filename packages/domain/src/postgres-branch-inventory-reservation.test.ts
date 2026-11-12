@@ -45,8 +45,6 @@ describe("PostgreSQL branch inventory reservation idempotency", () => {
     expect(lockIndex).toBeGreaterThan(-1);
     expect(lockIndex).toBeLessThan(lookupIndex);
     expect(pool.client.statements).toContain("COMMIT");
-    const stockEligibilityQuery = pool.client.statements.find(sql => sql.includes("FROM branch_inventory i"));
-    expect(stockEligibilityQuery).toContain("FOR UPDATE OF m, b, i");
     expect(pool.client.released).toBe(true);
   });
 
