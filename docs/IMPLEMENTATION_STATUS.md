@@ -485,3 +485,16 @@ A checkbox is marked complete only when code is present and automated checks or 
 - [ ] Checkout remains non-operational; implement server-side stock revalidation/reservation and the payment callback flow before enabling order submission or payment collection.
 
 - [x] Added local browser cart persistence for valid in-stock variants; stale or unavailable variant IDs are pruned when the live branch catalog reloads. Cross-device/account cart synchronization remains pending.
+
+## Checkout and server-side cart audit — 2026-11-12
+- [x] Re-inspected the current API route table and PostgreSQL composition root after the customer catalog/local-cart increment.
+- [x] Confirmed the customer-facing API currently exposes order-scoped delivery-destination updates and payment-intent creation, but no authenticated customer order-creation endpoint and no durable server-side multi-merchant cart endpoint.
+- [x] Confirmed the payment-intent endpoint requires an existing persisted order owned by the authenticated customer; it derives amount and currency from that order and does not create the order or reserve branch stock.
+- [x] Confirmed exact-variant PostgreSQL reservation and the reservation lifecycle exist as separate domain capabilities, but immediate checkout is not wired as one atomic application workflow.
+- [x] Confirmed that the customer browser cart remains a local convenience cache only; it is not an authority for price, stock, customer identity, order lines, or payment amount.
+- [ ] Implement a durable customer cart contract with authenticated account ownership and a bounded guest-session upgrade path; enforce tenant/merchant/branch scope and currency boundaries server-side.
+- [ ] Implement customer order creation from a server-validated cart snapshot, resolving published variant identity, authoritative price, active branch, delivery quote, and sellable stock in one trusted transaction boundary.
+- [ ] Implement an idempotent immediate-checkout coordinator: create pending order, reserve exact branch stock atomically, obtain trusted payment authorization/capture evidence according to the selected payment flow, then commit order/suborder transitions and fulfillment outbox work.
+- [ ] Define explicit recovery/compensation for payment success with partial multi-branch reservation failure; never treat a browser response or client-supplied payment/stock flag as proof.
+- [ ] Add PostgreSQL acceptance tests for cart ownership, cross-tenant isolation, price tampering, stale stock, concurrent last-unit checkout, duplicate order submission, partial multi-merchant failure, payment replay, and outbox commit rollback.
+- [ ] Connect the customer UI to the durable cart/order APIs only after these contracts and acceptance tests pass. Keep payment execution in sandbox until provider callbacks and reconciliation are verified.
