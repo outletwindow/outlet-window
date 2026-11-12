@@ -21,7 +21,7 @@ const PLATFORM_TENANT = "platform";
 
 function safeMinor(value: string | number | null): number | null {
   if (typeof value === "number") return Number.isSafeInteger(value) && value >= 0 ? value : null;
-  if (typeof value !== "string" || !/^\\d+$/.test(value)) return null;
+  if (typeof value !== "string" || !/^\d+$/.test(value)) return null;
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) ? parsed : null;
 }
