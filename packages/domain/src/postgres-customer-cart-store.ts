@@ -3,7 +3,7 @@ import type { PostgresClient, PostgresPool } from "./postgres-iam-store.js";
 
 export type CustomerCartItem = {
   id: string; merchantId: string; branchId: string; productVariantId: string;
-  quantity: number; title: string; sku: string | null; currency: string; priceMinor: number;
+  quantity: number; title: string; sku: string | null; currency: string | null; priceMinor: number | null;
   inStock: boolean;
 };
 export type CustomerCart = {
@@ -73,7 +73,7 @@ export class PostgresCustomerCartStore {
       const product = eligible.rows[0];
       if (!product) throw new Error("customer_cart_variant_unavailable");
       const minor = safeMinor(product.price_minor);
-      if (!minor || minor < 1 || !/^[A-Z]{3}$/.test(product.currency)) throw new Error("customer_cart_variant_unpriced");
+      if (minor === null || !/^[A-Z]{3}$/.test(product.currency)) throw new Error("customer_cart_variant_unpriced");
       const cart = await client.query<CartRow>(
         `INSERT INTO customer_carts (id,tenant_id,customer_id,status,currency)
          VALUES ($1,$2,$3,'active',$4)
@@ -175,7 +175,7 @@ export class PostgresCustomerCartStore {
     return { id:cart.id,customerId:cart.customer_id,currency:cart.currency,version:cart.version,
       items:result.rows.map(item=>({id:item.id,merchantId:item.merchant_id,branchId:item.branch_id,
         productVariantId:item.product_variant_id,quantity:item.quantity,title:item.title,sku:item.sku,
-        currency:item.currency ?? cart.currency ?? "SAR",priceMinor:safeMinor(item.price_minor) ?? 0,
+        currency:item.currency,priceMinor:safeMinor(item.price_minor),
         inStock:item.in_stock === true})) };
   }
 }
