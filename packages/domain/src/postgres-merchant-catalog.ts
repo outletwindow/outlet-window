@@ -125,24 +125,45 @@ export class PostgresMerchantCatalog {
       variant_id: string; size_label: string | null; color_label: string | null;
       variant_currency: string | null; variant_price_minor: number | null;
     }>(
-      `SELECT p.id AS product_id, p.title, p.description, p.brand, p.currency,
+      `WITH selected_products AS (
+         SELECT p.id
+         FROM merchants m
+         JOIN merchant_branches b ON b.merchant_id = m.id
+         JOIN commerce_catalog_products p ON p.tenant_id = m.tenant_id
+         WHERE m.id = $1 AND b.id = $2
+           AND m.status = 'active' AND b.status = 'active'
+           AND p.published_at IS NOT NULL
+           AND EXISTS (
+             SELECT 1
+             FROM commerce_catalog_variants v
+             JOIN branch_inventory i
+               ON i.merchant_id = b.merchant_id AND i.branch_id = b.id
+              AND i.product_variant_id = v.external_variant_id AND i.sku = v.sku
+             WHERE v.tenant_id = p.tenant_id AND v.product_id = p.id
+               AND v.sku IS NOT NULL
+               AND i.availability_confidence IN ('high','medium')
+               AND i.last_synced_at >= clock_timestamp() - interval '30 minutes'
+               AND i.available_quantity - i.reserved_quantity > 0
+           )
+         ORDER BY p.updated_at DESC, p.id
+         LIMIT $3
+       )
+       SELECT p.id AS product_id, p.title, p.description, p.brand, p.currency,
               p.price_minor, p.image_urls, v.id AS variant_id, v.size_label,
               v.color_label, v.currency AS variant_currency, v.price_minor AS variant_price_minor
-       FROM merchants m
-       JOIN merchant_branches b ON b.merchant_id = m.id
-       JOIN commerce_catalog_products p ON p.tenant_id = m.tenant_id
+       FROM selected_products selected
+       JOIN commerce_catalog_products p ON p.id = selected.id
        JOIN commerce_catalog_variants v ON v.tenant_id = p.tenant_id AND v.product_id = p.id
+       JOIN merchants m ON m.id = $1
+       JOIN merchant_branches b ON b.merchant_id = m.id AND b.id = $2
        JOIN branch_inventory i
          ON i.merchant_id = b.merchant_id AND i.branch_id = b.id
         AND i.product_variant_id = v.external_variant_id AND i.sku = v.sku
-       WHERE m.id = $1 AND b.id = $2
-         AND m.status = 'active' AND b.status = 'active'
-         AND p.published_at IS NOT NULL AND v.sku IS NOT NULL
+       WHERE v.sku IS NOT NULL
          AND i.availability_confidence IN ('high','medium')
          AND i.last_synced_at >= clock_timestamp() - interval '30 minutes'
          AND i.available_quantity - i.reserved_quantity > 0
-       ORDER BY p.updated_at DESC, p.id, v.id
-       LIMIT $3`,
+       ORDER BY p.updated_at DESC, p.id, v.id`,
       [input.merchantId, input.branchId, input.limit]
     );
     const products = new Map<string, Record<string, unknown>>();
