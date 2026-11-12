@@ -9,7 +9,7 @@ describe("authenticated customer payment-intent checkout",()=>{
  const intent={id:"8f4d1c3e-6a52-4f0b-9a1e-2c7b5d8e0f31",amount:12500,currency:"SAR",
   clientSecret:"pi_secret_7Kq2mXbN9vT4wPzR1sYcHdLjF6aGuE8oQ3iK5nB0xVtZrWyM",
   expiresAtUtc:new Date(Date.now()+60*60*1000).toISOString()};
- function transactionalPool(options:{failIntentInsert?:boolean;beginAttempt?:boolean}={}){
+ function transactionalPool(options:{failIntentInsert?:boolean;duplicateIntentReference?:boolean;beginAttempt?:boolean}={}){
   const poolQuery=vi.fn(async(sql:string)=>{
    if(sql.includes("FROM customer_orders"))return {rows:[payableOrder],rowCount:1};
    if(sql.includes("INSERT INTO payment_intent_creation_attempts"))return options.beginAttempt===false
@@ -31,6 +31,7 @@ describe("authenticated customer payment-intent checkout",()=>{
    }],rowCount:1};
    if(sql.includes("INSERT INTO provider_payment_intents")){
     if(options.failIntentInsert)throw new Error("database write failed");
+    if(options.duplicateIntentReference)throw new Error("duplicate key value violates unique constraint provider_payment_intents_provider_key_provider_payment_reference_key");
     return {rows:[],rowCount:1};
    }
    if(sql.includes("UPDATE payment_intent_creation_attempts"))return {rows:[{id:"attempt-1"}],rowCount:1};
@@ -112,6 +113,16 @@ describe("authenticated customer payment-intent checkout",()=>{
    .resolves.toEqual({outcome:"persistence_conflict"});
   expect(db.poolQuery.mock.calls.some(([sql])=>String(sql).includes("SET status='outcome_unknown'"))).toBe(true);
   expect(provider.createIntent).toHaveBeenCalledOnce();
+ });
+
+ it("marks the attempt outcome unknown when the provider reference conflicts during persistence",async()=>{
+  const db=transactionalPool({duplicateIntentReference:true});
+  const provider={createIntent:vi.fn(async()=>intent)};
+  const checkout=new PostgresCustomerPaymentIntentCheckout(db.pool,provider,callbackUrl);
+  await expect(checkout.create({customerId:"customer-1",orderId:"order-1",idempotencyKey:"checkout-key-0001"}))
+   .resolves.toEqual({outcome:"persistence_conflict"});
+  expect(provider.createIntent).toHaveBeenCalledOnce();
+  expect(db.poolQuery.mock.calls.some(([sql])=>String(sql).includes("SET status='outcome_unknown'"))).toBe(true);
  });
 
  it("recovers the existing client secret only for an exact idempotent replay",async()=>{
