@@ -154,7 +154,7 @@ export class PostgresCustomerCartStore {
 
   private async readItems(cart: CartRow, queryable: PostgresClient | PostgresPool = this.pool): Promise<CustomerCart> {
     const result = await queryable.query<ItemRow>(
-      `SELECT i.id,i.merchant_id,i.branch_id,i.product_variant_id,i.quantity,p.title,v.sku,
+      `SELECT ci.id,ci.merchant_id,ci.branch_id,ci.product_variant_id,ci.quantity,p.title,v.sku,
               COALESCE(v.currency,p.currency) AS currency,
               COALESCE(v.price_minor,p.price_minor) AS price_minor,
               (m.status='active' AND b.status='active' AND p.published_at IS NOT NULL
