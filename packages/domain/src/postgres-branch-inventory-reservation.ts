@@ -106,7 +106,7 @@ export class PostgresBranchInventoryReservationAdapter implements InventoryReser
            AND i.availability_confidence IN ('high','medium')
            AND i.product_variant_id = ANY($4::text[])
          ORDER BY i.product_variant_id
-         FOR UPDATE OF i`,
+         FOR UPDATE OF m, b, i`,
         [request.tenantId, request.merchantId, request.branchId, variantIds]
       );
       const stockByVariant = new Map(stock.rows.map(row => [row.product_variant_id, row]));
