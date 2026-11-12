@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { catalog, addToCart, updateCartQuantity, cartSubtotal, formatPrice } from "../src/catalog.js";
+import { catalog, addToCart, updateCartQuantity, cartSubtotal, formatPrice, normalizePublishedProducts } from "../src/catalog.js";
 
 test("catalog uses unique product identifiers and valid minor-unit prices", () => {
   const ids = catalog.map((product) => product.id);
@@ -44,4 +44,38 @@ test("invalid product identifiers and quantities fail closed", () => {
 test("price formatting rejects unsafe or negative minor-unit amounts", () => {
   assert.throws(() => formatPrice(-1), /non-negative safe integer/);
   assert.throws(() => formatPrice(Number.MAX_SAFE_INTEGER + 1), /non-negative safe integer/);
+});
+
+test("published API products normalize to purchasable in-stock variants only", () => {
+  const products = normalizePublishedProducts({ products: [{
+    id: "p-1", title: "Classic Shirt", description: "Cotton", currency: "SAR", priceMinor: 15000,
+    imageUrls: ["https://cdn.example/shirt.jpg"],
+    variants: [
+      { id: "v-1", sizeLabel: "M", colorLabel: "Blue", inStock: true },
+      { id: "v-2", sizeLabel: "L", colorLabel: "Blue", inStock: false },
+      { id: "v-3", sizeLabel: "S", currency: "SAR", priceMinor: 0, inStock: true },
+      { id: "v-4", sizeLabel: "XL", currency: "INVALID", priceMinor: 100, inStock: true }
+    ]
+  }] });
+  assert.equal(products.length, 2);
+  assert.deepEqual(products.map((product) => product.id), ["v-1", "v-3"]);
+  assert.equal(products[0].variantLabel, "M · Blue");
+  assert.equal(products[0].imageUrl, "https://cdn.example/shirt.jpg");
+});
+
+test("live variant cart uses variant-specific prices and rejects unknown variants", () => {
+  const products = normalizePublishedProducts({ products: [{
+    id: "p-1", title: "Shirt", currency: "SAR", priceMinor: 10000,
+    variants: [
+      { id: "v-small", sizeLabel: "S", currency: "SAR", priceMinor: 9000, inStock: true },
+      { id: "v-large", sizeLabel: "L", currency: "SAR", priceMinor: 11000, inStock: true }
+    ]
+  }] });
+  const cart = addToCart(new Map(), "v-small", 2, products);
+  assert.equal(cartSubtotal(cart, products), 18000);
+  assert.throws(() => addToCart(new Map(), "unknown", 1, products), /Unknown product/);
+});
+
+test("published catalog response rejects malformed payloads", () => {
+  assert.throws(() => normalizePublishedProducts({ products: "invalid" }), /Invalid published catalog response/);
 });

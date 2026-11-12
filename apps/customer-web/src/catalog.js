@@ -10,28 +10,47 @@ export function formatPrice(priceMinor, currency = "SAR", locale = "ar-SA") {
   return new Intl.NumberFormat(locale, { style: "currency", currency }).format(priceMinor / 100);
 }
 
-export function addToCart(cart, productId, quantity = 1) {
+export function normalizePublishedProducts(payload) {
+  if (!payload || !Array.isArray(payload.products)) throw new TypeError("Invalid published catalog response");
+  return payload.products.flatMap((product) => {
+    if (!product || typeof product.id !== "string" || typeof product.title !== "string" || !Array.isArray(product.variants)) return [];
+    return product.variants.filter((variant) => variant && variant.inStock === true && typeof variant.id === "string")
+      .map((variant) => {
+        const currency = variant.currency ?? product.currency;
+        const priceMinor = variant.priceMinor ?? product.priceMinor;
+        if (typeof currency !== "string" || !/^[A-Z]{3}$/.test(currency) || !Number.isSafeInteger(priceMinor) || priceMinor < 0) return null;
+        const labels = [variant.sizeLabel, variant.colorLabel].filter((value) => typeof value === "string" && value.trim());
+        const imageUrl = Array.isArray(product.imageUrls) ? product.imageUrls.find((url) => typeof url === "string" && /^https:\/\//i.test(url)) : undefined;
+        const description = typeof product.description === "string" ? product.description : "";
+        return { id: variant.id, productId: product.id, name: { ar: product.title, en: product.title }, category: "all",
+          priceMinor, currency, icon: "🛍️", description: { ar: description, en: description },
+          ...(labels.length ? { variantLabel: labels.join(" · ") } : {}), ...(imageUrl ? { imageUrl } : {}) };
+      }).filter(Boolean);
+  });
+}
+
+export function addToCart(cart, productId, quantity = 1, products = catalog) {
   if (!Number.isSafeInteger(quantity) || quantity < 1) throw new RangeError("quantity must be a positive integer");
-  const product = catalog.find((item) => item.id === productId);
+  const product = products.find((item) => item.id === productId);
   if (!product) throw new Error("Unknown product");
   const next = new Map(cart);
   next.set(productId, (next.get(productId) ?? 0) + quantity);
   return next;
 }
 
-export function updateCartQuantity(cart, productId, quantity) {
+export function updateCartQuantity(cart, productId, quantity, products = catalog) {
   if (!Number.isSafeInteger(quantity) || quantity < 0) throw new RangeError("quantity must be a non-negative integer");
-  if (!catalog.some((item) => item.id === productId)) throw new Error("Unknown product");
+  if (!products.some((item) => item.id === productId)) throw new Error("Unknown product");
   const next = new Map(cart);
   if (quantity === 0) next.delete(productId);
   else next.set(productId, quantity);
   return next;
 }
 
-export function cartSubtotal(cart) {
+export function cartSubtotal(cart, products = catalog) {
   let total = 0;
   for (const [productId, quantity] of cart) {
-    const product = catalog.find((item) => item.id === productId);
+    const product = products.find((item) => item.id === productId);
     if (!product) throw new Error("Unknown product");
     if (!Number.isSafeInteger(quantity) || quantity < 1) throw new RangeError("Invalid cart quantity");
     total += product.priceMinor * quantity;
