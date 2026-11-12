@@ -108,8 +108,10 @@ export class PostgresCustomerCartStore {
         [this.createId(),PLATFORM_TENANT,cartRow.id,product.merchant_tenant_id,input.merchantId,input.branchId,input.productVariantId,totalQuantity]
       );
       await client.query("UPDATE customer_carts SET version=version+1,updated_at=clock_timestamp() WHERE id=$1",[cartRow.id]);
+      const currentCart = await this.readCart(client,input.customerId);
+      if (!currentCart) throw new Error("customer_cart_persistence_failed");
       await client.query("COMMIT");
-      return (await this.readCart(client,input.customerId))!;
+      return currentCart;
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
       throw error;
