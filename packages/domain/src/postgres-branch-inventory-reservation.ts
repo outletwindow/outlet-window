@@ -53,7 +53,7 @@ export class PostgresBranchInventoryReservationAdapter implements InventoryReser
           row.branch_id === request.branchId;
         if (!same || row.status !== "reserved") throw new Error("inventory_reservation_idempotency_conflict");
         const lines = await client.query<OrderLineRow>(
-          "SELECT product_variant_id, sku, quantity FROM inventory_reservation_lines WHERE reservation_id = $1 ORDER BY product_variant_id",
+          "SELECT catalog_variant_id AS product_variant_id, sku, quantity FROM inventory_reservation_lines WHERE reservation_id = $1 ORDER BY catalog_variant_id",
           [row.id]
         );
         if (!sameLines(lines.rows, request.lines)) throw new Error("inventory_reservation_idempotency_conflict");
@@ -82,11 +82,11 @@ export class PostgresBranchInventoryReservationAdapter implements InventoryReser
       if (!suborder.rowCount) throw new Error("inventory_reservation_paid_suborder_not_found");
 
       const orderLines = await client.query<OrderLineRow>(
-        `SELECT product_variant_id, sku, quantity
-         FROM customer_order_items
-         WHERE tenant_id = $1 AND order_id = $2 AND suborder_id = $3
-           AND merchant_id = $4 AND branch_id = $5
-         ORDER BY product_variant_id`,
+        `SELECT oi.product_variant_id, oi.sku, oi.quantity
+         FROM customer_order_items oi
+         WHERE oi.tenant_id = $1 AND oi.order_id = $2 AND oi.suborder_id = $3
+           AND oi.merchant_id = $4 AND oi.branch_id = $5
+         ORDER BY oi.product_variant_id`,
         [request.tenantId, request.orderId, request.suborderId, request.merchantId, request.branchId]
       );
       if (!sameLines(orderLines.rows, request.lines)) {
@@ -94,22 +94,34 @@ export class PostgresBranchInventoryReservationAdapter implements InventoryReser
       }
 
       const variantIds = request.lines.map(line => line.productVariantId).sort();
-      const stock = await client.query<StockRow>(
-        `SELECT i.product_variant_id, i.sku, i.available_quantity, i.reserved_quantity
-         FROM branch_inventory i
+      // Cart/order lines use the platform catalog variant ID. Branch inventory is keyed
+      // by the merchant's external variant ID, so resolve that mapping from the catalog.
+      // The COALESCE fallback preserves legacy/manual order lines created before catalog linking.
+      const stock = await client.query<StockRow & { catalog_variant_id: string }>(
+        `SELECT i.product_variant_id, oi.product_variant_id AS catalog_variant_id,
+                i.sku, i.available_quantity, i.reserved_quantity
+         FROM customer_order_items oi
+         LEFT JOIN commerce_catalog_variants v
+           ON v.tenant_id = oi.tenant_id AND v.id = oi.product_variant_id
+         JOIN branch_inventory i
+           ON i.merchant_id = oi.merchant_id AND i.branch_id = oi.branch_id
+          AND i.product_variant_id = COALESCE(v.external_variant_id, oi.product_variant_id)
+          AND i.sku = oi.sku
          JOIN merchant_branches b
            ON b.merchant_id = i.merchant_id AND b.id = i.branch_id
          JOIN merchants m ON m.id = b.merchant_id
-         WHERE m.tenant_id = $1 AND m.id = $2 AND b.id = $3
+         WHERE oi.tenant_id = $1 AND oi.order_id = $2 AND oi.suborder_id = $3
+           AND oi.merchant_id = $4 AND oi.branch_id = $5
+           AND oi.product_variant_id = ANY($6::text[])
+           AND m.tenant_id = $1 AND m.id = $4 AND b.id = $5
            AND m.status = 'active' AND b.status = 'active'
            AND i.last_synced_at >= clock_timestamp() - interval '30 minutes'
            AND i.availability_confidence IN ('high','medium')
-           AND i.product_variant_id = ANY($4::text[])
-         ORDER BY i.product_variant_id
+         ORDER BY oi.product_variant_id
          FOR UPDATE OF m, b, i`,
-        [request.tenantId, request.merchantId, request.branchId, variantIds]
+        [request.tenantId, request.orderId, request.suborderId, request.merchantId, request.branchId, variantIds]
       );
-      const stockByVariant = new Map(stock.rows.map(row => [row.product_variant_id, row]));
+      const stockByVariant = new Map(stock.rows.map(row => [row.catalog_variant_id, row]));
       const unavailable = request.lines.filter(line => {
         const row = stockByVariant.get(line.productVariantId);
         return !row || row.sku !== line.sku ||
@@ -133,21 +145,23 @@ export class PostgresBranchInventoryReservationAdapter implements InventoryReser
       );
 
       for (const line of request.lines) {
+        const inventoryRow = stockByVariant.get(line.productVariantId);
+        if (!inventoryRow) throw new Error("inventory_reservation_stock_mapping_missing");
         const changed = await client.query(
           `UPDATE branch_inventory
            SET reserved_quantity = reserved_quantity + $4, updated_at = $5
            WHERE merchant_id = $1 AND branch_id = $2 AND product_variant_id = $3
              AND sku = $6 AND available_quantity - reserved_quantity >= $4`,
-          [request.merchantId, request.branchId, line.productVariantId, line.quantity,
+          [request.merchantId, request.branchId, inventoryRow.product_variant_id, line.quantity,
             request.requestedAtUtc, line.sku]
         );
         if (changed.rowCount !== 1) throw new Error("inventory_reservation_stock_race");
         await client.query(
           `INSERT INTO inventory_reservation_lines
-           (reservation_id, merchant_id, branch_id, product_variant_id, sku, quantity)
-           VALUES ($1,$2,$3,$4,$5,$6)`,
+           (reservation_id, merchant_id, branch_id, product_variant_id, sku, quantity, catalog_variant_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
           [reservationId, request.merchantId, request.branchId,
-            line.productVariantId, line.sku, line.quantity]
+            inventoryRow.product_variant_id, line.sku, line.quantity, line.productVariantId]
         );
       }
 
