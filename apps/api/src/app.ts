@@ -593,10 +593,6 @@ app.patch<{
     }
     const tenantId = await options.resolveMerchantTenantId?.(merchantId);
     if (!tenantId) return reply.code(404).send({ error: "merchant_not_found" });
-    // Checkout validation is customer/platform-owned; merchant actors cannot make an order payable.
-    if (body.nextStatus === "awaiting_payment") {
-      return reply.code(403).send({ error: "customer_checkout_transition_only" });
-    }
     const input: RecordPreparationCheckInput = {
       id: randomUUID(), tenantId, orderId, suborderId, orderItemId: itemId,
       merchantId, branchId, actorId: access.actor.id,
@@ -636,6 +632,10 @@ app.patch<{
     // Resolve the merchant's tenant from trusted persistence; merchantId is not tenantId.
     const tenantId = await options.resolveMerchantTenantId?.(merchantId);
     if (!tenantId) return reply.code(404).send({ error: "merchant_not_found" });
+    // Checkout validation is customer/platform-owned; merchant actors cannot make an order payable.
+    if (body.nextStatus === "awaiting_payment") {
+      return reply.code(403).send({ error: "customer_checkout_transition_only" });
+    }
     const context: OrderTransitionContext = {
       actorId: result.actor.id, actorRole: result.actor.role,
       occurredAt: new Date().toISOString(), expectedVersion: body.expectedVersion,
