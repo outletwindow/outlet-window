@@ -45,6 +45,17 @@ describe("PostgresCustomerCartStore",()=>{
   expect(s.calls.at(-1)?.sql).toBe("ROLLBACK");
   expect(s.client.release).toHaveBeenCalledOnce();
  });
+ it("rolls back if the persisted cart projection cannot be read",async()=>{
+  const s=setup();
+  const original=s.query.getMockImplementation();
+  s.query.mockImplementation(async(sql:string,values?:readonly unknown[])=>{
+   if(sql.includes("FROM customer_cart_items ci")) throw new Error("projection_read_failed");
+   return original!(sql,values);
+  });
+  await expect(s.store.addItem({customerId:"customer-1",merchantId:"merchant-1",branchId:"branch-1",productVariantId:"variant-1",quantity:2})).rejects.toThrow("projection_read_failed");
+  expect(s.calls.at(-1)?.sql).toBe("ROLLBACK");
+  expect(s.client.release).toHaveBeenCalledOnce();
+ });
  it("scopes item removal to the authenticated customer and active platform cart",async()=>{
   const s=setup();
   await s.store.removeItem({customerId:"customer-1",itemId:"item-other"});
