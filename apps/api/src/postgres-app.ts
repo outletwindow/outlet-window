@@ -25,6 +25,7 @@ import { PostgresFulfillmentProviderScopeAuthorizer } from "../../../packages/do
 import { PostgresMerchantOrderItemPreparationStore } from "../../../packages/domain/src/postgres-merchant-order-item-preparation.js";
 import { PostgresPaymentIntentStore } from "../../../packages/domain/src/postgres-payment-intent-store.js";
 import { PostgresCustomerPaymentIntentCheckout } from "../../../packages/domain/src/postgres-customer-payment-intent-checkout.js";
+import { PostgresCustomerCartStore } from "../../../packages/domain/src/postgres-customer-cart-store.js";
 import type { MoyasarPaymentIntentClient } from "../../../packages/domain/src/moyasar-payment-intent-client.js";
 import { PostgresVerifiedOrderPaymentCaptureStore } from "../../../packages/domain/src/postgres-verified-order-payment-capture.js";
 import { PostgresInitialPaymentCaptureInbox } from "../../../packages/domain/src/postgres-initial-payment-capture-inbox.js";
@@ -113,6 +114,7 @@ export function buildPostgresApp(options: PostgresApiOptions) {
       fulfillmentWebhookAuthorizationResolver: options.fulfillmentWebhookAuthorizationResolver
     }),
     merchantCatalog: options.merchantCatalog ?? new PostgresMerchantCatalog(options.pool),
+    customerCart: new PostgresCustomerCartStore(options.pool),
     ...(catalogImport === undefined ? {} : { merchantCatalogImport: catalogImport }),
     ...(options.paymentWebhookSecretResolver === undefined ? {} : {
       paymentWebhookSecretResolver: options.paymentWebhookSecretResolver

@@ -39,6 +39,7 @@ export interface AccessScope {
   branchId?: string;
   orderId?: string;
   taskId?: string;
+  customerId?: string;
 }
 
 export interface PermissionGrant {
@@ -80,7 +81,8 @@ function scopeMatches(granted: AccessScope, requested: AccessScope): boolean {
     "merchantId",
     "branchId",
     "orderId",
-    "taskId"
+    "taskId",
+    "customerId"
   ];
 
   if (granted.platform === true) return true;

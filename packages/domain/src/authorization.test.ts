@@ -84,4 +84,17 @@ describe("server-side authorization", () => {
       })
     ).toEqual({ allowed: false, reason: "missing_identity" });
   });
+  it("matches customer-specific cart scopes without allowing another customer's cart", () => {
+    const customer: Actor = {
+      id: "customer-1", role: "customer", active: true,
+      grants: [{ resource: "customer.cart", actions: ["read"], scope: { customerId: "customer-1" } }]
+    };
+    expect(authorize(customer, {
+      resource: "customer.cart", action: "read", scope: { customerId: "customer-1" }
+    }).allowed).toBe(true);
+    expect(authorize(customer, {
+      resource: "customer.cart", action: "read", scope: { customerId: "customer-2" }
+    })).toEqual({ allowed: false, reason: "scope_mismatch" });
+  });
+
 });

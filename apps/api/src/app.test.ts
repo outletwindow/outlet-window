@@ -936,4 +936,54 @@ describe("signed payment provider webhook intake", () => {
   });
 
 
+  it("exposes customer cart routes only to the authenticated customer's explicit cart scope", async () => {
+    const customer: Actor = {
+      id: "cart-customer-1", role: "customer", active: true,
+      grants: [{ resource: "customer.cart", actions: ["read", "create", "delete"], scope: { customerId: "cart-customer-1" } }]
+    };
+    const cart = { id: "cart-1", customerId: "cart-customer-1", currency: "SAR", version: 2, items: [] };
+    const get = vi.fn(async () => cart);
+    const addItem = vi.fn(async () => cart);
+    const removeItem = vi.fn(async () => cart);
+    const cartApp = buildApp({ resolveActor: async () => customer, customerCart: { get, addItem, removeItem } });
+    await cartApp.ready();
+    try {
+      const read = await cartApp.inject({ method: "GET", url: "/api/v1/customer/cart" });
+      expect(read.statusCode).toBe(200);
+      expect(read.json()).toEqual({ cart });
+      const add = await cartApp.inject({
+        method: "POST", url: "/api/v1/customer/cart/items",
+        payload: { merchantId: "merchant-1", branchId: "branch-1", productVariantId: "variant-1", quantity: 2 }
+      });
+      expect(add.statusCode).toBe(200);
+      expect(addItem).toHaveBeenCalledWith({
+        customerId: "cart-customer-1", merchantId: "merchant-1", branchId: "branch-1",
+        productVariantId: "variant-1", quantity: 2
+      });
+      const remove = await cartApp.inject({ method: "DELETE", url: "/api/v1/customer/cart/items/item-1" });
+      expect(remove.statusCode).toBe(200);
+      expect(removeItem).toHaveBeenCalledWith({ customerId: "cart-customer-1", itemId: "item-1" });
+      expect(get).toHaveBeenCalledWith({ customerId: "cart-customer-1" });
+    } finally {
+      await cartApp.close();
+    }
+  });
+
+  it("rejects customer cart access when the grant belongs to a different customer", async () => {
+    const customer: Actor = {
+      id: "cart-customer-1", role: "customer", active: true,
+      grants: [{ resource: "customer.cart", actions: ["read"], scope: { customerId: "cart-customer-other" } }]
+    };
+    const get = vi.fn(async () => null);
+    const cartApp = buildApp({ resolveActor: async () => customer, customerCart: { get, addItem: vi.fn(), removeItem: vi.fn() } });
+    await cartApp.ready();
+    try {
+      const response = await cartApp.inject({ method: "GET", url: "/api/v1/customer/cart" });
+      expect(response.statusCode).toBe(403);
+      expect(get).not.toHaveBeenCalled();
+    } finally {
+      await cartApp.close();
+    }
+  });
+
 });

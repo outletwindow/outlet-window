@@ -65,6 +65,11 @@ export interface MerchantCatalogRepository {
 }
 
 export interface CustomerPaymentIntentCheckout { create(input:{customerId:string;orderId:string;idempotencyKey:string}):Promise<import("../../../packages/domain/src/postgres-customer-payment-intent-checkout.js").CustomerPaymentIntentCheckoutResult>; }
+export interface CustomerCartRepository {
+  get(input:{customerId:string}):Promise<import("../../../packages/domain/src/postgres-customer-cart-store.js").CustomerCart|null>;
+  addItem(input:{customerId:string;merchantId:string;branchId:string;productVariantId:string;quantity:number}):Promise<import("../../../packages/domain/src/postgres-customer-cart-store.js").CustomerCart>;
+  removeItem(input:{customerId:string;itemId:string}):Promise<import("../../../packages/domain/src/postgres-customer-cart-store.js").CustomerCart|null>;
+}
 export interface CustomerPaymentAdjustmentActions {
   consent(input: { orderId: string; adjustmentId: string; customerId: string }): Promise<{ outcome: string }>;
   decline(input: { orderId: string; adjustmentId: string; customerId: string }): Promise<{ outcome: string }>;
@@ -125,6 +130,7 @@ export interface AppOptions {
   customerDeliveryDestinations?: CustomerDeliveryDestinationService;
   customerPaymentAdjustments?: CustomerPaymentAdjustmentActions;
   customerPaymentIntentCheckout?: CustomerPaymentIntentCheckout;
+  customerCart?: CustomerCartRepository;
   integrationHub?: IntegrationHub;
   merchantCatalog?: MerchantCatalogRepository;
   /** Resolve merchant tenant ownership from trusted persistence after authorization. */
@@ -157,7 +163,7 @@ type AuthorizationResult =
 async function authorizeRequest(
   request: FastifyRequest,
   options: AppOptions,
-  authorizationRequest: AuthorizationRequest
+  authorizationRequest: AuthorizationRequest | ((actor: Actor) => AuthorizationRequest)
 ): Promise<AuthorizationResult> {
   let actor: Actor | null = null;
   if (options.actorResolution) {
@@ -179,12 +185,13 @@ async function authorizeRequest(
     };
   }
 
-  const decision = authorize(actor, authorizationRequest);
+  const resolvedAuthorizationRequest = typeof authorizationRequest === "function" ? authorizationRequest(actor) : authorizationRequest;
+  const decision = authorize(actor, resolvedAuthorizationRequest);
   if (options.auditEvents) {
-    const merchantId = authorizationRequest.scope.merchantId;
+    const merchantId = resolvedAuthorizationRequest.scope.merchantId;
     await options.auditEvents.append(createAuditEvent({
       id: randomUUID(),
-      type: decision.allowed ? `authorization.${authorizationRequest.action}.granted` : `authorization.${authorizationRequest.action}.denied`,
+      type: decision.allowed ? `authorization.${resolvedAuthorizationRequest.action}.granted` : `authorization.${resolvedAuthorizationRequest.action}.denied`,
       category: "access_control",
       occurredAt: new Date().toISOString(),
       actor: { id: actor.id, type: actor.role === "merchant_owner" || actor.role === "merchant_admin" ||
@@ -192,10 +199,10 @@ async function authorizeRequest(
         actor.role === "customer" ? "customer" : actor.role === "shopper" ? "shopper" :
         actor.role === "courier" ? "courier" : actor.role === "ai_agent" ? "ai_agent" : "platform_user",
         role: actor.role },
-      action: `${authorizationRequest.resource}:${authorizationRequest.action}`,
+      action: `${resolvedAuthorizationRequest.resource}:${resolvedAuthorizationRequest.action}`,
       outcome: decision.allowed ? "success" : "denied",
-      resourceType: authorizationRequest.resource,
-      ...(authorizationRequest.scope.branchId ? { resourceId: authorizationRequest.scope.branchId, branchId: authorizationRequest.scope.branchId } : {}),
+      resourceType: resolvedAuthorizationRequest.resource,
+      ...(resolvedAuthorizationRequest.scope.branchId ? { resourceId: resolvedAuthorizationRequest.scope.branchId, branchId: resolvedAuthorizationRequest.scope.branchId } : {}),
       ...(merchantId ? { tenantId: merchantId, merchantId } : {}),
       correlationId: request.id,
       source: "api",
@@ -655,6 +662,59 @@ app.patch<{
       suborder: { id: suborderId, status: persisted.transition.order.status, version: persisted.transition.order.version },
       previousStatus: persisted.transition.previousStatus, parentStatus: persisted.parentStatus
     });
+  });
+
+  app.get("/api/v1/customer/cart", async (request, reply) => {
+    const auth = await authorizeRequest(request, options, actor => ({
+      resource: "customer.cart", action: "read", scope: { customerId: actor.id }
+    }));
+    if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
+    if (auth.actor.role !== "customer") return reply.code(403).send({ error: "customer_only" });
+    if (!options.customerCart) return reply.code(503).send({ error: "customer_cart_unavailable" });
+    const cart = await options.customerCart.get({ customerId: auth.actor.id });
+    return reply.code(200).send({ cart });
+  });
+
+  app.post<{ Body: { merchantId: string; branchId: string; productVariantId: string; quantity: number } }>(
+    "/api/v1/customer/cart/items", async (request, reply) => {
+      const auth = await authorizeRequest(request, options, actor => ({
+        resource: "customer.cart", action: "create", scope: { customerId: actor.id }
+      }));
+      if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
+      if (auth.actor.role !== "customer") return reply.code(403).send({ error: "customer_only" });
+      if (!options.customerCart) return reply.code(503).send({ error: "customer_cart_unavailable" });
+      const body = request.body;
+      if (!body || typeof body.merchantId !== "string" || !body.merchantId.trim() ||
+          typeof body.branchId !== "string" || !body.branchId.trim() ||
+          typeof body.productVariantId !== "string" || !body.productVariantId.trim() ||
+          !Number.isSafeInteger(body.quantity) || body.quantity < 1 || body.quantity > 99) {
+        return reply.code(400).send({ error: "invalid_cart_item" });
+      }
+      try {
+        const cart = await options.customerCart.addItem({
+          customerId: auth.actor.id, merchantId: body.merchantId, branchId: body.branchId,
+          productVariantId: body.productVariantId, quantity: body.quantity
+        });
+        return reply.code(200).send({ cart });
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "";
+        if (code === "customer_cart_variant_unavailable") return reply.code(409).send({ error: "cart_variant_unavailable" });
+        if (code === "customer_cart_currency_mismatch") return reply.code(409).send({ error: "cart_currency_mismatch" });
+        if (code === "customer_cart_quantity_limit") return reply.code(409).send({ error: "cart_quantity_limit" });
+        throw error;
+      }
+    }
+  );
+
+  app.delete<{ Params: { itemId: string } }>("/api/v1/customer/cart/items/:itemId", async (request, reply) => {
+    const auth = await authorizeRequest(request, options, actor => ({
+      resource: "customer.cart", action: "delete", scope: { customerId: actor.id }
+    }));
+    if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
+    if (auth.actor.role !== "customer") return reply.code(403).send({ error: "customer_only" });
+    if (!options.customerCart) return reply.code(503).send({ error: "customer_cart_unavailable" });
+    const cart = await options.customerCart.removeItem({ customerId: auth.actor.id, itemId: request.params.itemId });
+    return reply.code(200).send({ cart });
   });
 
   app.patch<{
