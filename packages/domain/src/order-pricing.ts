@@ -4,7 +4,7 @@ export type PriceComponentKind =
 
 export interface PriceComponent {
   kind: PriceComponentKind;
-  /** Non-negative amount in the quote currency's minor unit. Discounts are represented separately. */
+  /** Non-negative amount in the quote currency's minor unit. Discount components are informational and excluded from subtotal. */
   amountMinor: number;
   label: string;
 }
@@ -15,7 +15,7 @@ export interface PricingQuoteInput {
   ruleVersion: number;
   currency: string;
   components: readonly PriceComponent[];
-  /** Discount amounts are explicit, non-negative minor-unit amounts. */
+  /** Explicit discount total in minor units; must match any discount components supplied. */
   discountMinor?: number;
   createdAtUtc: string;
   expiresAtUtc: string;
@@ -50,19 +50,30 @@ export function calculatePricingQuote(input: PricingQuoteInput): PricingQuote {
     throw new Error("pricing_components_required");
   }
   let subtotal = 0;
+  let componentDiscount = 0;
+  let hasDiscountComponent = false;
   const components = input.components.map(component => {
     if (!component.label.trim() || !Number.isSafeInteger(component.amountMinor) ||
         component.amountMinor < 0 ||
         !["product_subtotal", "delivery", "collection", "platform_fee", "packaging", "tax", "discount"].includes(component.kind)) {
       throw new Error("invalid_price_component");
     }
-    subtotal += component.amountMinor;
-    if (!Number.isSafeInteger(subtotal)) throw new Error("price_overflow");
+    if (component.kind === "discount") {
+      hasDiscountComponent = true;
+      componentDiscount += component.amountMinor;
+      if (!Number.isSafeInteger(componentDiscount)) throw new Error("price_overflow");
+    } else {
+      subtotal += component.amountMinor;
+      if (!Number.isSafeInteger(subtotal)) throw new Error("price_overflow");
+    }
     return { ...component };
   });
   const discount = input.discountMinor ?? 0;
   if (!Number.isSafeInteger(discount) || discount < 0 || discount > subtotal) {
     throw new Error("invalid_discount");
+  }
+  if (hasDiscountComponent && componentDiscount !== discount) {
+    throw new Error("discount_component_mismatch");
   }
   return {
     quoteId: input.quoteId, ruleId: input.ruleId, ruleVersion: input.ruleVersion,
