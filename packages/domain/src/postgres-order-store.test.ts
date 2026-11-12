@@ -6,8 +6,14 @@ const order: CreateCustomerOrderInput = {
   id: "order-1", tenantId: "tenant-1", customerId: "customer-1",
   idempotencyKey: "checkout-key-0001", currency: "SAR", totalMinor: 12900,
   metadata: { source: "web" },
-  suborders: [{ id: "suborder-1", merchantId: "merchant-1", branchId: "branch-1",
-    status: "pending_validation", subtotalMinor: 12900, metadata: { channel: "store" } }]
+  suborders: [{
+    id: "suborder-1", merchantId: "merchant-1", branchId: "branch-1",
+    status: "pending_validation", subtotalMinor: 12900, metadata: { channel: "store" },
+    items: [{
+      id: "item-1", productVariantId: "variant-1", sku: "SKU-1",
+      sizeLabel: "M", colorLabel: "Black", quantity: 2, unitPriceMinor: 6450, currency: "SAR"
+    }]
+  }]
 };
 
 function database(options: { existing?: boolean; existingTotal?: string; unavailableBranch?: boolean } = {}) {
@@ -24,10 +30,20 @@ function database(options: { existing?: boolean; existingTotal?: string; unavail
       rows = [{ id: "suborder-1", merchant_id: "merchant-1", branch_id: "branch-1",
         status: "pending_validation", subtotal_minor: "12900", metadata: { channel: "store" } }];
       rowCount = 1;
+    } else if (sql.includes("FROM customer_order_items WHERE order_id")) {
+      rows = [{
+        id: "item-1", suborder_id: "suborder-1", product_variant_id: "variant-1",
+        sku: "SKU-1", size_label: "M", color_label: "Black", quantity: 2,
+        unit_price_minor: "6450", currency: "SAR"
+      }];
+      rowCount = 1;
     } else if (sql.includes("INSERT INTO merchant_suborders")) {
-      rows = options.unavailableBranch ? [] : [{ id: "suborder-1" }];
+      rows = options.unavailableBranch ? [] : [{ id: "suborder-1", tenant_id: "merchant-tenant-1" }];
       rowCount = rows.length;
     } else if (sql.includes("INSERT INTO customer_orders")) {
+      rows = [];
+      rowCount = 1;
+    } else if (sql.includes("INSERT INTO customer_order_items")) {
       rows = [];
       rowCount = 1;
     }
@@ -39,7 +55,7 @@ function database(options: { existing?: boolean; existingTotal?: string; unavail
 }
 
 describe("PostgresOrderStore", () => {
-  it("creates the parent order and validates each active merchant branch atomically", async () => {
+  it("creates the parent, merchant suborder, and exact order lines atomically", async () => {
     const db = database();
     const result = await new PostgresOrderStore(db.pool).create(order);
     expect(result).toEqual({ outcome: "created", orderId: "order-1" });
@@ -47,6 +63,7 @@ describe("PostgresOrderStore", () => {
     expect(db.statements.some(sql => sql.includes("pg_advisory_xact_lock"))).toBe(true);
     expect(db.statements.some(sql => sql.includes("INSERT INTO customer_orders"))).toBe(true);
     expect(db.statements.some(sql => sql.includes("m.status = 'active' AND b.status = 'active'"))).toBe(true);
+    expect(db.statements.some(sql => sql.includes("INSERT INTO customer_order_items"))).toBe(true);
     expect(db.statements.at(-1)).toBe("COMMIT");
     expect(db.client.release).toHaveBeenCalledOnce();
   });
@@ -59,7 +76,7 @@ describe("PostgresOrderStore", () => {
     expect(db.client.release).toHaveBeenCalledOnce();
   });
 
-  it("returns already_exists for an identical idempotent replay", async () => {
+  it("returns already_exists only when the persisted order lines also match", async () => {
     const db = database({ existing: true });
     const result = await new PostgresOrderStore(db.pool).create(order);
     expect(result).toEqual({ outcome: "already_exists", orderId: "persisted-order" });
@@ -76,8 +93,28 @@ describe("PostgresOrderStore", () => {
 
   it("rejects malformed order input before opening a transaction", async () => {
     const db = database();
-    await expect(new PostgresOrderStore(db.pool).create({ ...order, idempotencyKey: "short", totalMinor: -1 }))
-      .rejects.toThrow();
+    await expect(new PostgresOrderStore(db.pool).create({
+      ...order, idempotencyKey: "short", totalMinor: -1
+    })).rejects.toThrow();
+    expect(db.pool.connect).not.toHaveBeenCalled();
+  });
+
+  it("rejects a suborder whose line totals do not equal its persisted subtotal", async () => {
+    const db = database();
+    const invalid = {
+      ...order,
+      suborders: [{ ...order.suborders[0]!, subtotalMinor: 12899 }]
+    };
+    await expect(new PostgresOrderStore(db.pool).create(invalid))
+      .rejects.toThrow("Order item totals must equal the merchant suborder subtotal");
+    expect(db.pool.connect).not.toHaveBeenCalled();
+  });
+
+  it("rejects an empty suborder line list", async () => {
+    const db = database();
+    const invalid = { ...order, suborders: [{ ...order.suborders[0]!, items: [] }] };
+    await expect(new PostgresOrderStore(db.pool).create(invalid))
+      .rejects.toThrow("A merchant suborder requires at least one order item");
     expect(db.pool.connect).not.toHaveBeenCalled();
   });
 });
