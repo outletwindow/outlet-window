@@ -1,5 +1,15 @@
 \set ON_ERROR_STOP on
 BEGIN;
+INSERT INTO merchants (id,legal_name,display_name,country_code,status)
+VALUES ('recovery-test-merchant','Recovery Test LLC','Recovery Test','SA','active');
+INSERT INTO merchant_branches (id,merchant_id,display_name,city_code,status)
+VALUES ('recovery-test-branch','recovery-test-merchant','Recovery Branch','JUB','active');
+INSERT INTO customer_orders (id,tenant_id,customer_id,idempotency_key,status,currency,total_minor)
+VALUES ('order-test','platform','recovery-customer','recovery-order-key-1','pending_validation','SAR',100),
+       ('other-order-test','platform','recovery-customer','recovery-order-key-2','pending_validation','SAR',100);
+INSERT INTO merchant_suborders (id,tenant_id,order_id,merchant_id,branch_id,status,subtotal_minor)
+VALUES ('suborder-2','recovery-test-merchant','order-test','recovery-test-merchant','recovery-test-branch','pending_validation',100),
+       ('suborder-from-another-order','recovery-test-merchant','other-order-test','recovery-test-merchant','recovery-test-branch','pending_validation',100);
 INSERT INTO checkout_recovery_cases
 (id,tenant_id,order_id,idempotency_key,failure_code,failed_suborder_id,
  payment_reference,payment_captured_at,reservation_references)
