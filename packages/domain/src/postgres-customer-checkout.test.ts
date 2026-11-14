@@ -38,14 +38,16 @@ const input = {
 };
 
 describe("PostgresCustomerCheckoutService", () => {
-  it("rejects multi-branch carts and rolls back before quote or order creation", async () => {
+  it("routes multi-branch carts into branch-scoped delivery quote resolution", async () => {
     const db = poolWithTwoBranchCart();
     const service = new PostgresCustomerCheckoutService(db.pool, () => "generated-id");
     const result = await service.create(input);
-    expect(result).toEqual({ outcome: "unsupported_multi_branch" });
+    // This fixture intentionally has no service-area rows; reaching this result proves
+    // checkout no longer rejects multiple branches before delivery quote resolution.
+    expect(result).toEqual({ outcome: "outside_service_area" });
     expect(db.statements[0]).toBe("BEGIN");
     expect(db.statements.at(-1)).toBe("ROLLBACK");
-    expect(db.statements.some(sql => sql.includes("delivery_service_areas"))).toBe(false);
+    expect(db.statements.some(sql => sql.includes("delivery_service_areas"))).toBe(true);
     expect(db.statements.some(sql => sql.includes("INSERT INTO customer_orders"))).toBe(false);
     expect(db.client.release).toHaveBeenCalledOnce();
   });
