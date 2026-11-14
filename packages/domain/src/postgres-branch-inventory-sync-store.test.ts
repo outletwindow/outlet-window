@@ -1,0 +1,75 @@
+import { describe, expect, it } from "vitest";
+import type { PostgresClient, PostgresPool, PostgresQueryResult } from "./postgres-iam-store.js";
+import { PostgresBranchInventorySyncStore } from "./branch-inventory-sync.js";
+
+class SnapshotClient implements PostgresClient {
+  statements: { sql: string; values: readonly unknown[] }[] = [];
+  released = false;
+  async query<Row>(sql: string, values: readonly unknown[] = []): Promise<PostgresQueryResult<Row>> {
+    this.statements.push({ sql: sql.trim().replace(/\\s+/g, " "), values });
+    if (sql.includes("SELECT b.id FROM merchant_branches")) {
+      return { rows: [{ id: "branch-1" } as Row], rowCount: 1 };
+    }
+    if (sql.includes("INSERT INTO branch_inventory")) {
+      return { rows: [{ product_variant_id: "variant-present" } as Row], rowCount: 1 };
+    }
+    if (sql.includes("UPDATE branch_inventory")) {
+      return { rows: [{ product_variant_id: "variant-omitted" } as Row], rowCount: 1 };
+    }
+    return { rows: [], rowCount: 1 };
+  }
+  release(): void { this.released = true; }
+}
+
+class SnapshotPool implements PostgresPool {
+  client = new SnapshotClient();
+  async query<Row>(): Promise<PostgresQueryResult<Row>> { return { rows: [], rowCount: 0 }; }
+  async connect(): Promise<PostgresClient> { return this.client; }
+}
+
+describe("PostgreSQL complete branch inventory snapshots", () => {
+  it("zeros omitted variants while preserving reservations and newer snapshot ordering", async () => {
+    const pool = new SnapshotPool();
+    const store = new PostgresBranchInventorySyncStore(pool);
+    const result = await store.applySnapshot({
+      tenantId: "tenant-1", merchantId: "merchant-1", branchId: "branch-1",
+      source: "pos", capturedAtUtc: "2026-11-14T12:00:00.000Z", confidence: "high",
+      lines: [{ productVariantId: "variant-present", sku: "SKU-1", availableQuantity: 8 }]
+    });
+
+    expect(result).toEqual({ accepted: 2, stale: 0 });
+    const omitted = pool.client.statements.find(item => item.sql.includes("UPDATE branch_inventory"));
+    expect(omitted?.sql).toContain("SET available_quantity = reserved_quantity");
+    expect(omitted?.sql).toContain("NOT (product_variant_id = ANY($3::text[]))");
+    expect(omitted?.sql).toContain("last_synced_at <= $5");
+    expect(omitted?.values).toEqual([
+      "merchant-1", "branch-1", ["variant-present"], "pos",
+      "2026-11-14T12:00:00.000Z", "high"
+    ]);
+    expect(pool.client.statements.at(-1)?.sql).toBe("COMMIT");
+    expect(pool.client.released).toBe(true);
+  });
+
+  it("rolls back when the tenant does not own the branch", async () => {
+    class MissingBranchClient extends SnapshotClient {
+      override async query<Row>(sql: string, values: readonly unknown[] = []): Promise<PostgresQueryResult<Row>> {
+        this.statements.push({ sql: sql.trim().replace(/\\s+/g, " "), values });
+        if (sql.includes("SELECT b.id FROM merchant_branches")) return { rows: [], rowCount: 0 };
+        return { rows: [], rowCount: 1 };
+      }
+    }
+    const client = new MissingBranchClient();
+    const pool: PostgresPool = {
+      async query<Row>(): Promise<PostgresQueryResult<Row>> { return { rows: [], rowCount: 0 }; },
+      async connect(): Promise<PostgresClient> { return client; }
+    };
+    const store = new PostgresBranchInventorySyncStore(pool);
+    await expect(store.applySnapshot({
+      tenantId: "other-tenant", merchantId: "merchant-1", branchId: "branch-1",
+      source: "pos", capturedAtUtc: "2026-11-14T12:00:00.000Z", confidence: "high",
+      lines: [{ productVariantId: "variant-1", sku: "SKU-1", availableQuantity: 3 }]
+    })).rejects.toThrow("BRANCH_INVENTORY_SCOPE_NOT_FOUND");
+    expect(client.statements.at(-1)?.sql).toBe("ROLLBACK");
+    expect(client.released).toBe(true);
+  });
+});
