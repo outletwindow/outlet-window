@@ -159,7 +159,10 @@ integration("PostgreSQL customer checkout orchestration", () => {
     const parent = await pool.query<{
       status: string; currency: string; total_minor: string; delivery_zone_id: string;
       delivery_branch_id: string; delivery_quote: { totalMinor: number };
-      metadata: { checkoutPricing: { components: Array<{ kind: string; amountMinor: number }> } };
+      metadata: { checkoutPricing: {
+        components: Array<{ kind: string; amountMinor: number }>;
+        checkoutRequest: { expectedCartVersion: number; destination: { latitude: number } };
+      } };
     }>(
       `SELECT status,currency,total_minor,delivery_zone_id,delivery_branch_id,delivery_quote,metadata
        FROM customer_orders WHERE id=$1`, [result.orderId]
@@ -171,6 +174,9 @@ integration("PostgreSQL customer checkout orchestration", () => {
     expect(parent.rows[0]?.delivery_branch_id).toBe(branchId);
     expect(parent.rows[0]?.delivery_quote.totalMinor).toBe(1500);
     expect(parent.rows[0]?.metadata.checkoutPricing.components).toHaveLength(2);
+    expect(parent.rows[0]?.metadata.checkoutPricing.checkoutRequest).toMatchObject({
+      expectedCartVersion: 2, destination: { latitude: 27.010000 }
+    });
 
     const suborders = await pool.query<{ id: string; status: string; merchant_id: string; branch_id: string }>(
       "SELECT id,status,merchant_id,branch_id FROM merchant_suborders WHERE order_id=$1", [result.orderId]
