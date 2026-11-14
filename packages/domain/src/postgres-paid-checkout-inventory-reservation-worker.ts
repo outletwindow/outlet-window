@@ -103,7 +103,7 @@ export class PostgresPaidCheckoutInventoryReservationWorker {
       );
       if (updated.rowCount !== 1) return { outcome: "lease_lost", jobId: job.id, orderId: job.order_id };
       return result.needsReview
-        ? { outcome: "needs_review", jobId: job.id, orderId: job.order_id, failureCode: result.failureCode }
+        ? { outcome: "needs_review", jobId: job.id, orderId: job.order_id, failureCode: result.failureCode ?? "PAID_CHECKOUT_REQUIRES_REVIEW" }
         : { outcome: "completed", jobId: job.id, orderId: job.order_id };
     } catch (error) {
       const code = error instanceof Error && /^[A-Z0-9_]{1,100}$/.test(error.message)
@@ -278,7 +278,8 @@ export class PostgresPaidCheckoutInventoryReservationWorker {
       idempotencyKey: `paid-checkout-recovery:${job.id}:${failureCode}`,
       failureCode, ...(suborderId === undefined ? {} : { failedSuborderId: suborderId }),
       paymentReference: payment.provider_payment_reference,
-      paymentCapturedAtUtc: new Date(payment.captured_at).toISOString(),
+      paymentCapturedAtUtc: payment.captured_at instanceof Date
+        ? payment.captured_at.toISOString() : new Date(payment.captured_at).toISOString(),
       reservationReferences
     });
     if (result.outcome === "identity_collision") throw new Error("CHECKOUT_RECOVERY_IDENTITY_COLLISION");
