@@ -13,6 +13,11 @@ type LockedSuborder = {
   status: string; version: number;
 };
 type ItemTotals = { suborder_id: string; item_count: number; subtotal_minor: string | number };
+type LockedSuborderDeliveryQuote = {
+  id: string; tenant_id: string; order_id: string; suborder_id: string;
+  merchant_id: string; branch_id: string; currency: string; total_minor: string | number;
+  created_at: Date | string; expires_at: Date | string; quote_snapshot: unknown;
+};
 
 export type PlatformCheckoutReadinessResult =
   | { outcome: "ready"; orderId: string; suborderIds: readonly string[]; parentVersion: number }
@@ -162,6 +167,40 @@ export class PostgresPlatformCheckoutReadinessStore {
       // and one delivery branch. Until per-suborder quotes are persisted and reconciled,
       // accepting multiple branches here would undercharge or misattribute delivery.
       if (suborders.length !== 1 || suborders[0]?.branch_id !== parent.delivery_branch_id) {
+        return { outcome: "invalid_snapshot" };
+      }
+
+      // The immutable per-suborder ledger is now authoritative evidence for the
+      // delivery charge. Require an exact one-to-one match with the locked suborder
+      // and the legacy parent quote before moving either order status forward.
+      const deliveryQuotes = await client.query<LockedSuborderDeliveryQuote>(
+        `SELECT id,tenant_id,order_id,suborder_id,merchant_id,branch_id,currency,total_minor,
+                created_at,expires_at,quote_snapshot
+         FROM customer_order_suborder_delivery_quotes
+         WHERE tenant_id='platform' AND order_id=$1
+         ORDER BY suborder_id FOR SHARE`,
+        [input.orderId]
+      );
+      const deliveryQuote = deliveryQuotes.rows[0];
+      const suborder = suborders[0];
+      const snapshot = deliveryQuote?.quote_snapshot;
+      const timestamp = (value: Date | string): number =>
+        value instanceof Date ? value.getTime() : Date.parse(value);
+      if (deliveryQuotes.rows.length !== 1 || !deliveryQuote || !suborder ||
+          deliveryQuote.tenant_id !== suborder.tenant_id ||
+          deliveryQuote.order_id !== input.orderId ||
+          deliveryQuote.suborder_id !== suborder.id ||
+          deliveryQuote.merchant_id !== suborder.merchant_id ||
+          deliveryQuote.branch_id !== suborder.branch_id ||
+          deliveryQuote.currency !== parent.currency ||
+          Number(deliveryQuote.total_minor) !== quote.totalMinor ||
+          deliveryQuote.id !== quote.quoteId ||
+          !validObject(snapshot) || snapshot.quoteId !== deliveryQuote.id ||
+          snapshot.ruleId !== quote.ruleId || snapshot.ruleVersion !== quote.ruleVersion ||
+          snapshot.currency !== parent.currency || snapshot.totalMinor !== quote.totalMinor ||
+          timestamp(deliveryQuote.created_at) !== Date.parse(quote.createdAtUtc as string) ||
+          timestamp(deliveryQuote.expires_at) !== Date.parse(quote.expiresAtUtc as string) ||
+          snapshot.createdAtUtc !== quote.createdAtUtc || snapshot.expiresAtUtc !== quote.expiresAtUtc) {
         return { outcome: "invalid_snapshot" };
       }
 
