@@ -49,6 +49,16 @@ DO $$ BEGIN
     INSERT INTO checkout_recovery_cases
     (id,tenant_id,order_id,idempotency_key,failure_code,payment_reference,
      payment_captured_at,reservation_references)
+    VALUES ('recovery-test-empty-reservation-reference','tenant-test','order-test',
+      'checkout-recovery:order-test:empty-reservation-reference','TASK_COMMIT_REJECTED',
+      'capture-ref-1',now(),
+      '[{"suborderId":"suborder-2","reservationReference":" "}]'::jsonb);
+    RAISE EXCEPTION 'expected empty reservation reference to be rejected';
+  EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+  BEGIN
+    INSERT INTO checkout_recovery_cases
+    (id,tenant_id,order_id,idempotency_key,failure_code,payment_reference,
+     payment_captured_at,reservation_references)
     VALUES ('recovery-test-invalid','tenant-test','order-test',
       'checkout-recovery:order-test:2','UNRECOGNIZED_FAILURE','capture-ref-1',now(),'[]'::jsonb);
     RAISE EXCEPTION 'expected failure code constraint rejection';
