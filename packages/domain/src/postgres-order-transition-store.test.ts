@@ -91,6 +91,10 @@ describe("PostgresOrderTransitionStore", () => {
       outcome: "updated", transition: { ok: true, order: { status: "confirmed" } }
     });
     expect(db.statements.some(sql => sql.includes("verified_order_payment_captures"))).toBe(true);
+    const captureCheck = db.calls.find(call => call.sql.includes("verified_order_payment_captures"));
+    expect(captureCheck?.values).toEqual(["order-1", "tenant-1", "sub-1"]);
+    expect(captureCheck?.sql).toContain("scoped.tenant_id = $2");
+    expect(captureCheck?.sql).not.toContain("o.tenant_id = $1");
     expect(db.statements.some(sql => sql.includes("FROM inventory_reservations") && sql.includes("FOR UPDATE"))).toBe(true);
     expect(db.statements.at(-1)).toBe("COMMIT");
   });
