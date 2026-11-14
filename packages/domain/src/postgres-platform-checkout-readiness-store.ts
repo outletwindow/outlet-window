@@ -15,6 +15,12 @@ type LockedSuborder = {
 type ItemTotals = { suborder_id: string; item_count: number; subtotal_minor: string | number };
 type LockedSuborderDeliveryQuote = {
   id: string; tenant_id: string; order_id: string; suborder_id: string;
+  merchant_id: string; branch_id: string; service_area_id: string;
+  currency: string; total_minor: string | number;
+  created_at: Date | string; expires_at: Date | string; quote_snapshot: unknown;
+};
+type LockedSuborderDeliveryQuote = {
+  id: string; tenant_id: string; order_id: string; suborder_id: string;
   merchant_id: string; branch_id: string; currency: string; total_minor: string | number;
   created_at: Date | string; expires_at: Date | string; quote_snapshot: unknown;
 };
@@ -42,6 +48,7 @@ function pricingSnapshotMatches(input: {
   let subtotal = 0;
   let productSubtotalCount = 0;
   let deliveryCount = 0;
+  let deliverySubtotal = 0;
   let discountComponents = 0;
   for (const component of pricing.components) {
     if (!validObject(component) || typeof component.kind !== "string" ||
@@ -64,12 +71,14 @@ function pricingSnapshotMatches(input: {
     }
     if (component.kind === "delivery") {
       deliveryCount += 1;
-      if (amount !== input.deliveryMinor) return false;
+      deliverySubtotal += amount;
+      if (!Number.isSafeInteger(deliverySubtotal)) return false;
     }
   }
   const discount = pricing.discountMinor === undefined ? 0 : pricing.discountMinor;
   const storedTotal = Number(input.totalMinor);
-  return productSubtotalCount === 1 && deliveryCount === 1 &&
+  return productSubtotalCount === 1 && deliveryCount === input.deliveryQuoteCount &&
+    deliverySubtotal === input.deliveryMinor &&
     typeof discount === "number" && Number.isSafeInteger(discount) &&
     discount >= 0 && discount <= subtotal &&
     discountComponents === discount &&
@@ -150,7 +159,7 @@ export class PostgresPlatformCheckoutReadinessStore {
       const destination = parent.delivery_destination;
       const quote = parent.delivery_quote;
       if (!validObject(destination) || !validObject(quote) ||
-          !parent.delivery_zone_id?.trim() || !parent.delivery_branch_id?.trim() ||
+          !parent.delivery_zone_id?.trim() ||
           typeof quote.quoteId !== "string" || !quote.quoteId.trim() ||
           typeof quote.ruleId !== "string" || !quote.ruleId.trim() ||
           !Number.isSafeInteger(quote.ruleVersion) || (quote.ruleVersion as number) < 1 ||
@@ -163,44 +172,51 @@ export class PostgresPlatformCheckoutReadinessStore {
         return { outcome: "invalid_snapshot" };
       }
 
-      // The persisted parent snapshot currently contains exactly one delivery quote
-      // and one delivery branch. Until per-suborder quotes are persisted and reconciled,
-      // accepting multiple branches here would undercharge or misattribute delivery.
-      if (suborders.length !== 1 || suborders[0]?.branch_id !== parent.delivery_branch_id) {
-        return { outcome: "invalid_snapshot" };
-      }
-
-      // The immutable per-suborder ledger is now authoritative evidence for the
-      // delivery charge. Require an exact one-to-one match with the locked suborder
-      // and the legacy parent quote before moving either order status forward.
-      const deliveryQuotes = await client.query<LockedSuborderDeliveryQuote>(
-        `SELECT id,tenant_id,order_id,suborder_id,merchant_id,branch_id,currency,total_minor,
-                created_at,expires_at,quote_snapshot
+      const deliveryQuotesResult = await client.query<LockedSuborderDeliveryQuote>(
+        `SELECT id,tenant_id,order_id,suborder_id,merchant_id,branch_id,service_area_id,
+                currency,total_minor,created_at,expires_at,quote_snapshot
          FROM customer_order_suborder_delivery_quotes
-         WHERE tenant_id=$1 AND order_id=$2
+         WHERE order_id=$1
          ORDER BY suborder_id FOR SHARE`,
-        [suborders[0]?.tenant_id, input.orderId]
+        [input.orderId]
       );
-      const deliveryQuote = deliveryQuotes.rows[0];
-      const suborder = suborders[0];
-      const snapshot = deliveryQuote?.quote_snapshot;
+      const deliveryQuotes = deliveryQuotesResult.rows;
+      if (deliveryQuotes.length !== suborders.length) return { outcome: "invalid_snapshot" };
+      const quoteBySuborder = new Map(deliveryQuotes.map(row => [row.suborder_id, row]));
       const timestamp = (value: Date | string): number =>
         value instanceof Date ? value.getTime() : Date.parse(value);
-      if (deliveryQuotes.rows.length !== 1 || !deliveryQuote || !suborder ||
-          deliveryQuote.tenant_id !== suborder.tenant_id ||
-          deliveryQuote.order_id !== input.orderId ||
-          deliveryQuote.suborder_id !== suborder.id ||
-          deliveryQuote.merchant_id !== suborder.merchant_id ||
-          deliveryQuote.branch_id !== suborder.branch_id ||
-          deliveryQuote.currency !== parent.currency ||
-          Number(deliveryQuote.total_minor) !== quote.totalMinor ||
-          deliveryQuote.id !== quote.quoteId ||
-          !validObject(snapshot) || snapshot.quoteId !== deliveryQuote.id ||
-          snapshot.ruleId !== quote.ruleId || snapshot.ruleVersion !== quote.ruleVersion ||
-          snapshot.currency !== parent.currency || snapshot.totalMinor !== quote.totalMinor ||
-          timestamp(deliveryQuote.created_at) !== Date.parse(quote.createdAtUtc as string) ||
-          timestamp(deliveryQuote.expires_at) !== Date.parse(quote.expiresAtUtc as string) ||
-          snapshot.createdAtUtc !== quote.createdAtUtc || snapshot.expiresAtUtc !== quote.expiresAtUtc) {
+      let deliveryTotalMinor = 0;
+      for (const suborder of suborders) {
+        const ledger = quoteBySuborder.get(suborder.id);
+        const snapshot = ledger?.quote_snapshot;
+        if (!ledger || ledger.tenant_id !== suborder.tenant_id ||
+            ledger.order_id !== input.orderId || ledger.merchant_id !== suborder.merchant_id ||
+            ledger.branch_id !== suborder.branch_id || ledger.service_area_id !== parent.delivery_zone_id ||
+            ledger.currency !== parent.currency ||
+            !Number.isSafeInteger(Number(ledger.total_minor)) || Number(ledger.total_minor) < 0 ||
+            !validObject(snapshot) || snapshot.quoteId !== ledger.id ||
+            snapshot.currency !== parent.currency || snapshot.totalMinor !== Number(ledger.total_minor) ||
+            typeof snapshot.ruleId !== "string" || !snapshot.ruleId.trim() ||
+            !Number.isSafeInteger(snapshot.ruleVersion) ||
+            typeof snapshot.createdAtUtc !== "string" || typeof snapshot.expiresAtUtc !== "string" ||
+            snapshot.createdAtUtc !== (ledger.created_at instanceof Date ? ledger.created_at.toISOString() : new Date(ledger.created_at).toISOString()) ||
+            snapshot.expiresAtUtc !== (ledger.expires_at instanceof Date ? ledger.expires_at.toISOString() : new Date(ledger.expires_at).toISOString()) ||
+            timestamp(ledger.created_at) > occurredAt || timestamp(ledger.expires_at) <= occurredAt) {
+          return { outcome: "invalid_snapshot" };
+        }
+        deliveryTotalMinor += Number(ledger.total_minor);
+        if (!Number.isSafeInteger(deliveryTotalMinor)) return { outcome: "invalid_snapshot" };
+      }
+      const firstSuborder = suborders[0];
+      const firstLedgerQuote = firstSuborder ? quoteBySuborder.get(firstSuborder.id) : undefined;
+      const firstSnapshot = firstLedgerQuote?.quote_snapshot;
+      if (!firstSuborder || !firstLedgerQuote || !validObject(firstSnapshot) ||
+          parent.delivery_branch_id !== firstSuborder.branch_id ||
+          quote.quoteId !== firstLedgerQuote.id || quote.ruleId !== firstSnapshot.ruleId ||
+          quote.ruleVersion !== firstSnapshot.ruleVersion ||
+          quote.totalMinor !== firstSnapshot.totalMinor ||
+          quote.createdAtUtc !== firstSnapshot.createdAtUtc ||
+          quote.expiresAtUtc !== firstSnapshot.expiresAtUtc) {
         return { outcome: "invalid_snapshot" };
       }
 
@@ -235,12 +251,27 @@ export class PostgresPlatformCheckoutReadinessStore {
       }
 
       const itemSubtotal = totals.rows.reduce((sum, row) => sum + Number(row.subtotal_minor), 0);
-      if (!Number.isSafeInteger(itemSubtotal) || !pricingSnapshotMatches({
-        metadata: parent.metadata, currency: parent.currency, totalMinor: parent.total_minor,
-        itemSubtotal, deliveryMinor: quote.totalMinor as number,
-        deliveryQuoteId: quote.quoteId as string, deliveryRuleId: quote.ruleId as string,
-        deliveryRuleVersion: quote.ruleVersion as number
-      })) {
+      if (!Number.isSafeInteger(itemSubtotal) || !validObject(parent.metadata) ||
+          !validObject(parent.metadata.checkoutPricing)) {
+        return { outcome: "invalid_snapshot" };
+      }
+      const pricing = parent.metadata.checkoutPricing;
+      const pricingDeliveryQuotes = pricing.deliveryQuotes;
+      if (!Array.isArray(pricingDeliveryQuotes) || pricingDeliveryQuotes.length !== deliveryQuotes.length ||
+          pricingDeliveryQuotes.some(entry => {
+            if (!validObject(entry)) return true;
+            const ledger = deliveryQuotes.find(row => row.suborder_id === suborders.find(sub =>
+              sub.merchant_id === entry.merchantId && sub.branch_id === entry.branchId)?.id);
+            return !ledger || entry.quoteId !== ledger.id || entry.ruleId !== (validObject(ledger.quote_snapshot) ? ledger.quote_snapshot.ruleId : undefined) ||
+              entry.ruleVersion !== (validObject(ledger.quote_snapshot) ? ledger.quote_snapshot.ruleVersion : undefined) ||
+              entry.totalMinor !== Number(ledger.total_minor);
+          }) ||
+          !pricingSnapshotMatches({
+            metadata: parent.metadata, currency: parent.currency, totalMinor: parent.total_minor,
+            itemSubtotal, deliveryMinor: deliveryTotalMinor,
+            deliveryQuoteId: quote.quoteId as string, deliveryRuleId: quote.ruleId as string,
+            deliveryRuleVersion: quote.ruleVersion as number, deliveryQuoteCount: deliveryQuotes.length
+          })) {
         return { outcome: "invalid_snapshot" };
       }
 
