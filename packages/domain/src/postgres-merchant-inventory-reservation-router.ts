@@ -51,6 +51,8 @@ export class PostgresMerchantInventoryReservationRouter implements InventoryRese
     if (!adapter) {
       return { outcome: "unsupported", reason: "hard_reservation_not_supported" };
     }
-    return adapter.reserveExactVariants(request);
+    // Bind the provider's exact tenant integration selected by the scoped grant query.
+    // Adapters can now resolve the matching secret reference without guessing by provider key.
+    return adapter.reserveExactVariants({ ...request, providerIntegrationId: result.rows[0]!.id });
   }
 }
