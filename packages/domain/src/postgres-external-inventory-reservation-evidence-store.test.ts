@@ -70,7 +70,7 @@ describe("PostgresExternalInventoryReservationEvidenceStore",()=>{
   it("reuses an exact existing reservation on idempotent replay",async()=>{
     const db=createPool({existing:true});
     const store=new PostgresExternalInventoryReservationEvidenceStore(db.pool,()=> "should-not-be-used");
-    await expect(store.record(evidence)).resolves.toEqual({reservationId:"local-res-1"});
+    await expect(store.record(evidence)).resolves.toEqual({reservationId:"local-res-1",expiresAtUtc:"2026-11-14T12:15:00.000Z"});
     expect(db.calls.some(c=>c.sql.includes("INSERT INTO inventory_reservations"))).toBe(false);
     expect(db.calls.at(-1)?.sql).toBe("COMMIT");
   });
