@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { PermissionGrant } from "../../../packages/domain/src/authorization.js";
 import type { RoleAssignment } from "../../../packages/domain/src/identity.js";
 import {
@@ -26,6 +27,7 @@ import { PostgresMerchantOrderItemPreparationStore } from "../../../packages/dom
 import { PostgresPaymentIntentStore } from "../../../packages/domain/src/postgres-payment-intent-store.js";
 import { PostgresCustomerPaymentIntentCheckout } from "../../../packages/domain/src/postgres-customer-payment-intent-checkout.js";
 import { PostgresCustomerCartStore } from "../../../packages/domain/src/postgres-customer-cart-store.js";
+import { PostgresCustomerCheckoutService } from "../../../packages/domain/src/postgres-customer-checkout.js";
 import type { MoyasarPaymentIntentClient } from "../../../packages/domain/src/moyasar-payment-intent-client.js";
 import { PostgresVerifiedOrderPaymentCaptureStore } from "../../../packages/domain/src/postgres-verified-order-payment-capture.js";
 import { PostgresInitialPaymentCaptureInbox } from "../../../packages/domain/src/postgres-initial-payment-capture-inbox.js";
@@ -115,6 +117,7 @@ export function buildPostgresApp(options: PostgresApiOptions) {
     }),
     merchantCatalog: options.merchantCatalog ?? new PostgresMerchantCatalog(options.pool),
     customerCart: new PostgresCustomerCartStore(options.pool),
+    customerCheckout: new PostgresCustomerCheckoutService(options.pool, randomUUID, options.now),
     ...(catalogImport === undefined ? {} : { merchantCatalogImport: catalogImport }),
     ...(options.paymentWebhookSecretResolver === undefined ? {} : {
       paymentWebhookSecretResolver: options.paymentWebhookSecretResolver
