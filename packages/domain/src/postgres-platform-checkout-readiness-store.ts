@@ -84,7 +84,7 @@ export class PostgresPlatformCheckoutReadinessStore {
 
   async transitionToAwaitingPayment(input: {
     orderId: string; customerId: string; expectedVersion: number; actorId: string;
-    actorRole: "platform_user" | "system"; occurredAt: string; auditEvents: readonly AuditEvent[];
+    actorRole: "customer" | "platform_user" | "system"; occurredAt: string; auditEvents: readonly AuditEvent[];
   }): Promise<PlatformCheckoutReadinessResult> {
     const client = await this.pool.connect();
     try {
