@@ -268,6 +268,7 @@ integration("PostgreSQL customer checkout orchestration", () => {
       delivery_branch_id: string; delivery_quote: { totalMinor: number };
       metadata: { checkoutPricing: {
         components: Array<{ kind: string; amountMinor: number }>;
+        deliveryQuotes: Array<{ merchantId: string; branchId: string; quoteId: string; totalMinor: number }>;
         checkoutRequest: { expectedCartVersion: number; destination: { latitude: number } };
       } };
     }>(
