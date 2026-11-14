@@ -288,6 +288,11 @@ export class PostgresCustomerCartRepricingService {
         group.items.push(line);
         group.subtotalMinor += lineTotalMinor;
       }
+    return {
+      outcome: "priced", cartId: cart.id, customerId: cart.customer_id,
+      cartVersion: cart.version, currency: cart.currency, items,
+      suborders: [...groups.values()], subtotalMinor
+    };
   }
 
 }
