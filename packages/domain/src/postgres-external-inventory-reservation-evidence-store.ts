@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { InventoryReservationRequest } from "./inventory-reservation.js";
 import type { PostgresPool } from "./postgres-iam-store.js";
 
@@ -19,7 +20,7 @@ export interface ExternalInventoryReservationEvidenceStore {
 export class PostgresExternalInventoryReservationEvidenceStore implements ExternalInventoryReservationEvidenceStore {
   constructor(
     private readonly pool: PostgresPool,
-    private readonly createId: () => string = () => crypto.randomUUID()
+    private readonly createId: () => string = randomUUID
   ) {}
 
   async record(input: ExternalInventoryReservationEvidenceInput): Promise<{ reservationId: string }> {
