@@ -20,6 +20,7 @@ import type { BranchInventorySyncRequest, BranchInventorySyncResult } from "../.
 import type { BranchInventoryRecord } from "../../../packages/domain/src/postgres-branch-inventory-reader.js";
 import type { InventoryReservationFinalizeResult } from "../../../packages/domain/src/postgres-branch-inventory-reservation-lifecycle.js";
 import type { RecordPreparationCheckInput, RecordPreparationCheckResult } from "../../../packages/domain/src/postgres-merchant-order-item-preparation.js";
+import type { CreateCustomerCheckoutInput, CustomerCheckoutResult } from "../../../packages/domain/src/postgres-customer-checkout.js";
 
 export interface SallaOAuthFlow {
   begin(input: { tenantId: string; integrationId: string }): Promise<{ authorizationUrl: string }>;
@@ -69,6 +70,9 @@ export interface CustomerCartRepository {
   get(input:{customerId:string}):Promise<import("../../../packages/domain/src/postgres-customer-cart-store.js").CustomerCart|null>;
   addItem(input:{customerId:string;merchantId:string;branchId:string;productVariantId:string;quantity:number}):Promise<import("../../../packages/domain/src/postgres-customer-cart-store.js").CustomerCart>;
   removeItem(input:{customerId:string;itemId:string}):Promise<import("../../../packages/domain/src/postgres-customer-cart-store.js").CustomerCart|null>;
+}
+export interface CustomerCheckoutService {
+  create(input: CreateCustomerCheckoutInput): Promise<CustomerCheckoutResult>;
 }
 export interface CustomerPaymentAdjustmentActions {
   consent(input: { orderId: string; adjustmentId: string; customerId: string }): Promise<{ outcome: string }>;
@@ -131,6 +135,7 @@ export interface AppOptions {
   customerPaymentAdjustments?: CustomerPaymentAdjustmentActions;
   customerPaymentIntentCheckout?: CustomerPaymentIntentCheckout;
   customerCart?: CustomerCartRepository;
+  customerCheckout?: CustomerCheckoutService;
   integrationHub?: IntegrationHub;
   merchantCatalog?: MerchantCatalogRepository;
   /** Resolve merchant tenant ownership from trusted persistence after authorization. */
@@ -719,6 +724,61 @@ app.patch<{
     if (!options.customerCart) return reply.code(503).send({ error: "customer_cart_unavailable" });
     const cart = await options.customerCart.removeItem({ customerId: auth.actor.id, itemId: request.params.itemId });
     return reply.code(200).send({ cart });
+  });
+
+  app.post<{
+    Body: {
+      expectedCartVersion: number;
+      destination: {
+        countryCode: string; cityCode: string; serviceCode: string;
+        latitude: number; longitude: number; addressSnapshot?: Record<string, unknown>;
+      };
+    };
+  }>("/api/v1/customer/checkout", async (request, reply) => {
+    const auth = await authorizeRequest(request, options, actor => ({
+      resource: "customer.cart", action: "create", scope: { customerId: actor.id }
+    }));
+    if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
+    if (auth.actor.role !== "customer") return reply.code(403).send({ error: "customer_only" });
+    if (!options.customerCheckout) return reply.code(503).send({ error: "customer_checkout_unavailable" });
+
+    const body = request.body;
+    const idempotencyKey = request.headers["idempotency-key"];
+    const destination = body?.destination;
+    if (typeof idempotencyKey !== "string" || idempotencyKey.trim().length < 8 ||
+        idempotencyKey.length > 200 || !body ||
+        !Number.isSafeInteger(body.expectedCartVersion) || body.expectedCartVersion < 1 ||
+        !destination || typeof destination !== "object" ||
+        typeof destination.countryCode !== "string" || !/^[A-Z]{2}$/.test(destination.countryCode) ||
+        typeof destination.cityCode !== "string" || !destination.cityCode.trim() ||
+        typeof destination.serviceCode !== "string" || !destination.serviceCode.trim() ||
+        typeof destination.latitude !== "number" || !Number.isFinite(destination.latitude) ||
+        destination.latitude < -90 || destination.latitude > 90 ||
+        typeof destination.longitude !== "number" || !Number.isFinite(destination.longitude) ||
+        destination.longitude < -180 || destination.longitude > 180 ||
+        (destination.addressSnapshot !== undefined &&
+          (destination.addressSnapshot === null || typeof destination.addressSnapshot !== "object" ||
+           Array.isArray(destination.addressSnapshot)))) {
+      return reply.code(400).send({ error: "invalid_checkout_request" });
+    }
+
+    const result = await options.customerCheckout.create({
+      customerId: auth.actor.id,
+      expectedCartVersion: body.expectedCartVersion,
+      idempotencyKey,
+      destination,
+      actorId: auth.actor.id,
+      actorRole: "customer",
+      correlationId: request.id
+    });
+    if (result.outcome === "created") return reply.code(201).send(result);
+    if (result.outcome === "not_found") return reply.code(404).send({ error: result.outcome });
+    if (result.outcome === "invalid_delivery_request") return reply.code(400).send({ error: result.outcome });
+    if (result.outcome === "outside_service_area" || result.outcome === "unavailable" ||
+        result.outcome === "invalid_snapshot" || result.outcome === "empty") {
+      return reply.code(422).send({ error: result.outcome });
+    }
+    return reply.code(409).send({ error: result.outcome });
   });
 
   app.patch<{
