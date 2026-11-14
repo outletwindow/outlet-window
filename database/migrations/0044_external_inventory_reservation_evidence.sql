@@ -20,3 +20,25 @@ CREATE TABLE IF NOT EXISTS inventory_provider_reservation_evidence (
 
 CREATE INDEX IF NOT EXISTS inventory_provider_reservation_evidence_expiry_idx
   ON inventory_provider_reservation_evidence (expires_at, tenant_id, reservation_id);
+
+CREATE OR REPLACE FUNCTION protect_inventory_provider_reservation_evidence()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'inventory_provider_reservation_evidence_is_immutable'
+    USING ERRCODE='55000';
+END $$;
+
+CREATE TRIGGER inventory_provider_reservation_evidence_immutable
+BEFORE UPDATE OR DELETE ON inventory_provider_reservation_evidence
+FOR EACH ROW EXECUTE FUNCTION protect_inventory_provider_reservation_evidence();
+
+CREATE OR REPLACE FUNCTION reject_inventory_provider_reservation_evidence_truncate()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'inventory_provider_reservation_evidence_cannot_be_truncated'
+    USING ERRCODE='55000';
+END $$;
+
+CREATE TRIGGER inventory_provider_reservation_evidence_no_truncate
+BEFORE TRUNCATE ON inventory_provider_reservation_evidence
+FOR EACH STATEMENT EXECUTE FUNCTION reject_inventory_provider_reservation_evidence_truncate();
