@@ -60,6 +60,14 @@ export class PostgresOrderTransitionStore {
         return { outcome: "not_found" };
       }
       const current = locked.rows[0]!;
+      if (input.auditEvent.merchantId !== current.merchant_id ||
+          input.auditEvent.branchId !== current.branch_id ||
+          input.auditEvent.resourceType !== "merchant_suborder" ||
+          input.auditEvent.occurredAt !== input.context.occurredAt ||
+          input.auditEvent.metadata.orderId !== input.orderId ||
+          input.auditEvent.metadata.nextStatus !== input.nextStatus) {
+        throw new Error("Order transition audit scope does not match the locked suborder");
+      }
       if (input.nextStatus === "ready_for_pickup") {
         const preparation = await client.query<{ item_count: number; verified_count: number }>(
           `SELECT COUNT(i.id)::int AS item_count,
