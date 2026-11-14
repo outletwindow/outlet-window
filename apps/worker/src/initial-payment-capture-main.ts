@@ -50,7 +50,7 @@ try{
   await pool.query("SELECT 1");
   const requiredMigrations=["0027_verified_order_payment_captures","0028_provider_payment_intents",
     "0029_initial_payment_capture_webhook_inbox","0031_positive_verified_payment_capture",
-    "0039_single_initial_capture_per_order"];
+    "0039_single_initial_capture_per_order","0040_paid_checkout_inventory_reservation_jobs"];
   const migration=await pool.query("SELECT version FROM schema_migrations WHERE version=ANY($1::text[])",[requiredMigrations]);
   if(migration.rowCount!==requiredMigrations.length)throw new Error("initial_capture_webhook_worker_migration_required");
   process.stdout.write(JSON.stringify({event:"initial_capture_webhook_worker_started",pollMs,batchSize,leaseSeconds,workerId})+"\n");
