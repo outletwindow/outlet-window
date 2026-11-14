@@ -139,6 +139,7 @@ export interface AppOptions {
   integrationHub?: IntegrationHub;
   /** Platform-only authority for explicit POS/ERP hard-reservation branch grants. */
   inventoryProviderBranchScopes?: {
+    approveHardReservationCapability(input: { tenantId: string; integrationId: string }): Promise<"approved" | "not_eligible">;
     grant(input: { tenantId: string; integrationId: string; merchantId: string; branchId: string }): Promise<"granted" | "not_eligible">;
     revoke(input: { tenantId: string; integrationId: string; merchantId: string; branchId: string }): Promise<"revoked" | "not_found">;
   };
@@ -282,6 +283,48 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     status: "foundation"
   }));
   // Only platform administrators can authorize external inventory providers for a branch.
+  app.post<{ Body: unknown }>(
+    "/api/v1/platform/inventory-provider-capabilities/hard-reservation/approve",
+    async (request, reply) => {
+      const authorization = await authorizeRequest(request, options, {
+        resource: "platform.inventory_provider_branch_scope", action: "manage_access", scope: { platform: true }
+      });
+      if (!authorization.actor) return sendAuthorizationFailure(reply, authorization.statusCode, authorization.decision.reason);
+      const roles = new Set([authorization.actor.role, ...(authorization.actor.roles ?? [])]);
+      if (![...roles].some(role => role === "platform_owner" || role === "platform_admin")) {
+        return reply.code(403).send({ error: "platform_admin_only" });
+      }
+      if (!options.inventoryProviderBranchScopes || !options.auditEvents) {
+        return reply.code(503).send({ error: "inventory_provider_scope_management_unavailable" });
+      }
+      const body = request.body as Record<string, unknown> | null;
+      if (!body || typeof body.tenantId !== "string" || !/^[a-zA-Z0-9._:-]{1,160}$/.test(body.tenantId) ||
+          typeof body.integrationId !== "string" || !/^[a-zA-Z0-9._:-]{1,160}$/.test(body.integrationId)) {
+        return reply.code(400).send({ error: "invalid_inventory_provider_capability_request" });
+      }
+      const input = { tenantId: body.tenantId, integrationId: body.integrationId };
+      const auditBase = {
+        id: randomUUID(), category: "integration_governance", occurredAt: new Date().toISOString(),
+        actor: { id: authorization.actor.id, type: "platform_user" as const, role: authorization.actor.role },
+        action: "platform.inventory_provider_capability.hard_reservation.approve",
+        resourceType: "tenant_integration", resourceId: input.integrationId, tenantId: input.tenantId,
+        correlationId: request.id, source: "api", severity: "high" as const,
+        metadata: { capability: "inventory.hard_reservation" }
+      };
+      await options.auditEvents.append(createAuditEvent({
+        ...auditBase, type: "inventory_provider_capability.approval.requested", outcome: "pending"
+      }));
+      const outcome = await options.inventoryProviderBranchScopes.approveHardReservationCapability(input);
+      await options.auditEvents.append(createAuditEvent({
+        ...auditBase, id: randomUUID(),
+        type: outcome === "approved" ? "inventory_provider_capability.approved" : "inventory_provider_capability.approval_rejected",
+        outcome: outcome === "approved" ? "success" : "failure"
+      }));
+      if (outcome === "not_eligible") return reply.code(409).send({ error: "provider_not_connected_or_unsupported" });
+      return reply.code(200).send({ outcome, integrationId: input.integrationId, capability: "inventory.hard_reservation" });
+    }
+  );
+
   app.post<{ Body: unknown }>(
     "/api/v1/platform/inventory-provider-branch-scopes/grant",
     async (request, reply) => {
