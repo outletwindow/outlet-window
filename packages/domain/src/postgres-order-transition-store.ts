@@ -127,7 +127,7 @@ export class PostgresOrderTransitionStore {
         transitionContext = {
           ...input.context,
           paymentAuthorized: payment.rows[0]?.authorized === true,
-          inventoryReserved: reservation.rowCount > 0
+          inventoryReserved: reservation.rows.length > 0
         };
       }
       const transition = transitionOrder({
