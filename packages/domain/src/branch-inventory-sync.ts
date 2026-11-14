@@ -125,6 +125,15 @@ export class PostgresBranchInventorySyncStore implements BranchInventorySyncStor
         );
         if (result.rows.length === 1) {
           accepted++;
+          // A later source count that can cover the platform's active reservations
+          // closes earlier discrepancy alerts for this exact variant.
+          await client.query(
+            `UPDATE branch_inventory_reconciliation_alerts
+             SET status = 'resolved', resolved_at = $5
+             WHERE tenant_id = $1 AND merchant_id = $2 AND branch_id = $3
+               AND product_variant_id = $4 AND status = 'open' AND captured_at <= $5`,
+            [input.tenantId, input.merchantId, input.branchId, line.productVariantId, input.capturedAtUtc]
+          );
         } else {
           const current = await client.query<{ last_synced_at: Date | string; reserved_quantity: number }>(
             `SELECT last_synced_at, reserved_quantity FROM branch_inventory
