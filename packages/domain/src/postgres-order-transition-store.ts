@@ -103,7 +103,7 @@ export class PostgresOrderTransitionStore {
       // Never trust caller-supplied payment/inventory booleans. Confirmation requires
       // immutable exact-match capture evidence and a live, branch-scoped reservation.
       let transitionContext = input.context;
-      if (input.nextStatus === "confirmed" && current.status === "awaiting_payment") {
+      if (input.nextStatus === "confirmed") {
         const payment = await client.query<{ authorized: boolean }>(
           `SELECT EXISTS (
              SELECT 1
