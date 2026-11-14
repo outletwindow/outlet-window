@@ -229,3 +229,18 @@ into `PostgresOrderStore` would be unsafe and is intentionally not an acceptable
   that orchestration or make checkout production-ready.
 - Added a unit test proving the transaction helper leaves commit/rollback and connection
   lifecycle to its caller.
+
+## Transaction-scoped cart repricing
+
+- Added `PostgresCustomerCartRepricingService.repriceInTransaction(input, client)`. It
+  performs the same customer-cart advisory lock, expected-version check, live catalog
+  repricing, and exact branch inventory row locks as the standalone preflight.
+- Unlike `reprice()`, the transaction-scoped method does not begin, commit, roll back, or
+  release the caller-owned client. Its row/advisory locks remain held until the caller
+  finishes the outer transaction, allowing order creation to use the same authoritative
+  snapshot without a time-of-check/time-of-use gap.
+- Added tests for successful repricing and version-conflict results while asserting that
+  the caller connection is neither committed/rolled back nor released by the service.
+- This is a transaction composition primitive, not yet the end-to-end cart checkout flow;
+  delivery quote orchestration, immutable snapshot construction, cart closure, and the
+  platform readiness transition still need to be composed and integration-tested together.
