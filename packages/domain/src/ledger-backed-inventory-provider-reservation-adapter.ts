@@ -32,12 +32,12 @@ export class LedgerBackedInventoryProviderReservationAdapter implements Inventor
     const recorded = await this.ledger.record({
       request, providerKey: this.providerKey,
       providerReservationReference: result.reservationReference,
-      expiresAtUtc: recorded.expiresAtUtc
+      expiresAtUtc: result.expiresAtUtc
     });
     return {
       outcome: "reserved",
       reservationReference: recorded.reservationId,
-      expiresAtUtc: result.expiresAtUtc
+      expiresAtUtc: recorded.expiresAtUtc
     };
   }
 }
