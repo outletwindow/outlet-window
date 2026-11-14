@@ -35,7 +35,8 @@ describe("PostgreSQL API readiness migration gate", () => {
     "0027_verified_order_payment_captures",
     "0031_positive_verified_payment_capture",
     "0037_order_item_catalog_variant_scope",
-    "0041_branch_inventory_snapshot_watermark"
+    "0041_branch_inventory_snapshot_watermark",
+    "0042_branch_inventory_reconciliation_alerts"
   ])("keeps the API unready when migration %s is missing", async missing => {
     const app = buildPostgresApp({
       pool: poolMissingMigration(missing),
