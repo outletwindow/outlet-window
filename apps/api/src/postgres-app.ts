@@ -8,6 +8,7 @@ import {
 import { buildApp, type AppOptions, type MerchantBranchReader, type CustomerDeliveryDestinationService, type CustomerPaymentAdjustmentActions, type MerchantCatalogRepository, type SallaOAuthFlow, type PaymentCaptureWebhookHandler } from "./app.js";
 import { PostgresMerchantBranchReader } from "../../../packages/domain/src/postgres-merchant-branch-reader.js";
 import { PostgresMerchantBranchWriter } from "../../../packages/domain/src/postgres-merchant-branch-writer.js";
+import { PostgresInventoryProviderBranchScopeStore } from "../../../packages/domain/src/postgres-inventory-provider-branch-scope-store.js";
 import { PostgresAuditEventStore } from "../../../packages/domain/src/postgres-audit-event-store.js";
 import { PostgresOrderTransitionStore } from "../../../packages/domain/src/postgres-order-transition-store.js";
 import { PostgresPaymentAdjustmentStore } from "../../../packages/domain/src/postgres-payment-adjustment-store.js";
@@ -97,6 +98,7 @@ export function buildPostgresApp(options: PostgresApiOptions) {
     merchantBranchWriter: new PostgresMerchantBranchWriter(options.pool),
     auditEvents: new PostgresAuditEventStore(options.pool),
     integrationHub,
+    inventoryProviderBranchScopes: new PostgresInventoryProviderBranchScopeStore(options.pool),
     branchInventorySync: new BranchInventorySyncService(new PostgresBranchInventorySyncStore(options.pool), options.now),
     branchInventoryReader: new PostgresBranchInventoryReader(options.pool),
     inventoryReservationLifecycle: new PostgresBranchInventoryReservationLifecycle(options.pool),
