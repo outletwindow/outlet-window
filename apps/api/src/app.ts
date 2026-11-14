@@ -1073,6 +1073,12 @@ app.patch<{
         body.capabilities.some((item) => typeof item !== "string" || item.trim().length < 1 || item.length > 100)) {
       return reply.code(400).send({ error: "invalid_request" });
     }
+    // Hard-reservation authority is a platform-controlled security grant, not a
+    // merchant-declared capability. It can only be provisioned through the trusted
+    // integration approval process after provider verification and branch scoping.
+    if (body.capabilities.includes("inventory.hard_reservation")) {
+      return reply.code(403).send({ error: "capability_requires_platform_approval" });
+    }
     const now = new Date().toISOString();
     try {
       await options.integrationHub.register({
