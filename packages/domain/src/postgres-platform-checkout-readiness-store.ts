@@ -64,10 +64,11 @@ function pricingSnapshotMatches(input: {
       if (amount !== input.deliveryMinor) return false;
     }
   }
-  const discount = pricing.discountMinor ?? 0;
+  const discount = pricing.discountMinor === undefined ? 0 : pricing.discountMinor;
   const storedTotal = Number(input.totalMinor);
   return productSubtotalCount === 1 && deliveryCount === 1 &&
-    Number.isSafeInteger(discount) && discount >= 0 && discount <= subtotal &&
+    typeof discount === "number" && Number.isSafeInteger(discount) &&
+    discount >= 0 && discount <= subtotal &&
     (!hasDiscountComponent || discountComponents === discount) &&
     Number.isSafeInteger(storedTotal) && storedTotal >= 0 &&
     subtotal - discount === storedTotal;
