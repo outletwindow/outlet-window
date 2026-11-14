@@ -75,7 +75,7 @@ BEGIN
   BEGIN
     INSERT INTO financial_journal_lines
     (id,tenant_id,journal_id,account_id,currency,line_number,debit_minor,credit_minor)
-    VALUES ('ledger-cross-currency','ledger-tenant','ledger-balanced','ledger-usd','USD',4,1,0);
+    VALUES ('ledger-cross-currency','ledger-tenant','ledger-unbalanced','ledger-usd','USD',3,1,0);
     RAISE EXCEPTION 'cross-currency journal line unexpectedly accepted';
   EXCEPTION WHEN foreign_key_violation THEN NULL;
   END;
