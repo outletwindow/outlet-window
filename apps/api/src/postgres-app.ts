@@ -175,7 +175,8 @@ export function buildPostgresApp(options: PostgresApiOptions) {
         "0039_single_initial_capture_per_order",
         "0040_paid_checkout_inventory_reservation_jobs",
         "0041_branch_inventory_snapshot_watermark",
-        "0042_branch_inventory_reconciliation_alerts"
+        "0042_branch_inventory_reconciliation_alerts",
+        "0043_merchant_inventory_provider_branch_scopes"
       ];
       const result = await options.pool.query<{ version: string }>(
         "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",
