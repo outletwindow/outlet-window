@@ -26,6 +26,11 @@ type RuleRow = { id: string; version: number; currency: string; calculation_conf
 type BranchRow = { merchant_id: string; branch_id: string };
 type GeocodedBranchRow = { merchant_id: string; branch_id: string; latitude: string | number; longitude: string | number };
 
+function effectiveExpiry(value: Date | string | null): number {
+  if (value === null) return Number.POSITIVE_INFINITY;
+  return value instanceof Date ? value.getTime() : Date.parse(value);
+}
+
 /**
  * Resolves a tenant-scoped, currently active service area and approved pricing rule.
  * Distance is explicitly straight-line from the configured zone center; road routing
@@ -172,10 +177,8 @@ export class PostgresDeliveryQuoteService {
     const deliveryFee = baseFee + distanceKmCeiling * perKm;
     if (!Number.isSafeInteger(deliveryFee)) return { status: "no_active_pricing_rule" };
 
-    const ruleExpiry = rule.effective_until === null
-      ? Number.POSITIVE_INFINITY : new Date(rule.effective_until).getTime();
-    const areaExpiry = area.effective_until === null
-      ? Number.POSITIVE_INFINITY : new Date(area.effective_until).getTime();
+    const ruleExpiry = effectiveExpiry(rule.effective_until);
+    const areaExpiry = effectiveExpiry(area.effective_until);
     if ((!Number.isFinite(ruleExpiry) && rule.effective_until !== null) ||
         (!Number.isFinite(areaExpiry) && area.effective_until !== null)) {
       return { status: "no_active_pricing_rule" };
