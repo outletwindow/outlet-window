@@ -1,0 +1,112 @@
+import { describe, expect, it, vi } from "vitest";
+import type { InventoryReservationPort } from "./inventory-reservation.js";
+import type { PostgresPool } from "./postgres-iam-store.js";
+import type { PostgresOrderTransitionStore } from "./postgres-order-transition-store.js";
+import type { PostgresCheckoutRecoveryCaseStore } from "./postgres-checkout-recovery-case-store.js";
+import { PostgresPaidCheckoutInventoryReservationWorker } from "./postgres-paid-checkout-inventory-reservation-worker.js";
+
+const job = {
+  id: "job-1", tenant_id: "platform", order_id: "order-1",
+  capture_id: "capture-1", attempt_count: 1
+};
+const payment = {
+  tenant_id: "platform", status: "awaiting_payment", total_minor: "12500", currency: "SAR",
+  provider_payment_reference: "pay-ref-1", captured_at: new Date("2026-11-14T12:00:00.000Z"),
+  capture_amount_minor: "12500", capture_currency: "SAR"
+};
+const suborder = {
+  id: "sub-1", tenant_id: "merchant-tenant", merchant_id: "merchant-1",
+  branch_id: "branch-1", status: "pending_validation", version: 1
+};
+
+function createPool(rows: {
+  payment?: typeof payment | null;
+  suborders?: typeof suborder[];
+  lines?: { product_variant_id: string; sku: string; quantity: number }[];
+} = {}) {
+  const calls: string[] = [];
+  const query = vi.fn(async <Row>(sql: string) => {
+    calls.push(sql);
+    if (sql.includes("WITH due AS")) return { rows: [job] as Row[], rowCount: 1 };
+    if (sql.includes("FROM verified_order_payment_captures")) {
+      return { rows: rows.payment === null ? [] : [rows.payment ?? payment] as Row[], rowCount: rows.payment === null ? 0 : 1 };
+    }
+    if (sql.includes("FROM merchant_suborders")) {
+      const found = rows.suborders ?? [suborder];
+      return { rows: found as Row[], rowCount: found.length };
+    }
+    if (sql.includes("FROM customer_order_items")) {
+      const found = rows.lines ?? [{ product_variant_id: "catalog-v1", sku: "SKU-1", quantity: 1 }];
+      return { rows: found as Row[], rowCount: found.length };
+    }
+    if (sql.includes("UPDATE paid_checkout_inventory_reservation_jobs")) return { rows: [] as Row[], rowCount: 1 };
+    throw new Error("UNEXPECTED_TEST_QUERY");
+  });
+  return { pool: { query, connect: vi.fn() } as unknown as PostgresPool, calls, query };
+}
+
+function createWorker(input: {
+  pool: PostgresPool;
+  inventory?: InventoryReservationPort;
+  transition?: ReturnType<typeof vi.fn>;
+  recovery?: ReturnType<typeof vi.fn>;
+  maxAttempts?: number;
+}) {
+  const inventory = input.inventory ?? {
+    reserveExactVariants: vi.fn().mockResolvedValue({
+      outcome: "reserved", reservationReference: "reservation-1"
+    })
+  };
+  const transition = input.transition ?? vi.fn().mockResolvedValue({
+    outcome: "updated", parentStatus: "awaiting_payment",
+    transition: { ok: true, previousStatus: "pending_validation", order: { status: "awaiting_payment" } }
+  });
+  const recovery = input.recovery ?? vi.fn().mockResolvedValue({ outcome: "recorded", caseId: "case-1" });
+  const worker = new PostgresPaidCheckoutInventoryReservationWorker(
+    input.pool, inventory,
+    { transitionSuborder: transition } as unknown as Pick<PostgresOrderTransitionStore, "transitionSuborder">,
+    { record: recovery } as unknown as Pick<PostgresCheckoutRecoveryCaseStore, "record">,
+    { workerId: "worker-1", now: () => new Date("2026-11-14T12:01:00.000Z"),
+      createId: () => "audit-id", ...(input.maxAttempts === undefined ? {} : { maxAttempts: input.maxAttempts }) }
+  );
+  return { worker, inventory, transition, recovery };
+}
+
+describe("PostgresPaidCheckoutInventoryReservationWorker", () => {
+  it("reserves exact branch lines and transitions a paid suborder through payment to confirmed", async () => {
+    const db = createPool();
+    const { worker, inventory, transition, recovery } = createWorker({ pool: db.pool });
+    await expect(worker.runOnce()).resolves.toMatchObject({ outcome: "completed", jobId: "job-1" });
+    expect(db.calls[0]).toContain("FOR UPDATE SKIP LOCKED");
+    expect(inventory.reserveExactVariants).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: "merchant-tenant", orderId: "order-1", suborderId: "sub-1",
+      idempotencyKey: "paid-checkout:platform:order-1:sub-1",
+      lines: [{ productVariantId: "catalog-v1", sku: "SKU-1", quantity: 1 }]
+    }));
+    expect(transition).toHaveBeenCalledTimes(2);
+    expect(transition.mock.calls[0]?.[0]).toMatchObject({ nextStatus: "awaiting_payment" });
+    expect(transition.mock.calls[1]?.[0]).toMatchObject({ nextStatus: "confirmed" });
+    expect(recovery).not.toHaveBeenCalled();
+  });
+
+  it("does not reserve inventory when the verified capture row is missing", async () => {
+    const db = createPool({ payment: null });
+    const { worker, inventory } = createWorker({ pool: db.pool });
+    await expect(worker.runOnce()).resolves.toMatchObject({
+      outcome: "retry_scheduled", failureCode: "PAID_CHECKOUT_CAPTURE_EVIDENCE_MISMATCH"
+    });
+    expect(inventory.reserveExactVariants).not.toHaveBeenCalled();
+  });
+
+  it("routes unsupported multi-suborder paid orders to durable manual recovery", async () => {
+    const db = createPool({ suborders: [suborder, { ...suborder, id: "sub-2" }] });
+    const { worker, inventory, recovery } = createWorker({ pool: db.pool });
+    await expect(worker.runOnce()).resolves.toMatchObject({
+      outcome: "needs_review", failureCode: "UNSUPPORTED_SUBORDER_COUNT"
+    });
+    expect(inventory.reserveExactVariants).not.toHaveBeenCalled();
+    expect(recovery).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: "platform", orderId: "order-1", failureCode: "TASK_COMMIT_REJECTED"
+    }));
+  });
+});
