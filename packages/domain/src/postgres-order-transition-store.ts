@@ -111,9 +111,15 @@ export class PostgresOrderTransitionStore {
              JOIN verified_order_payment_captures p
                ON p.tenant_id = o.tenant_id AND p.order_id = o.id
               AND p.amount_minor = o.total_minor AND p.currency = o.currency
-             WHERE o.tenant_id = $1 AND o.id = $2
+             WHERE o.id = $1
+               AND EXISTS (
+                 SELECT 1 FROM merchant_suborders scoped
+                 WHERE scoped.order_id = o.id
+                   AND scoped.tenant_id = $2
+                   AND scoped.id = $3
+               )
            ) AS authorized`,
-          [input.tenantId, input.orderId]
+          [input.orderId, input.tenantId, current.id]
         );
         const reservation = await client.query<{ id: string }>(
           `SELECT id
