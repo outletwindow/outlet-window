@@ -88,7 +88,7 @@ export class PostgresBranchInventorySyncStore implements BranchInventorySyncStor
          FOR UPDATE OF b`,
         [input.tenantId, input.merchantId, input.branchId]
       );
-      if (branch.rowCount !== 1) throw new Error("BRANCH_INVENTORY_SCOPE_NOT_FOUND");
+      if (branch.rows.length !== 1) throw new Error("BRANCH_INVENTORY_SCOPE_NOT_FOUND");
 
       let accepted = 0;
       let stale = 0;
@@ -107,7 +107,7 @@ export class PostgresBranchInventorySyncStore implements BranchInventorySyncStor
            RETURNING product_variant_id`,
           [input.merchantId,input.branchId,line.productVariantId,line.sku,line.availableQuantity,input.source,input.capturedAtUtc,input.confidence]
         );
-        if (result.rowCount === 1) {
+        if (result.rows.length === 1) {
           accepted++;
         } else {
           const current = await client.query<{ last_synced_at: Date | string; reserved_quantity: number }>(
@@ -140,7 +140,7 @@ export class PostgresBranchInventorySyncStore implements BranchInventorySyncStor
           input.lines.map(line => line.productVariantId),
           input.source, input.capturedAtUtc, input.confidence]
       );
-      accepted += omitted.rowCount ?? omitted.rows.length;
+      accepted += omitted.rows.length;
 
       await client.query("COMMIT");
       return { accepted, stale };
