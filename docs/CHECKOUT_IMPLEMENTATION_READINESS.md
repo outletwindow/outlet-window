@@ -401,3 +401,13 @@ checkout API route exists.
 - The verified initial-capture inbox now inserts or verifies the reservation job in the **same PostgreSQL transaction** that writes the immutable capture evidence and marks the webhook receipt applied. A duplicate delivery reuses the original capture and cannot create a second job for the same order.
 - Registered migration 0040 in the migration runner and API/initial-capture-worker readiness gates; added a PostgreSQL integration script to CI for uniqueness and lease-state constraints.
 - **Important remaining gap:** this commit creates the durable handoff only. A reservation-job consumer that claims leases, reads exact order lines, invokes the branch inventory adapter, records recovery cases, and confirms suborders has not yet been wired. Until that worker is implemented and its integration tests pass, payment capture does not automatically reserve stock or confirm an order. Do not enable live production checkout on the strength of the outbox alone.
+
+
+## Paid checkout reservation consumer implementation
+
+- Added `PostgresPaidCheckoutInventoryReservationWorker`: claims one outbox job with `FOR UPDATE SKIP LOCKED`, increments a bounded attempt counter, and uses a worker lease with compare-and-swap completion/retry.
+- The consumer verifies the immutable capture row against the order total and currency, requires exactly one merchant suborder (matching the current single-branch checkout contract), loads exact branch-scoped order lines, and invokes the PostgreSQL inventory reservation adapter with a stable idempotency key.
+- After a successful reservation it advances a pending-validation suborder to awaiting-payment when needed, then attempts confirmation. The transition store independently revalidates capture and live reservation evidence and appends its audit event in the same transaction.
+- Inventory unavailable/unguaranteed and unsupported multi-suborder cases create durable recovery cases and are moved to manual review. No automatic refund or stock release is performed.
+- Added a dedicated worker entrypoint, Compose service, package scripts, and unit coverage for successful reservation/confirmation, missing capture evidence, and multi-suborder fail-closed recovery.
+- **Release gate:** this code has been committed but its latest CI run must pass before considering the consumer verified. Production rollout still requires database migration 0040, a merchant inventory sync freshness check, PSP reconciliation/refund workflows, and operational monitoring of `needs_review` jobs and `checkout_recovery_cases`.
