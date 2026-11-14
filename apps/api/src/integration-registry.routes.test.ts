@@ -25,11 +25,16 @@ describe("merchant integration registry API", () => {
     await Promise.all(apps.splice(0).map((app) => app.close()));
   });
 
-  function createApp(actor: Actor | null = owner, verifiers: ReadonlyMap<string, IntegrationConnectionVerifier> = new Map(), validator?: IntegrationSecretReferenceValidator) {
+  function createApp(
+    actor: Actor | null = owner,
+    verifiers: ReadonlyMap<string, IntegrationConnectionVerifier> = new Map(),
+    validator?: IntegrationSecretReferenceValidator,
+    tenantResolver: (merchantId: string) => string = (merchantId) => merchantId
+  ) {
     const hub = new IntegrationHub(new InMemoryIntegrationRegistryStore(), verifiers, validator);
     const app = buildApp({
       resolveActor: async () => actor,
-      resolveMerchantTenantId: async (merchantId) => merchantId,
+      resolveMerchantTenantId: async (merchantId) => tenantResolver(merchantId),
       integrationHub: hub
     });
     apps.push(app);
@@ -85,6 +90,22 @@ describe("merchant integration registry API", () => {
     expect(response.statusCode).toBe(403);
     expect(response.json()).toEqual({ error: "capability_requires_platform_approval" });
     expect(await hub.list("merchant-1")).toEqual([]);
+  });
+
+  it("resolves the actual tenant ID instead of treating the merchant ID as a tenant", async () => {
+    const { app, hub } = createApp(owner, new Map(), undefined, () => "tenant-actual-1");
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/merchants/merchant-1/integrations",
+      payload: {
+        id: "pos-main", family: "pos", providerKey: "generic-pos",
+        displayName: "Main POS", capabilities: ["inventory.read"]
+      }
+    });
+    expect(response.statusCode).toBe(201);
+    expect(response.json().integration.tenantId).toBe("tenant-actual-1");
+    expect(await hub.get("tenant-actual-1", "pos-main")).not.toBeNull();
+    expect(await hub.get("merchant-1", "pos-main")).toBeNull();
   });
 
   it("denies cross-merchant registration before writing", async () => {
