@@ -1,0 +1,104 @@
+name: outlet-window
+
+x-runtime: &runtime
+  image: outlet-window:local
+  build:
+    context: .
+    dockerfile: Dockerfile
+  restart: unless-stopped
+  init: true
+  environment:
+    NODE_ENV: production
+    DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
+  depends_on:
+    migrate:
+      condition: service_completed_successfully
+  stop_grace_period: 45s
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+services:
+  migrate:
+    image: outlet-window:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
+    command: ["pnpm", "--filter", "@outlet-window/api", "db:migrate"]
+    restart: "on-failure:5"
+    init: true
+
+  api:
+    <<: *runtime
+    command: ["node", "apps/api/dist/apps/api/src/server.js"]
+    ports:
+      - "${API_PORT:-3000}:3000"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/ready').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  scheduled-worker:
+    <<: *runtime
+    command: ["node", "apps/worker/dist/apps/worker/src/scheduled-main.js"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
+      SCHEDULED_WORKER_POLL_MS: ${SCHEDULED_WORKER_POLL_MS:-1000}
+      SCHEDULED_WORKER_BATCH_SIZE: ${SCHEDULED_WORKER_BATCH_SIZE:-10}
+
+  payment-webhook-worker:
+    <<: *runtime
+    command: ["node", "apps/worker/dist/apps/worker/src/payment-webhook-main.js"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
+      PAYMENT_WEBHOOK_WORKER_POLL_MS: ${PAYMENT_WEBHOOK_WORKER_POLL_MS:-1000}
+      PAYMENT_WEBHOOK_WORKER_BATCH_SIZE: ${PAYMENT_WEBHOOK_WORKER_BATCH_SIZE:-10}
+      PAYMENT_WEBHOOK_WORKER_LEASE_SECONDS: ${PAYMENT_WEBHOOK_WORKER_LEASE_SECONDS:-30}
+
+  initial-payment-capture-worker:
+    <<: *runtime
+    command: ["node", "apps/worker/dist/apps/worker/src/initial-payment-capture-main.js"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
+      INITIAL_CAPTURE_WORKER_POLL_MS: ${INITIAL_CAPTURE_WORKER_POLL_MS:-1000}
+      INITIAL_CAPTURE_WORKER_BATCH_SIZE: ${INITIAL_CAPTURE_WORKER_BATCH_SIZE:-10}
+      INITIAL_CAPTURE_WORKER_LEASE_SECONDS: ${INITIAL_CAPTURE_WORKER_LEASE_SECONDS:-30}
+
+  inventory-expiry-worker:
+    <<: *runtime
+    command: ["node", "apps/worker/dist/apps/worker/src/inventory-reservation-expiry-main.js"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
+      INVENTORY_EXPIRY_WORKER_POLL_MS: ${INVENTORY_EXPIRY_WORKER_POLL_MS:-5000}
+      INVENTORY_EXPIRY_WORKER_BATCH_SIZE: ${INVENTORY_EXPIRY_WORKER_BATCH_SIZE:-50}
+
+  fulfillment-worker:
+    <<: *runtime
+    profiles: ["fulfillment"]
+    command: ["node", "apps/worker/dist/apps/worker/src/fulfillment-main.js"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
+      FULFILLMENT_WORKER_POLL_MS: ${FULFILLMENT_WORKER_POLL_MS:-1000}
+      FULFILLMENT_WORKER_BATCH_SIZE: ${FULFILLMENT_WORKER_BATCH_SIZE:-10}
+      MERCHANT_PREPARATION_ENDPOINT: ${MERCHANT_PREPARATION_ENDPOINT:-}
+      MERCHANT_PREPARATION_TOKEN: ${MERCHANT_PREPARATION_TOKEN:-}
+      SHOPPER_COLLECTION_ENDPOINT: ${SHOPPER_COLLECTION_ENDPOINT:-}
+      SHOPPER_COLLECTION_TOKEN: ${SHOPPER_COLLECTION_TOKEN:-}
+      COURIER_DISPATCH_ENDPOINT: ${COURIER_DISPATCH_ENDPOINT:-}
+      COURIER_DISPATCH_TOKEN: ${COURIER_DISPATCH_TOKEN:-}

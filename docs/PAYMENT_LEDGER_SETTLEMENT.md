@@ -22,6 +22,14 @@ Support configurable models by country, merchant contract and payment provider:
 
 Do not enable a model until legal, regulatory and payment-provider approval is confirmed.
 
+## 3A. Scheduled Checkout Payment Sequence
+
+For a scheduled order, payment is collected at checkout according to the disclosed payment method behavior. After provider-confirmed capture, Order Management requests an immediate exact-variant inventory reservation from the merchant branch. Preparation is scheduled for the calculated release time; it is not delayed until then to create the order or reserve stock.
+
+If payment fails, the order is not confirmed and inventory reservation is not requested. If payment succeeds but stock cannot be reserved, keep the order in an explicit exception/customer-choice state and show eligible alternatives. If the customer declines or no alternative is available, create a refund linked to the original payment. Refund execution must be idempotent and provider-confirmed. Never silently substitute an item.
+
+Some payment methods may use authorization followed by capture rather than immediate capture. The UI must accurately disclose whether funds are captured or only held. A payment status must always come from the payment provider, never from an order status change.
+
 ## 4. Payment Lifecycle
 1. PAYMENT_INITIATED
 2. PAYMENT_PENDING

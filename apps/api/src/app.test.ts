@@ -1,7 +1,10 @@
+import { createHmac } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
+import { vi } from "vitest";
 import { buildApp } from "./app.js";
 import type { Actor } from "../../../packages/domain/src/authorization.js";
+import type { RecordPreparationCheckInput } from "../../../packages/domain/src/postgres-merchant-order-item-preparation.js";
 
 const merchantActor: Actor = {
   id: "principal-1",
@@ -26,6 +29,93 @@ describe("Outlet Window API foundation", () => {
     await app.close();
   });
 
+  it("verifies and atomically records a signed fulfillment handover webhook", async () => {
+    const secret = "fulfillment-test-secret-with-at-least-32-characters";
+    const recordAndApply = vi.fn(async () => ({ outcome: "applied" as const, receiptId: "receipt-1" }));
+    const webhookApp = buildApp({
+      fulfillmentHandoverInbox: { recordAndApply },
+      fulfillmentWebhookSecretResolver: async key => key === "carrier-a" ? secret : null,
+      fulfillmentWebhookAuthorizationResolver: async (key, event) =>
+        key === "carrier-a" && event.tenantId === "tenant-1" &&
+        event.merchantId === "merchant-1" && event.branchId === "branch-1"
+    });
+    await webhookApp.ready();
+    try {
+      const rawBody = JSON.stringify({
+        eventType: "handover.completed", providerEventId: "event-1",
+        tenantId: "tenant-1", merchantId: "merchant-1", branchId: "branch-1",
+        reservationId: "reservation-1", handoverReference: "handover-1",
+        occurredAtUtc: new Date().toISOString()
+      });
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      const signature = createHmac("sha256", secret).update(timestamp + "." + rawBody).digest("hex");
+      const response = await webhookApp.inject({
+        method: "POST", url: "/api/v1/webhooks/fulfillment/carrier-a",
+        headers: { "content-type": "application/json", "x-fulfillment-signature": `t=${timestamp},v1=${signature}` },
+        payload: rawBody
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({ outcome: "applied", receiptId: "receipt-1" });
+      expect(recordAndApply).toHaveBeenCalledOnce();
+    } finally {
+      await webhookApp.close();
+    }
+  });
+
+  it("rejects a correctly signed fulfillment event outside the provider's assigned branch scope", async () => {
+    const secret = "fulfillment-test-secret-with-at-least-32-characters";
+    const recordAndApply = vi.fn();
+    const webhookApp = buildApp({
+      fulfillmentHandoverInbox: { recordAndApply },
+      fulfillmentWebhookSecretResolver: async () => secret,
+      fulfillmentWebhookAuthorizationResolver: async (_key, event) =>
+        event.tenantId === "tenant-allowed" && event.merchantId === "merchant-allowed" &&
+        event.branchId === "branch-allowed"
+    });
+    await webhookApp.ready();
+    try {
+      const rawBody = JSON.stringify({
+        eventType: "handover.completed", providerEventId: "event-scope-1",
+        tenantId: "tenant-other", merchantId: "merchant-other", branchId: "branch-other",
+        reservationId: "reservation-1", handoverReference: "handover-1",
+        occurredAtUtc: new Date().toISOString()
+      });
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      const signature = createHmac("sha256", secret).update(timestamp + "." + rawBody).digest("hex");
+      const response = await webhookApp.inject({
+        method: "POST", url: "/api/v1/webhooks/fulfillment/carrier-a",
+        headers: { "content-type": "application/json", "x-fulfillment-signature": `t=${timestamp},v1=${signature}` },
+        payload: rawBody
+      });
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toEqual({ error: "fulfillment_provider_scope_not_authorized" });
+      expect(recordAndApply).not.toHaveBeenCalled();
+    } finally {
+      await webhookApp.close();
+    }
+  });
+
+  it("rejects unsigned fulfillment handover events before persistence", async () => {
+    const recordAndApply = vi.fn();
+    const webhookApp = buildApp({
+      fulfillmentHandoverInbox: { recordAndApply },
+      fulfillmentWebhookSecretResolver: async () => "fulfillment-test-secret-with-at-least-32-characters",
+      fulfillmentWebhookAuthorizationResolver: async () => true
+    });
+    await webhookApp.ready();
+    try {
+      const response = await webhookApp.inject({
+        method: "POST", url: "/api/v1/webhooks/fulfillment/carrier-a",
+        headers: { "content-type": "application/json" },
+        payload: JSON.stringify({ eventType: "handover.completed" })
+      });
+      expect(response.statusCode).toBe(401);
+      expect(recordAndApply).not.toHaveBeenCalled();
+    } finally {
+      await webhookApp.close();
+    }
+  });
+
   it("exposes a health endpoint", async () => {
     const response = await app.inject({ method: "GET", url: "/health" });
     expect(response.statusCode).toBe(200);
@@ -37,6 +127,30 @@ describe("Outlet Window API foundation", () => {
     const response = await app.inject({ method: "GET", url: "/ready" });
     expect(response.statusCode).toBe(200);
     expect(response.json().status).toBe("ready");
+  });
+
+  it("reports not ready when a required database dependency is unavailable", async () => {
+    const unavailableApp = buildApp({ readinessCheck: async () => false });
+    await unavailableApp.ready();
+    try {
+      const response = await unavailableApp.inject({ method: "GET", url: "/ready" });
+      expect(response.statusCode).toBe(503);
+      expect(response.json()).toEqual({ status: "not_ready", checks: { process: "ok", database: "unavailable" } });
+    } finally {
+      await unavailableApp.close();
+    }
+  });
+
+  it("reports not ready when the database health check throws", async () => {
+    const unavailableApp = buildApp({ readinessCheck: async () => { throw new Error("db down"); } });
+    await unavailableApp.ready();
+    try {
+      const response = await unavailableApp.inject({ method: "GET", url: "/ready" });
+      expect(response.statusCode).toBe(503);
+      expect(response.json().status).toBe("not_ready");
+    } finally {
+      await unavailableApp.close();
+    }
   });
 
   it("exposes the versioned API foundation", async () => {
@@ -138,17 +252,735 @@ describe("Outlet Window API foundation", () => {
     }
   });
 
-  it("returns unavailable rather than exposing data without a repository adapter", async () => {
-    const protectedApp = buildApp({ resolveActor: async () => merchantActor });
+  it("requires merchant-scoped create permission before branch creation", async () => {
+    let writes = 0;
+    const protectedApp = buildApp({
+      resolveActor: async () => merchantActor,
+      merchantBranchWriter: {
+        createBranch: async () => { writes += 1; return "created"; },
+        updateBranch: async () => "updated"
+      }
+    });
+    await protectedApp.ready();
+    try {
+      const denied = await protectedApp.inject({
+        method: "POST",
+        url: "/api/v1/merchants/merchant-2/branches",
+        payload: { branchId: "branch-2", displayName: "Jubail East", cityCode: "JUB" }
+      });
+      expect(denied.statusCode).toBe(403);
+      expect(writes).toBe(0);
+
+      const actorWithCreate: Actor = {
+        ...merchantActor,
+        grants: [{ resource: "merchant.branch", actions: ["create"], scope: { merchantId: "merchant-1" } }]
+      };
+      const createApp = buildApp({
+        resolveActor: async () => actorWithCreate,
+        merchantBranchWriter: {
+          createBranch: async () => { writes += 1; return "created"; },
+          updateBranch: async () => "updated"
+        }
+      });
+      await createApp.ready();
+      try {
+        const allowed = await createApp.inject({
+          method: "POST",
+          url: "/api/v1/merchants/merchant-1/branches",
+          payload: { branchId: "branch-2", displayName: "Jubail East", cityCode: "JUB" }
+        });
+        expect(allowed.statusCode).toBe(201);
+        expect(writes).toBe(1);
+      } finally {
+        await createApp.close();
+      }
+    } finally {
+      await protectedApp.close();
+    }
+  });
+
+  it("validates branch creation payloads", async () => {
+    const actorWithCreate: Actor = {
+      ...merchantActor,
+      grants: [{ resource: "merchant.branch", actions: ["create"], scope: { merchantId: "merchant-1" } }]
+    };
+    const protectedApp = buildApp({
+      resolveActor: async () => actorWithCreate,
+      merchantBranchWriter: { createBranch: async () => "created", updateBranch: async () => "updated" }
+    });
     await protectedApp.ready();
     try {
       const response = await protectedApp.inject({
-        method: "GET",
-        url: "/api/v1/merchants/merchant-1/branches/branch-1/summary"
+        method: "POST",
+        url: "/api/v1/merchants/merchant-1/branches",
+        payload: { branchId: "x", displayName: " ", cityCode: "jub" }
       });
-      expect(response.statusCode).toBe(503);
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toEqual({ error: "invalid_request" });
     } finally {
       await protectedApp.close();
+    }
+  });
+
+  it("requires branch-scoped update permission and validates update payloads", async () => {
+    let updates = 0;
+    const owner: Actor = {
+      ...merchantActor,
+      grants: [{ resource: "merchant.branch", actions: ["update"], scope: { merchantId: "merchant-1", branchId: "branch-1" } }]
+    };
+    const protectedApp = buildApp({
+      resolveActor: async () => owner,
+      merchantBranchWriter: {
+        createBranch: async () => "created",
+        updateBranch: async () => { updates += 1; return "updated"; }
+      }
+    });
+    await protectedApp.ready();
+    try {
+      const denied = await protectedApp.inject({
+        method: "PATCH",
+        url: "/api/v1/merchants/merchant-1/branches/branch-2",
+        payload: { displayName: "Changed", cityCode: "JUB", status: "active" }
+      });
+      expect(denied.statusCode).toBe(403);
+      expect(updates).toBe(0);
+
+      const allowed = await protectedApp.inject({
+        method: "PATCH",
+        url: "/api/v1/merchants/merchant-1/branches/branch-1",
+        payload: { displayName: "Jubail Updated", cityCode: "JUB", status: "inactive" }
+      });
+      expect(allowed.statusCode).toBe(200);
+      expect(updates).toBe(1);
+
+      const invalid = await protectedApp.inject({
+        method: "PATCH",
+        url: "/api/v1/merchants/merchant-1/branches/branch-1",
+        payload: { displayName: "x", cityCode: "JUB", status: "active" }
+      });
+      expect(invalid.statusCode).toBe(400);
+      expect(updates).toBe(1);
+    } finally {
+      await protectedApp.close();
+    }
+  });
+
+  it("persists authorization decisions using the verified actor and request scope", async () => {
+    const events: import("../../../packages/domain/src/audit.js").AuditEvent[] = [];
+    const protectedApp = buildApp({
+      resolveActor: async () => merchantActor,
+      auditEvents: { append: async event => { events.push(event); return "inserted"; } }
+    });
+    await protectedApp.ready();
+    try {
+      const allowed = await protectedApp.inject({ method: "GET", url: "/api/v1/merchants/merchant-1/branches/branch-1/access-check" });
+      expect(allowed.statusCode).toBe(200);
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        actor: { id: "principal-1", role: "merchant_owner", type: "merchant_user" },
+        tenantId: "merchant-1", merchantId: "merchant-1", branchId: "branch-1",
+        outcome: "success", source: "api"
+      });
+      expect(events[0]?.correlationId).toBe(allowed.headers["x-correlation-id"]);
+      const denied = await protectedApp.inject({ method: "GET", url: "/api/v1/merchants/merchant-1/branches/branch-2/access-check" });
+      expect(denied.statusCode).toBe(403);
+      expect(events).toHaveLength(2);
+      expect(events[1]?.outcome).toBe("denied");
+      expect(events[1]?.actor.id).toBe("principal-1");
+    } finally { await protectedApp.close(); }
+  });
+
+  it("does not execute a protected action when durable audit persistence fails", async () => {
+    let repositoryCalls = 0;
+    const protectedApp = buildApp({
+      resolveActor: async () => merchantActor,
+      auditEvents: { append: async () => { throw new Error("audit database unavailable"); } },
+      merchantBranches: { findBranchSummary: async () => {
+        repositoryCalls += 1;
+        return { merchantId: "merchant-1", branchId: "branch-1", displayName: "Branch", status: "active" as const };
+      } }
+    });
+    await protectedApp.ready();
+    try {
+      const response = await protectedApp.inject({ method: "GET", url: "/api/v1/merchants/merchant-1/branches/branch-1/summary" });
+      expect(response.statusCode).toBe(500);
+      expect(repositoryCalls).toBe(0);
+    } finally { await protectedApp.close(); }
+  });
+
+  it("authorizes scoped merchant order transitions and derives the actor from the session", async () => {
+    const operator: Actor = { ...merchantActor, grants: [{ resource: "merchant.order", actions: ["update"], scope: { merchantId: "merchant-1", branchId: "branch-1" } }] };
+    const calls: Array<{ tenantId: string; context: { actorId: string; actorRole: string; paymentAuthorized?: boolean }; auditEvent: { actor: { id: string }; tenantId?: string; branchId?: string } }> = [];
+    const protectedApp = buildApp({ resolveActor: async () => operator, resolveMerchantTenantId: async () => "tenant-merchant-1", orderTransitions: { transitionSuborder: async input => {
+      calls.push(input);
+      return { outcome: "updated", transition: { ok: true, previousStatus: "pending_validation", order: { status: "awaiting_payment", version: 2 } }, parentStatus: "awaiting_payment" };
+    } } });
+    await protectedApp.ready();
+    try {
+      const denied = await protectedApp.inject({ method: "POST", url: "/api/v1/merchants/merchant-1/branches/branch-2/orders/order-1/suborders/sub-1/transitions", payload: { nextStatus: "awaiting_payment", expectedVersion: 1 } });
+      expect(denied.statusCode).toBe(403);
+      expect(calls).toHaveLength(0);
+      const forbiddenCheckout = await protectedApp.inject({ method: "POST", url: "/api/v1/merchants/merchant-1/branches/branch-1/orders/order-1/suborders/sub-1/transitions", payload: { nextStatus: "awaiting_payment", expectedVersion: 1 } });
+      expect(forbiddenCheckout.statusCode).toBe(403);
+      expect(forbiddenCheckout.json()).toEqual({ error: "customer_checkout_transition_only" });
+      expect(calls).toHaveLength(0);
+    } finally { await protectedApp.close(); }
+  });
+
+  it("fails closed when merchant tenant ownership cannot be resolved for an order transition", async () => {
+    const operator: Actor = { ...merchantActor, grants: [{ resource: "merchant.order", actions: ["update"], scope: { merchantId: "merchant-1", branchId: "branch-1" } }] };
+    const transitionSuborder = vi.fn(async () => ({ outcome: "not_found" as const }));
+    const protectedApp = buildApp({
+      resolveActor: async () => operator,
+      resolveMerchantTenantId: async () => null,
+      orderTransitions: { transitionSuborder }
+    });
+    await protectedApp.ready();
+    try {
+      const response = await protectedApp.inject({
+        method: "POST",
+        url: "/api/v1/merchants/merchant-1/branches/branch-1/orders/order-1/suborders/sub-1/transitions",
+        payload: { nextStatus: "awaiting_payment", expectedVersion: 1 }
+      });
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toEqual({ error: "merchant_not_found" });
+      expect(transitionSuborder).not.toHaveBeenCalled();
+    } finally {
+      await protectedApp.close();
+    }
+  });
+
+  it("limits merchant employees to preparation transitions within their assigned branch", async () => {
+    const employee: Actor = {
+      id: "employee-1", role: "merchant_employee", active: true,
+      grants: [{ resource: "merchant.order", actions: ["read", "update"], scope: { merchantId: "merchant-1", branchId: "branch-1" } }]
+    };
+    let writes = 0;
+    const employeeApp = buildApp({
+      resolveActor: async () => employee,
+      resolveMerchantTenantId: async () => "tenant-merchant-1",
+      orderTransitions: { transitionSuborder: async input => {
+        writes += 1;
+        return { outcome: "updated", transition: { ok: true, previousStatus: "preparing", order: { status: input.nextStatus, version: 3 } }, parentStatus: input.nextStatus };
+      } }
+    });
+    await employeeApp.ready();
+    try {
+      const wrongBranch = await employeeApp.inject({
+        method: "POST",
+        url: "/api/v1/merchants/merchant-1/branches/branch-2/orders/order-1/suborders/sub-1/transitions",
+        payload: { nextStatus: "preparing", expectedVersion: 2 }
+      });
+      expect(wrongBranch.statusCode).toBe(403);
+      const forbiddenStatus = await employeeApp.inject({
+        method: "POST",
+        url: "/api/v1/merchants/merchant-1/branches/branch-1/orders/order-1/suborders/sub-1/transitions",
+        payload: { nextStatus: "cancelled", expectedVersion: 2, reason: "not permitted" }
+      });
+      expect(forbiddenStatus.statusCode).toBe(403);
+      expect(forbiddenStatus.json()).toEqual({ error: "employee_preparation_transition_only" });
+      expect(writes).toBe(0);
+      const allowed = await employeeApp.inject({
+        method: "POST",
+        url: "/api/v1/merchants/merchant-1/branches/branch-1/orders/order-1/suborders/sub-1/transitions",
+        payload: { nextStatus: "ready_for_pickup", expectedVersion: 2 }
+      });
+      expect(allowed.statusCode).toBe(200);
+      expect(writes).toBe(1);
+    } finally {
+      await employeeApp.close();
+    }
+  });
+
+  it("records preparation checks only for an employee's assigned branch and uses the authenticated actor", async () => {
+    const employee: Actor = {
+      id: "employee-prep-1", role: "merchant_employee", active: true,
+      grants: [{ resource: "merchant.order", actions: ["read", "update"], scope: { merchantId: "merchant-1", branchId: "branch-1" } }]
+    };
+    const record = vi.fn(async (_input: RecordPreparationCheckInput) => ({
+      outcome: "recorded" as const, expectedSku: "SKU-DB", expectedQuantity: 2
+    }));
+    const prepApp = buildApp({
+      resolveActor: async () => employee,
+      resolveMerchantTenantId: async merchantId => merchantId === "merchant-1" ? "tenant-1" : null,
+      merchantOrderItemPreparation: { record }
+    });
+    await prepApp.ready();
+    try {
+      const base = "/api/v1/merchants/merchant-1/branches/";
+      const denied = await prepApp.inject({
+        method: "POST", url: base + "branch-2/orders/order-1/suborders/sub-1/items/item-1/preparation-checks",
+        payload: { scannedSku: "SKU-DB", verifiedQuantity: 2, outcome: "verified" }
+      });
+      expect(denied.statusCode).toBe(403);
+      expect(record).not.toHaveBeenCalled();
+
+      const accepted = await prepApp.inject({
+        method: "POST", url: base + "branch-1/orders/order-1/suborders/sub-1/items/item-1/preparation-checks",
+        payload: { scannedSku: "SKU-DB", verifiedQuantity: 2, outcome: "verified", expectedSku: "CLIENT-FORGED", expectedQuantity: 999 }
+      });
+      expect(accepted.statusCode).toBe(201);
+      expect(record).toHaveBeenCalledOnce();
+      expect(record.mock.calls[0]![0]).toMatchObject({
+        tenantId: "tenant-1", merchantId: "merchant-1", branchId: "branch-1",
+        orderId: "order-1", suborderId: "sub-1", orderItemId: "item-1",
+        actorId: "employee-prep-1", scannedSku: "SKU-DB", verifiedQuantity: 2, outcome: "verified"
+      });
+      expect(record.mock.calls[0]![0]).not.toHaveProperty("expectedSku");
+      expect(record.mock.calls[0]![0]).not.toHaveProperty("expectedQuantity");
+    } finally {
+      await prepApp.close();
+    }
+  });
+
+  it("rejects malformed order transition commands", async () => {
+    const operator: Actor = { ...merchantActor, grants: [{ resource: "merchant.order", actions: ["update"], scope: { merchantId: "merchant-1", branchId: "branch-1" } }] };
+    let writes = 0;
+    const protectedApp = buildApp({ resolveActor: async () => operator, orderTransitions: { transitionSuborder: async () => { writes += 1; return { outcome: "not_found" }; } } });
+    await protectedApp.ready();
+    try {
+      const response = await protectedApp.inject({ method: "POST", url: "/api/v1/merchants/merchant-1/branches/branch-1/orders/order-1/suborders/sub-1/transitions", payload: { nextStatus: "delivered", expectedVersion: 0, deliveryProofVerified: true } });
+      expect(response.statusCode).toBe(400);
+      expect(writes).toBe(0);
+    } finally { await protectedApp.close(); }
+  });
+
+  it("creates a customer payment intent only for the authenticated order owner and forwards the idempotency key", async () => {
+    const customer: Actor = {
+      id: "customer-payment-1", role: "customer", active: true,
+      grants: [{ resource: "customer.order", actions: ["update"], scope: { orderId: "payment-order-1" } }]
+    };
+    const create = vi.fn(async () => ({
+      outcome: "created" as const, providerPaymentReference: "provider-intent-1",
+      clientSecret: "pi_secret_test_secret_123456", expiresAtUtc: "2026-11-10T22:30:00.000Z",
+      amountMinor: 12500, currency: "SAR"
+    }));
+    const protectedApp = buildApp({
+      resolveActor: async () => customer,
+      customerPaymentIntentCheckout: { create }
+    });
+    await protectedApp.ready();
+    try {
+      const denied = await protectedApp.inject({
+        method: "POST", url: "/api/v1/customer/orders/payment-order-other/payment-intents",
+        headers: { "idempotency-key": "checkout-key-0001" }
+      });
+      expect(denied.statusCode).toBe(403);
+      expect(create).not.toHaveBeenCalled();
+
+      const created = await protectedApp.inject({
+        method: "POST", url: "/api/v1/customer/orders/payment-order-1/payment-intents",
+        headers: { "idempotency-key": "checkout-key-0001" }
+      });
+      expect(created.statusCode).toBe(201);
+      expect(created.json()).toMatchObject({ outcome: "created", amountMinor: 12500, currency: "SAR" });
+      expect(create).toHaveBeenCalledWith({
+        customerId: "customer-payment-1", orderId: "payment-order-1", idempotencyKey: "checkout-key-0001"
+      });
+    } finally { await protectedApp.close(); }
+  });
+
+  it("requires an idempotency key before creating a customer payment intent", async () => {
+    const customer: Actor = {
+      id: "customer-payment-2", role: "customer", active: true,
+      grants: [{ resource: "customer.order", actions: ["update"], scope: { orderId: "payment-order-2" } }]
+    };
+    const create = vi.fn();
+    const protectedApp = buildApp({ resolveActor: async () => customer, customerPaymentIntentCheckout: { create } });
+    await protectedApp.ready();
+    try {
+      const response = await protectedApp.inject({
+        method: "POST", url: "/api/v1/customer/orders/payment-order-2/payment-intents"
+      });
+      expect(response.statusCode).toBe(400);
+      expect(create).not.toHaveBeenCalled();
+    } finally { await protectedApp.close(); }
+  });
+
+  it("requires a verified customer grant before changing a delivery destination", async () => {
+    let updates = 0;
+    const customer: Actor = {
+      id: "customer-7", role: "customer", active: true,
+      grants: [{ resource: "customer.order", actions: ["update"], scope: { orderId: "order-7" } }]
+    };
+    const protectedApp = buildApp({
+      resolveActor: async () => customer,
+      customerDeliveryDestinations: { update: async input => {
+        updates += 1;
+        expect(input).toEqual({
+          customerId: "customer-7", actorId: "customer-7", orderId: "order-7",
+          destination: { latitude: 27.01, longitude: 49.65 }
+        });
+        return {
+          outcome: "updated", branchChanged: true,
+          quote: {
+            branchId: "branch-new", deliveryFeeMinor: 1500, totalMinor: 51500,
+            currency: "SAR", estimatedDeliveryAtUtc: "2026-11-08T13:00:00.000Z",
+            quoteReference: "server-quote", expiresAtUtc: "2026-11-08T12:05:00.000Z"
+          }
+        };
+      } }
+    });
+    await protectedApp.ready();
+    try {
+      const denied = await protectedApp.inject({
+        method: "PATCH", url: "/api/v1/customer/orders/order-other/delivery-destination",
+        payload: { latitude: 27.01, longitude: 49.65 }
+      });
+      expect(denied.statusCode).toBe(403);
+      expect(updates).toBe(0);
+
+      const changed = await protectedApp.inject({
+        method: "PATCH", url: "/api/v1/customer/orders/order-7/delivery-destination",
+        payload: { latitude: 27.01, longitude: 49.65, totalMinor: 1, branchId: "attacker-branch" }
+      });
+      expect(changed.statusCode).toBe(200);
+      expect(changed.json()).toMatchObject({
+        outcome: "updated", branchChanged: true,
+        delivery: { branchId: "branch-new", totalMinor: 51500, quoteReference: "server-quote" }
+      });
+      expect(updates).toBe(1);
+    } finally { await protectedApp.close(); }
+  });
+
+  it("rejects invalid customer destination coordinates before invoking pricing", async () => {
+    const customer: Actor = {
+      id: "customer-7", role: "customer", active: true,
+      grants: [{ resource: "customer.order", actions: ["update"], scope: { orderId: "order-7" } }]
+    };
+    let updates = 0;
+    const protectedApp = buildApp({
+      resolveActor: async () => customer,
+      customerDeliveryDestinations: { update: async () => { updates += 1; return { outcome: "not_found" }; } }
+    });
+    await protectedApp.ready();
+    try {
+      const response = await protectedApp.inject({
+        method: "PATCH", url: "/api/v1/customer/orders/order-7/delivery-destination",
+        payload: { latitude: 100, longitude: 49.65 }
+      });
+      expect(response.statusCode).toBe(400);
+      expect(updates).toBe(0);
+    } finally { await protectedApp.close(); }
+  });
+
+
+  it("returns a clear conflict when a delivery change needs a payment adjustment", async () => {
+    const customer: Actor = {
+      id: "customer-8", role: "customer", active: true,
+      grants: [{ resource: "customer.order", actions: ["update"], scope: { orderId: "order-8" } }]
+    };
+    const protectedApp = buildApp({
+      resolveActor: async () => customer,
+      customerDeliveryDestinations: { update: async () => ({ outcome: "payment_adjustment_required" }) }
+    });
+    await protectedApp.ready();
+    try {
+      const response = await protectedApp.inject({
+        method: "PATCH", url: "/api/v1/customer/orders/order-8/delivery-destination",
+        payload: { latitude: 27.01, longitude: 49.65 }
+      });
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toMatchObject({
+        error: "payment_adjustment_required",
+        message: expect.stringContaining("authorized and confirmed")
+      });
+    } finally { await protectedApp.close(); }
+  });
+
+});
+
+
+describe("signed payment provider webhook intake", () => {
+  const secret = "s".repeat(48);
+  const body = JSON.stringify({ id: "evt-api-1", type: "payment.adjustment", adjustmentId: "adjustment-1", status: "succeeded", providerReference: "psp-ref-api-1" });
+  const makeSignature = (rawBody: string) => {
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const digest = createHmac("sha256", secret).update(timestamp + "." + rawBody).digest("hex");
+    return `t=${timestamp},v1=${digest}`;
+  };
+
+  it("verifies the exact raw body before durably recording a provider event", async () => {
+    const record = vi.fn(async () => ({ outcome: "received" as const, receiptId: "receipt-api-1" }));
+    const app = buildApp({
+      paymentWebhookSecretResolver: async (providerKey) => providerKey === "psp-a" ? secret : null,
+      paymentWebhookInbox: { record }
+    });
+    await app.ready();
+    try {
+      const response = await app.inject({
+        method: "POST", url: "/api/v1/webhooks/payments/psp-a",
+        headers: { "content-type": "application/json", "x-payment-signature": makeSignature(body) },
+        payload: body
+      });
+      expect(response.statusCode).toBe(202);
+      expect(response.json()).toEqual({ outcome: "received", receiptId: "receipt-api-1" });
+      expect(record).toHaveBeenCalledWith({
+        providerKey: "psp-a", providerEventId: "evt-api-1", adjustmentId: "adjustment-1", eventType: "payment.adjustment", normalizedStatus: "succeeded", providerReference: "psp-ref-api-1", rawBody: body
+      });
+    } finally { await app.close(); }
+  });
+
+  it("routes signed initial payment capture events only to the trusted capture processor", async () => {
+    const captureBody = JSON.stringify({
+      id: "evt-capture-api", type: "payment.captured",
+      paymentReference: "intent-from-provider", amountMinor: 12500, currency: "SAR",
+      capturedAtUtc: new Date().toISOString(), orderId: "client-forged-order"
+    });
+    const process = vi.fn(async () => ({ outcome: "recorded" as const, captureId: "capture-api-1" }));
+    const record = vi.fn(async () => ({ outcome: "received" as const, receiptId: "wrong-path" }));
+    const app = buildApp({
+      paymentCaptureWebhookHandler: { process }
+    });
+    await app.ready();
+    try {
+      const response = await app.inject({
+        method: "POST", url: "/api/v1/webhooks/payments/psp-a",
+        headers: { "content-type": "application/json", "x-payment-signature": makeSignature(captureBody) },
+        payload: captureBody
+      });
+      expect(response.statusCode).toBe(201);
+      expect(response.json()).toEqual({ outcome: "recorded", captureId: "capture-api-1" });
+      expect(process).toHaveBeenCalledWith({
+        providerKey: "psp-a", rawBody: captureBody, signatureHeader: makeSignature(captureBody)
+      });
+      expect(record).not.toHaveBeenCalled();
+    } finally { await app.close(); }
+  });
+
+  it("routes native Moyasar payment_captured events to the trusted capture processor", async () => {
+    const captureBody = JSON.stringify({
+      id: "evt-moyasar-capture", type: "payment_captured",
+      created_at: "2026-11-10T07:00:00.000Z",
+      secret_token: "moyasar-secret", account_name: "Outlet Window", live: false,
+      data: {
+        id: "pay-moyasar-123", status: "captured", amount: 12500,
+        captured: 5000, currency: "SAR", captured_at: "2026-11-10T06:59:00.000Z"
+      }
+    });
+    const process = vi.fn(async () => ({ outcome: "recorded" as const, captureId: "capture-moyasar-1" }));
+    const app = buildApp({ paymentCaptureWebhookHandler: { process } });
+    await app.ready();
+    try {
+      const response = await app.inject({
+        method: "POST", url: "/api/v1/webhooks/payments/moyasar",
+        headers: { "content-type": "application/json" },
+        payload: captureBody
+      });
+      expect(response.statusCode).toBe(201);
+      expect(response.json()).toEqual({ outcome: "recorded", captureId: "capture-moyasar-1" });
+      expect(process).toHaveBeenCalledWith({ providerKey: "moyasar", rawBody: captureBody });
+    } finally { await app.close(); }
+  });
+
+  it("routes native Moyasar payment_paid purchase events to the trusted capture processor", async () => {
+    const purchaseBody = JSON.stringify({
+      id: "evt-moyasar-paid", type: "payment_paid",
+      created_at: "2026-11-10T07:00:00.000Z",
+      secret_token: "moyasar-secret", account_name: "Outlet Window", live: false,
+      data: {
+        id: "pay-moyasar-paid", status: "paid", amount: 12500,
+        captured: 0, currency: "SAR", captured_at: null,
+        updated_at: "2026-11-10T06:59:00.000Z"
+      }
+    });
+    const process = vi.fn(async () => ({ outcome: "recorded" as const, captureId: "capture-paid-1" }));
+    const app = buildApp({ paymentCaptureWebhookHandler: { process } });
+    await app.ready();
+    try {
+      const response = await app.inject({
+        method: "POST", url: "/api/v1/webhooks/payments/moyasar",
+        headers: { "content-type": "application/json" },
+        payload: purchaseBody
+      });
+      expect(response.statusCode).toBe(201);
+      expect(process).toHaveBeenCalledWith({ providerKey: "moyasar", rawBody: purchaseBody });
+    } finally { await app.close(); }
+  });
+
+  it("rejects invalid signatures without persisting the event", async () => {
+    const record = vi.fn(async () => ({ outcome: "received" as const, receiptId: "unused" }));
+    const app = buildApp({
+      paymentWebhookSecretResolver: async () => secret,
+      paymentWebhookInbox: { record }
+    });
+    await app.ready();
+    try {
+      const response = await app.inject({
+        method: "POST", url: "/api/v1/webhooks/payments/psp-a",
+        headers: { "content-type": "application/json", "x-payment-signature": "t=1794139200,v1=" + "0".repeat(64) },
+        payload: body
+      });
+      expect(response.statusCode).toBe(401);
+      expect(record).not.toHaveBeenCalled();
+    } finally { await app.close(); }
+  });
+
+  it("requires an authenticated customer and idempotency key before starting checkout", async () => {
+    const create = vi.fn();
+    const noIdentity = buildApp({ customerPaymentIntentCheckout: { create } });
+    await noIdentity.ready();
+    try {
+      const response = await noIdentity.inject({ method: "POST", url: "/api/v1/customer/orders/order-1/payment-intents" });
+      expect(response.statusCode).toBe(401);
+      expect(create).not.toHaveBeenCalled();
+    } finally { await noIdentity.close(); }
+
+    const customer: Actor = {
+      id: "customer-1", role: "customer", active: true,
+      grants: [{ resource: "customer.order", actions: ["update"], scope: { orderId: "order-1" } }]
+    };
+    const protectedApp = buildApp({ resolveActor: async () => customer, customerPaymentIntentCheckout: { create } });
+    await protectedApp.ready();
+    try {
+      const response = await protectedApp.inject({ method: "POST", url: "/api/v1/customer/orders/order-1/payment-intents" });
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toEqual({ error: "idempotency_key_required" });
+      expect(create).not.toHaveBeenCalled();
+    } finally { await protectedApp.close(); }
+  });
+
+  it("does not allow a non-customer actor to start customer checkout", async () => {
+    const create = vi.fn();
+    const nonCustomerWithOrderGrant: Actor = {
+      ...merchantActor,
+      grants: [{ resource: "customer.order", actions: ["update"], scope: { orderId: "order-1" } }]
+    };
+    const app = buildApp({
+      resolveActor: async () => nonCustomerWithOrderGrant,
+      customerPaymentIntentCheckout: { create }
+    });
+    await app.ready();
+    try {
+      const response = await app.inject({
+        method: "POST", url: "/api/v1/customer/orders/order-1/payment-intents",
+        headers: { "idempotency-key": "checkout-api-key-0001" }
+      });
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toEqual({ error: "customer_only" });
+      expect(create).not.toHaveBeenCalled();
+    } finally { await app.close(); }
+  });
+
+  it("returns unavailable when payment checkout is not configured", async () => {
+    const customer: Actor = {
+      id: "customer-1", role: "customer", active: true,
+      grants: [{ resource: "customer.order", actions: ["update"], scope: { orderId: "order-1" } }]
+    };
+    const app = buildApp({ resolveActor: async () => customer });
+    await app.ready();
+    try {
+      const response = await app.inject({
+        method: "POST", url: "/api/v1/customer/orders/order-1/payment-intents",
+        headers: { "idempotency-key": "checkout-api-key-0001" }
+      });
+      expect(response.statusCode).toBe(503);
+      expect(response.json()).toEqual({ error: "payment_checkout_unavailable" });
+    } finally { await app.close(); }
+  });
+
+  it("maps checkout outcomes to safe HTTP responses without leaking provider credentials", async () => {
+    const customer: Actor = {
+      id: "customer-1", role: "customer", active: true,
+      grants: [{ resource: "customer.order", actions: ["update"], scope: { orderId: "order-1" } }]
+    };
+    const create = vi.fn(async () => ({
+      outcome: "created" as const, providerPaymentReference: "provider-intent-1",
+      clientSecret: "pi_secret_test_only", expiresAtUtc: "2026-11-10T22:30:00.000Z",
+      amountMinor: 12500, currency: "SAR"
+    }));
+    const app = buildApp({ resolveActor: async () => customer, customerPaymentIntentCheckout: { create } });
+    await app.ready();
+    try {
+      const response = await app.inject({
+        method: "POST", url: "/api/v1/customer/orders/order-1/payment-intents",
+        headers: { "idempotency-key": "checkout-api-key-0001" }
+      });
+      expect(response.statusCode).toBe(201);
+      expect(response.json()).toMatchObject({
+        outcome: "created", providerPaymentReference: "provider-intent-1",
+        clientSecret: "pi_secret_test_only", amountMinor: 12500, currency: "SAR"
+      });
+      expect(create).toHaveBeenCalledWith({
+        customerId: "customer-1", orderId: "order-1", idempotencyKey: "checkout-api-key-0001"
+      });
+    } finally { await app.close(); }
+  });
+
+  it("maps an unknown provider outcome to HTTP 202 and recovery outage to HTTP 503", async () => {
+    const customer: Actor = {
+      id: "customer-1", role: "customer", active: true,
+      grants: [{ resource: "customer.order", actions: ["update"], scope: { orderId: "order-1" } }]
+    };
+    let outcome: "outcome_unknown" | "recovery_unavailable" = "outcome_unknown";
+    const app = buildApp({
+      resolveActor: async () => customer,
+      customerPaymentIntentCheckout: { create: async () => ({ outcome }) }
+    });
+    await app.ready();
+    try {
+      const request = () => app.inject({
+        method: "POST", url: "/api/v1/customer/orders/order-1/payment-intents",
+        headers: { "idempotency-key": "checkout-api-key-0001" }
+      });
+      const unknown = await request();
+      expect(unknown.statusCode).toBe(202);
+      expect(unknown.json()).toEqual({ outcome: "outcome_unknown" });
+      outcome = "recovery_unavailable";
+      const unavailable = await request();
+      expect(unavailable.statusCode).toBe(503);
+      expect(unavailable.json()).toEqual({ error: "payment_intent_recovery_unavailable" });
+    } finally { await app.close(); }
+  });
+
+
+  it("exposes customer cart routes only to the authenticated customer's explicit cart scope", async () => {
+    const customer: Actor = {
+      id: "cart-customer-1", role: "customer", active: true,
+      grants: [{ resource: "customer.cart", actions: ["read", "create", "delete"], scope: { customerId: "cart-customer-1" } }]
+    };
+    const cart = { id: "cart-1", customerId: "cart-customer-1", currency: "SAR", version: 2, items: [] };
+    const get = vi.fn(async () => cart);
+    const addItem = vi.fn(async () => cart);
+    const removeItem = vi.fn(async () => cart);
+    const cartApp = buildApp({ resolveActor: async () => customer, customerCart: { get, addItem, removeItem } });
+    await cartApp.ready();
+    try {
+      const read = await cartApp.inject({ method: "GET", url: "/api/v1/customer/cart" });
+      expect(read.statusCode).toBe(200);
+      expect(read.json()).toEqual({ cart });
+      const add = await cartApp.inject({
+        method: "POST", url: "/api/v1/customer/cart/items",
+        payload: { merchantId: "merchant-1", branchId: "branch-1", productVariantId: "variant-1", quantity: 2 }
+      });
+      expect(add.statusCode).toBe(200);
+      expect(addItem).toHaveBeenCalledWith({
+        customerId: "cart-customer-1", merchantId: "merchant-1", branchId: "branch-1",
+        productVariantId: "variant-1", quantity: 2
+      });
+      const remove = await cartApp.inject({ method: "DELETE", url: "/api/v1/customer/cart/items/item-1" });
+      expect(remove.statusCode).toBe(200);
+      expect(removeItem).toHaveBeenCalledWith({ customerId: "cart-customer-1", itemId: "item-1" });
+      expect(get).toHaveBeenCalledWith({ customerId: "cart-customer-1" });
+    } finally {
+      await cartApp.close();
+    }
+  });
+
+  it("rejects customer cart access when the grant belongs to a different customer", async () => {
+    const customer: Actor = {
+      id: "cart-customer-1", role: "customer", active: true,
+      grants: [{ resource: "customer.cart", actions: ["read"], scope: { customerId: "cart-customer-other" } }]
+    };
+    const get = vi.fn(async () => null);
+    const cartApp = buildApp({ resolveActor: async () => customer, customerCart: { get, addItem: vi.fn(), removeItem: vi.fn() } });
+    await cartApp.ready();
+    try {
+      const response = await cartApp.inject({ method: "GET", url: "/api/v1/customer/cart" });
+      expect(response.statusCode).toBe(403);
+      expect(get).not.toHaveBeenCalled();
+    } finally {
+      await cartApp.close();
     }
   });
 

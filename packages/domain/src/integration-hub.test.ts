@@ -48,7 +48,7 @@ describe("multi-family integration hub", () => {
     await expect(hub.suspend("tenant-b", "missing", "2026-11-08T10:04:00.000Z")).resolves.toBe("not_found");
   });
 
-  it("rotates only tenant-authorized opaque secret references and never accepts raw credentials", async () => {
+  it("rotates tenant-authorized opaque secret references and rejects raw credentials", async () => {
     const store = new InMemoryIntegrationRegistryStore();
     const validator = { isAuthorizedReference: async (tenantId: string, reference: string) =>
       tenantId === "tenant-a" && reference === "vault://tenant-a/pos-main-v2" };
@@ -66,7 +66,7 @@ describe("multi-family integration hub", () => {
     )).resolves.toBe("invalid_reference");
   });
 
-  it("refuses secret-reference rotation when the secret manager validator is absent", async () => {
+  it("fails closed when secret manager validation is not configured", async () => {
     const hub = new IntegrationHub(new InMemoryIntegrationRegistryStore());
     await hub.register(connected);
     await expect(hub.rotateSecretReference(

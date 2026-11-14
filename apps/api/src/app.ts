@@ -13,6 +13,18 @@ import {
 import { ORDER_STATUSES, type OrderStatus, type OrderTransitionContext } from "../../../packages/domain/src/order-lifecycle.js";
 import { INTEGRATION_FAMILIES, IntegrationHub } from "../../../packages/domain/src/integration-hub.js";
 import { verifyPaymentProviderWebhook } from "../../../packages/domain/src/payment-adjustment-provider.js";
+import { verifyAndParseFulfillmentHandoverEvent, type VerifiedFulfillmentHandoverEvent } from "../../../packages/domain/src/fulfillment-handover-provider.js";
+import type { CatalogProductInput, CatalogProductRecord } from "../../../packages/domain/src/postgres-merchant-catalog.js";
+import type { MerchantCatalogImportService } from "../../../packages/domain/src/merchant-catalog-import-service.js";
+import type { BranchInventorySyncRequest, BranchInventorySyncResult } from "../../../packages/domain/src/branch-inventory-sync.js";
+import type { BranchInventoryRecord } from "../../../packages/domain/src/postgres-branch-inventory-reader.js";
+import type { InventoryReservationFinalizeResult } from "../../../packages/domain/src/postgres-branch-inventory-reservation-lifecycle.js";
+import type { RecordPreparationCheckInput, RecordPreparationCheckResult } from "../../../packages/domain/src/postgres-merchant-order-item-preparation.js";
+
+export interface SallaOAuthFlow {
+  begin(input: { tenantId: string; integrationId: string }): Promise<{ authorizationUrl: string }>;
+  complete(input: { code: string; state: string }): Promise<{ tenantId: string; integrationId: string }>;
+}
 import {
   resolveActorFromBearerToken,
   type ActorResolutionDependencies
@@ -45,15 +57,48 @@ export interface CustomerDeliveryDestinationService {
   update(input: { customerId: string; orderId: string; actorId: string; destination: DeliveryCoordinate }): Promise<UpdateDeliveryDestinationResult>;
 }
 
+export interface MerchantCatalogRepository {
+  createProduct(input: CatalogProductInput): Promise<CatalogProductRecord>;
+  listProducts(tenantId: string, limit?: number): Promise<Array<Record<string, unknown>>>;
+  setProductPublication?(input: { tenantId: string; productId: string; published: boolean }): Promise<{ outcome: "updated"; publishedAt: string | null } | { outcome: "not_found" }>;
+  listPublishedBranchProducts?(input: { merchantId: string; branchId: string; limit: number }): Promise<Array<Record<string, unknown>>>;
+}
+
+export interface CustomerPaymentIntentCheckout { create(input:{customerId:string;orderId:string;idempotencyKey:string}):Promise<import("../../../packages/domain/src/postgres-customer-payment-intent-checkout.js").CustomerPaymentIntentCheckoutResult>; }
+export interface CustomerCartRepository {
+  get(input:{customerId:string}):Promise<import("../../../packages/domain/src/postgres-customer-cart-store.js").CustomerCart|null>;
+  addItem(input:{customerId:string;merchantId:string;branchId:string;productVariantId:string;quantity:number}):Promise<import("../../../packages/domain/src/postgres-customer-cart-store.js").CustomerCart>;
+  removeItem(input:{customerId:string;itemId:string}):Promise<import("../../../packages/domain/src/postgres-customer-cart-store.js").CustomerCart|null>;
+}
 export interface CustomerPaymentAdjustmentActions {
   consent(input: { orderId: string; adjustmentId: string; customerId: string }): Promise<{ outcome: string }>;
   decline(input: { orderId: string; adjustmentId: string; customerId: string }): Promise<{ outcome: string }>;
 }
 export interface PaymentWebhookInboxWriter {
-  record(input: { providerKey: string; providerEventId: string; rawBody: string; adjustmentId?: string }): Promise<
+  record(input: { providerKey: string; providerEventId: string; rawBody: string; adjustmentId?: string; eventType?: string; normalizedStatus?: "succeeded" | "failed" | "ignored" | "unsupported"; providerReference?: string }): Promise<
     | { outcome: "received"; receiptId: string }
     | { outcome: "duplicate"; receiptId: string }
     | { outcome: "event_id_collision" }
+  >;
+}
+export interface PaymentCaptureWebhookHandler {
+  process(input: { providerKey: string; rawBody: string; signatureHeader?: string }): Promise<
+    | { outcome: "recorded"; captureId: string }
+    | { outcome: "duplicate"; captureId: string }
+    | { outcome: "identity_collision" }
+    | { outcome: "invalid_signature_or_event" }
+    | { outcome: "provider_not_configured" }
+    | { outcome: "payment_intent_not_found" }
+  >;
+}
+export interface FulfillmentHandoverInboxWriter {
+  recordAndApply(input: { event: VerifiedFulfillmentHandoverEvent; rawBody: string; nowUtc?: string }): Promise<
+    | { outcome: "applied"; receiptId: string }
+    | { outcome: "duplicate"; receiptId: string }
+    | { outcome: "event_id_collision" }
+    | { outcome: "reservation_not_found" }
+    | { outcome: "reservation_already_finalized"; status: string }
+    | { outcome: "reservation_expired" }
   >;
 }
 export interface AuditEventWriter { append(event: AuditEvent): Promise<"inserted" | "already_exists">; }
@@ -81,14 +126,35 @@ export interface AppOptions {
   /** Durable audit writer. Protected operations are not executed if their audit write fails. */
   auditEvents?: AuditEventWriter;
   orderTransitions?: OrderTransitionWriter;
+  merchantOrderItemPreparation?: { record(input: RecordPreparationCheckInput): Promise<RecordPreparationCheckResult> };
   customerDeliveryDestinations?: CustomerDeliveryDestinationService;
   customerPaymentAdjustments?: CustomerPaymentAdjustmentActions;
+  customerPaymentIntentCheckout?: CustomerPaymentIntentCheckout;
+  customerCart?: CustomerCartRepository;
   integrationHub?: IntegrationHub;
+  merchantCatalog?: MerchantCatalogRepository;
+  /** Resolve merchant tenant ownership from trusted persistence after authorization. */
+  resolveMerchantTenantId?: (merchantId: string) => Promise<string | null>;
+  merchantCatalogImport?: MerchantCatalogImportService;
   paymentWebhookInbox?: PaymentWebhookInboxWriter;
+  paymentCaptureWebhookHandler?: PaymentCaptureWebhookHandler;
   paymentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
+  fulfillmentHandoverInbox?: FulfillmentHandoverInboxWriter;
+  fulfillmentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
+  /** Must bind provider identity to the exact tenant, merchant, and branch before stock is consumed. */
+  fulfillmentWebhookAuthorizationResolver?: (providerKey: string, event: VerifiedFulfillmentHandoverEvent) => Promise<boolean>;
+  sallaOAuthFlow?: SallaOAuthFlow;
+  branchInventorySync?: { sync(input: BranchInventorySyncRequest): Promise<BranchInventorySyncResult> };
+  branchInventoryReader?: { list(input: { tenantId: string; merchantId: string; branchId: string; limit?: number }): Promise<readonly BranchInventoryRecord[]> };
+  inventoryReservationLifecycle?: {
+    release(input: { tenantId: string; merchantId: string; branchId: string; reservationId: string; nowUtc: string; reason: string }): Promise<InventoryReservationFinalizeResult>;
+    expire(input: { tenantId: string; merchantId: string; branchId: string; reservationId: string; nowUtc: string }): Promise<InventoryReservationFinalizeResult>;
+    consume(input: { tenantId: string; merchantId: string; branchId: string; reservationId: string; nowUtc: string; handoverVerified: boolean; handoverReference: string }): Promise<InventoryReservationFinalizeResult>;
+  };
 }
 
 const paymentWebhookRawBodies = new WeakMap<FastifyRequest, string>();
+const fulfillmentWebhookRawBodies = new WeakMap<FastifyRequest, string>();
 
 type AuthorizationResult =
   | { actor: Actor; decision: AuthorizationDecision & { allowed: true } }
@@ -97,7 +163,7 @@ type AuthorizationResult =
 async function authorizeRequest(
   request: FastifyRequest,
   options: AppOptions,
-  authorizationRequest: AuthorizationRequest
+  authorizationRequest: AuthorizationRequest | ((actor: Actor) => AuthorizationRequest)
 ): Promise<AuthorizationResult> {
   let actor: Actor | null = null;
   if (options.actorResolution) {
@@ -119,12 +185,13 @@ async function authorizeRequest(
     };
   }
 
-  const decision = authorize(actor, authorizationRequest);
+  const resolvedAuthorizationRequest = typeof authorizationRequest === "function" ? authorizationRequest(actor) : authorizationRequest;
+  const decision = authorize(actor, resolvedAuthorizationRequest);
   if (options.auditEvents) {
-    const merchantId = authorizationRequest.scope.merchantId;
+    const merchantId = resolvedAuthorizationRequest.scope.merchantId;
     await options.auditEvents.append(createAuditEvent({
       id: randomUUID(),
-      type: decision.allowed ? `authorization.${authorizationRequest.action}.granted` : `authorization.${authorizationRequest.action}.denied`,
+      type: decision.allowed ? `authorization.${resolvedAuthorizationRequest.action}.granted` : `authorization.${resolvedAuthorizationRequest.action}.denied`,
       category: "access_control",
       occurredAt: new Date().toISOString(),
       actor: { id: actor.id, type: actor.role === "merchant_owner" || actor.role === "merchant_admin" ||
@@ -132,10 +199,10 @@ async function authorizeRequest(
         actor.role === "customer" ? "customer" : actor.role === "shopper" ? "shopper" :
         actor.role === "courier" ? "courier" : actor.role === "ai_agent" ? "ai_agent" : "platform_user",
         role: actor.role },
-      action: `${authorizationRequest.resource}:${authorizationRequest.action}`,
+      action: `${resolvedAuthorizationRequest.resource}:${resolvedAuthorizationRequest.action}`,
       outcome: decision.allowed ? "success" : "denied",
-      resourceType: authorizationRequest.resource,
-      ...(authorizationRequest.scope.branchId ? { resourceId: authorizationRequest.scope.branchId, branchId: authorizationRequest.scope.branchId } : {}),
+      resourceType: resolvedAuthorizationRequest.resource,
+      ...(resolvedAuthorizationRequest.scope.branchId ? { resourceId: resolvedAuthorizationRequest.scope.branchId, branchId: resolvedAuthorizationRequest.scope.branchId } : {}),
       ...(merchantId ? { tenantId: merchantId, merchantId } : {}),
       correlationId: request.id,
       source: "api",
@@ -241,20 +308,12 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     if (!/^[a-zA-Z0-9._-]{1,100}$/.test(providerKey)) {
       return reply.code(400).send({ error: "invalid_provider" });
     }
-    if (!options.paymentWebhookInbox || !options.paymentWebhookSecretResolver) {
-      return reply.code(503).send({ error: "webhook_service_unavailable" });
-    }
     const rawBody = paymentWebhookRawBodies.get(request);
     if (rawBody === undefined || !rawBody.length) {
       return reply.code(400).send({ error: "empty_webhook_body" });
     }
     const signatureHeader = request.headers["x-payment-signature"];
     const signature = Array.isArray(signatureHeader) ? signatureHeader[0] : signatureHeader;
-    const secret = await options.paymentWebhookSecretResolver(providerKey);
-    if (!secret) return reply.code(503).send({ error: "webhook_provider_not_configured" });
-    if (!verifyPaymentProviderWebhook({ rawBody, signatureHeader: signature, secret })) {
-      return reply.code(401).send({ error: "invalid_webhook_signature" });
-    }
     const body = request.body;
     if (typeof body !== "object" || body === null ||
         typeof (body as { id?: unknown }).id !== "string" ||
@@ -262,16 +321,55 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
         (body as { id: string }).id.length > 240) {
       return reply.code(400).send({ error: "invalid_webhook_event" });
     }
+    const eventType = (body as { type?: unknown }).type;
+    if (eventType === "payment.captured" || (providerKey === "moyasar" && (eventType === "payment_paid" || eventType === "payment_captured"))) {
+      if (!options.paymentCaptureWebhookHandler) {
+        return reply.code(503).send({ error: "payment_capture_processor_unavailable" });
+      }
+      const result = await options.paymentCaptureWebhookHandler.process({
+        providerKey, rawBody, ...(signature === undefined ? {} : { signatureHeader: signature })
+      });
+      if (result.outcome === "invalid_signature_or_event") {
+        return reply.code(401).send({ error: "invalid_webhook_signature_or_capture_event" });
+      }
+      if (result.outcome === "provider_not_configured") {
+        return reply.code(503).send({ error: "webhook_provider_not_configured" });
+      }
+      if (result.outcome === "payment_intent_not_found") {
+        return reply.code(404).send({ error: "payment_intent_not_found" });
+      }
+      if (result.outcome === "identity_collision") {
+        return reply.code(409).send({ error: "provider_payment_identity_collision" });
+      }
+      return reply.code(result.outcome === "recorded" ? 201 : 200).send(result);
+    }
+    if (!options.paymentWebhookInbox || !options.paymentWebhookSecretResolver) {
+      return reply.code(503).send({ error: "webhook_service_unavailable" });
+    }
+    const secret = await options.paymentWebhookSecretResolver(providerKey);
+    if (!secret) return reply.code(503).send({ error: "webhook_provider_not_configured" });
+    if (!verifyPaymentProviderWebhook({ rawBody, signatureHeader: signature, secret })) {
+      return reply.code(401).send({ error: "invalid_webhook_signature" });
+    }
+    const normalizedStatus = (body as { status?: unknown }).status;
     const adjustmentId = (body as { adjustmentId?: unknown }).adjustmentId;
-    if (adjustmentId !== undefined &&
-        (typeof adjustmentId !== "string" || !/^[a-zA-Z0-9_-]{1,200}$/.test(adjustmentId))) {
+    const providerReference = (body as { providerReference?: unknown }).providerReference;
+    if (typeof eventType !== "string" || !/^[a-zA-Z0-9._:-]{1,160}$/.test(eventType) ||
+        typeof normalizedStatus !== "string" ||
+        !["succeeded", "failed", "ignored", "unsupported"].includes(normalizedStatus) ||
+        (adjustmentId !== undefined && (typeof adjustmentId !== "string" || !/^[a-zA-Z0-9_-]{1,200}$/.test(adjustmentId))) ||
+        (providerReference !== undefined && (typeof providerReference !== "string" || !providerReference.trim() || providerReference.length > 240)) ||
+        (normalizedStatus === "succeeded" && (typeof adjustmentId !== "string" || typeof providerReference !== "string"))) {
       return reply.code(400).send({ error: "invalid_webhook_event" });
     }
     const receipt = await options.paymentWebhookInbox.record({
       providerKey,
       providerEventId: (body as { id: string }).id,
       rawBody,
-      ...(typeof adjustmentId === "string" ? { adjustmentId } : {})
+      eventType,
+      normalizedStatus: normalizedStatus as "succeeded" | "failed" | "ignored" | "unsupported",
+      ...(typeof adjustmentId === "string" ? { adjustmentId } : {}),
+      ...(typeof providerReference === "string" ? { providerReference } : {})
     });
     if (receipt.outcome === "event_id_collision") {
       return reply.code(409).send({ error: "provider_event_id_collision" });
@@ -281,6 +379,71 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       receiptId: receipt.receiptId
     });
   });
+
+  app.post<{ Params: { providerKey: string }; Body: unknown }>(
+    "/api/v1/webhooks/fulfillment/:providerKey",
+    {
+      bodyLimit: 65_536,
+      preParsing: async (request, reply, payload) => {
+        const chunks: Buffer[] = [];
+        let size = 0;
+        for await (const chunk of payload) {
+          const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
+          size += buffer.length;
+          if (size > 65_536) {
+            reply.code(413).send({ error: "webhook_payload_too_large" });
+            return Readable.from([]);
+          }
+          chunks.push(buffer);
+        }
+        const raw = Buffer.concat(chunks);
+        fulfillmentWebhookRawBodies.set(request, raw.toString("utf8"));
+        return Readable.from([raw]);
+      }
+    },
+    async (request, reply) => {
+      if (reply.sent) return reply;
+      const { providerKey } = request.params;
+      if (!/^[a-zA-Z0-9._-]{1,100}$/.test(providerKey)) {
+        return reply.code(400).send({ error: "invalid_provider" });
+      }
+      if (!options.fulfillmentHandoverInbox || !options.fulfillmentWebhookSecretResolver ||
+          !options.fulfillmentWebhookAuthorizationResolver) {
+        return reply.code(503).send({ error: "webhook_service_unavailable" });
+      }
+      const rawBody = fulfillmentWebhookRawBodies.get(request);
+      if (!rawBody) return reply.code(400).send({ error: "empty_webhook_body" });
+      const header = request.headers["x-fulfillment-signature"];
+      const signature = Array.isArray(header) ? header[0] : header;
+      const secret = await options.fulfillmentWebhookSecretResolver(providerKey);
+      if (!secret) return reply.code(503).send({ error: "webhook_provider_not_configured" });
+      const event = verifyAndParseFulfillmentHandoverEvent({
+        providerKey, rawBody, signatureHeader: signature, secret
+      });
+      if (!event) return reply.code(401).send({ error: "invalid_webhook_signature_or_event" });
+      let authorized = false;
+      try {
+        authorized = await options.fulfillmentWebhookAuthorizationResolver(providerKey, event);
+      } catch {
+        authorized = false;
+      }
+      if (!authorized) return reply.code(403).send({ error: "fulfillment_provider_scope_not_authorized" });
+      const result = await options.fulfillmentHandoverInbox.recordAndApply({
+        event, rawBody, nowUtc: new Date().toISOString()
+      });
+      if (result.outcome === "event_id_collision") {
+        return reply.code(409).send({ error: "provider_event_id_collision" });
+      }
+      if (result.outcome === "reservation_not_found") {
+        return reply.code(404).send({ error: "reservation_not_found" });
+      }
+      if (result.outcome === "reservation_expired" ||
+          result.outcome === "reservation_already_finalized") {
+        return reply.code(409).send(result);
+      }
+      return reply.code(result.outcome === "applied" ? 200 : 202).send(result);
+    }
+  );
 
   // Authentication and authorization always precede adapter availability checks and data access.
   app.get<{
@@ -409,6 +572,42 @@ app.patch<{
 
 
   app.post<{
+    Params: { merchantId: string; branchId: string; orderId: string; suborderId: string; itemId: string };
+    Body: { scannedSku?: string; verifiedQuantity: number; outcome: "verified" | "shortage" | "damaged" | "sku_mismatch"; note?: string };
+  }>("/api/v1/merchants/:merchantId/branches/:branchId/orders/:orderId/suborders/:suborderId/items/:itemId/preparation-checks", async (request, reply) => {
+    const { merchantId, branchId, orderId, suborderId, itemId } = request.params;
+    const access = await authorizeRequest(request, options, {
+      resource: "merchant.order", action: "update", scope: { merchantId, branchId, orderId }
+    });
+    if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
+    if (!["merchant_employee", "branch_manager", "merchant_admin", "merchant_owner"].includes(access.actor.role)) {
+      return reply.code(403).send({ error: "preparation_role_required" });
+    }
+    if (!options.merchantOrderItemPreparation) return reply.code(503).send({ error: "preparation_check_unavailable" });
+    const body = request.body;
+    if (!body || !Number.isSafeInteger(body.verifiedQuantity) || body.verifiedQuantity < 0 ||
+        !["verified", "shortage", "damaged", "sku_mismatch"].includes(body.outcome) ||
+        (body.scannedSku !== undefined && (typeof body.scannedSku !== "string" || body.scannedSku.length > 120)) ||
+        (body.note !== undefined && (typeof body.note !== "string" || body.note.length > 1000))) {
+      return reply.code(400).send({ error: "invalid_preparation_check" });
+    }
+    const tenantId = await options.resolveMerchantTenantId?.(merchantId);
+    if (!tenantId) return reply.code(404).send({ error: "merchant_not_found" });
+    const input: RecordPreparationCheckInput = {
+      id: randomUUID(), tenantId, orderId, suborderId, orderItemId: itemId,
+      merchantId, branchId, actorId: access.actor.id,
+      ...(body.scannedSku === undefined ? {} : { scannedSku: body.scannedSku }),
+      verifiedQuantity: body.verifiedQuantity, outcome: body.outcome,
+      ...(body.note === undefined ? {} : { note: body.note })
+    };
+    const result = await options.merchantOrderItemPreparation.record(input);
+    if (result.outcome === "not_found") return reply.code(404).send({ error: "order_item_not_found" });
+    if (result.outcome === "conflict") return reply.code(409).send({ error: "preparation_check_conflict" });
+    if (result.outcome === "invalid_check") return reply.code(422).send({ error: result.reason });
+    return reply.code(result.outcome === "recorded" ? 201 : 200).send(result);
+  });
+
+  app.post<{
     Params: { merchantId: string; branchId: string; orderId: string; suborderId: string };
     Body: { nextStatus: OrderStatus; expectedVersion: number; reason?: string };
   }>("/api/v1/merchants/:merchantId/branches/:branchId/orders/:orderId/suborders/:suborderId/transitions", async (request, reply) => {
@@ -423,6 +622,19 @@ app.patch<{
         !Number.isSafeInteger(body.expectedVersion) || body.expectedVersion < 1 ||
         (body.reason !== undefined && (typeof body.reason !== "string" || body.reason.trim().length > 500))) {
       return reply.code(400).send({ error: "invalid_request" });
+    }
+    // Store employees may only operate the preparation lane for their assigned branch.
+    // They cannot cancel, refund, dispatch, or change delivery/custody states.
+    if (result.actor.role === "merchant_employee" &&
+        !["preparing", "ready_for_pickup", "stock_unavailable"].includes(body.nextStatus)) {
+      return reply.code(403).send({ error: "employee_preparation_transition_only" });
+    }
+    // Resolve the merchant's tenant from trusted persistence; merchantId is not tenantId.
+    const tenantId = await options.resolveMerchantTenantId?.(merchantId);
+    if (!tenantId) return reply.code(404).send({ error: "merchant_not_found" });
+    // Checkout validation is customer/platform-owned; merchant actors cannot make an order payable.
+    if (body.nextStatus === "awaiting_payment") {
+      return reply.code(403).send({ error: "customer_checkout_transition_only" });
     }
     const context: OrderTransitionContext = {
       actorId: result.actor.id, actorRole: result.actor.role,
@@ -440,12 +652,12 @@ app.patch<{
       occurredAt: context.occurredAt, actor: { id: result.actor.id, type: actorType, role: result.actor.role },
       action: "order.suborder.transition", outcome: "success",
       resourceType: "merchant_suborder", resourceId: suborderId,
-      tenantId: merchantId, merchantId, branchId, correlationId: request.id,
+      tenantId, merchantId, branchId, correlationId: request.id,
       source: "api", severity: "info",
       metadata: { orderId, nextStatus: body.nextStatus, expectedVersion: body.expectedVersion }
     });
     const persisted = await options.orderTransitions.transitionSuborder({
-      tenantId: merchantId, orderId, suborderId, nextStatus: body.nextStatus, context, auditEvent
+      tenantId, orderId, suborderId, nextStatus: body.nextStatus, context, auditEvent
     });
     if (persisted.outcome === "not_found") return reply.code(404).send({ error: "not_found" });
     if (persisted.outcome === "conflict") return reply.code(409).send({ error: "version_conflict" });
@@ -454,6 +666,59 @@ app.patch<{
       suborder: { id: suborderId, status: persisted.transition.order.status, version: persisted.transition.order.version },
       previousStatus: persisted.transition.previousStatus, parentStatus: persisted.parentStatus
     });
+  });
+
+  app.get("/api/v1/customer/cart", async (request, reply) => {
+    const auth = await authorizeRequest(request, options, actor => ({
+      resource: "customer.cart", action: "read", scope: { customerId: actor.id }
+    }));
+    if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
+    if (auth.actor.role !== "customer") return reply.code(403).send({ error: "customer_only" });
+    if (!options.customerCart) return reply.code(503).send({ error: "customer_cart_unavailable" });
+    const cart = await options.customerCart.get({ customerId: auth.actor.id });
+    return reply.code(200).send({ cart });
+  });
+
+  app.post<{ Body: { merchantId: string; branchId: string; productVariantId: string; quantity: number } }>(
+    "/api/v1/customer/cart/items", async (request, reply) => {
+      const auth = await authorizeRequest(request, options, actor => ({
+        resource: "customer.cart", action: "create", scope: { customerId: actor.id }
+      }));
+      if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
+      if (auth.actor.role !== "customer") return reply.code(403).send({ error: "customer_only" });
+      if (!options.customerCart) return reply.code(503).send({ error: "customer_cart_unavailable" });
+      const body = request.body;
+      if (!body || typeof body.merchantId !== "string" || !body.merchantId.trim() ||
+          typeof body.branchId !== "string" || !body.branchId.trim() ||
+          typeof body.productVariantId !== "string" || !body.productVariantId.trim() ||
+          !Number.isSafeInteger(body.quantity) || body.quantity < 1 || body.quantity > 99) {
+        return reply.code(400).send({ error: "invalid_cart_item" });
+      }
+      try {
+        const cart = await options.customerCart.addItem({
+          customerId: auth.actor.id, merchantId: body.merchantId, branchId: body.branchId,
+          productVariantId: body.productVariantId, quantity: body.quantity
+        });
+        return reply.code(200).send({ cart });
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "";
+        if (code === "customer_cart_variant_unavailable") return reply.code(409).send({ error: "cart_variant_unavailable" });
+        if (code === "customer_cart_currency_mismatch") return reply.code(409).send({ error: "cart_currency_mismatch" });
+        if (code === "customer_cart_quantity_limit") return reply.code(409).send({ error: "cart_quantity_limit" });
+        throw error;
+      }
+    }
+  );
+
+  app.delete<{ Params: { itemId: string } }>("/api/v1/customer/cart/items/:itemId", async (request, reply) => {
+    const auth = await authorizeRequest(request, options, actor => ({
+      resource: "customer.cart", action: "delete", scope: { customerId: actor.id }
+    }));
+    if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
+    if (auth.actor.role !== "customer") return reply.code(403).send({ error: "customer_only" });
+    if (!options.customerCart) return reply.code(503).send({ error: "customer_cart_unavailable" });
+    const cart = await options.customerCart.removeItem({ customerId: auth.actor.id, itemId: request.params.itemId });
+    return reply.code(200).send({ cart });
   });
 
   app.patch<{
@@ -501,6 +766,24 @@ app.patch<{
     });
   });
 
+  app.post<{Params:{orderId:string}}>("/api/v1/customer/orders/:orderId/payment-intents",async(request,reply)=>{
+    const auth=await authorizeRequest(request,options,{resource:"customer.order",action:"update",scope:{orderId:request.params.orderId}});
+    if(!auth.actor)return sendAuthorizationFailure(reply,auth.statusCode,auth.decision.reason);
+    if(auth.actor.role!=="customer")return reply.code(403).send({error:"customer_only"});
+    if(!options.customerPaymentIntentCheckout)return reply.code(503).send({error:"payment_checkout_unavailable"});
+    const key=request.headers["idempotency-key"]; if(typeof key!=="string")return reply.code(400).send({error:"idempotency_key_required"});
+    const result=await options.customerPaymentIntentCheckout.create({customerId:auth.actor.id,orderId:request.params.orderId,idempotencyKey:key});
+    if(result.outcome==="not_found")return reply.code(404).send({error:"order_not_found"});
+    if(result.outcome==="order_not_payable")return reply.code(409).send({error:"order_not_payable"});
+    if(result.outcome==="attempt_exists")return reply.code(409).send({error:"payment_attempt_exists"});
+    if(result.outcome==="idempotency_conflict")return reply.code(409).send({error:"idempotency_conflict"});
+    if(result.outcome==="outcome_unknown")return reply.code(202).send({outcome:"outcome_unknown"});
+    if(result.outcome==="provider_rejected")return reply.code(502).send({error:"payment_provider_rejected"});
+    if(result.outcome==="persistence_conflict")return reply.code(503).send({error:"payment_intent_persistence_conflict"});
+    if(result.outcome==="recovery_unavailable")return reply.code(503).send({error:"payment_intent_recovery_unavailable"});
+    return reply.code(201).send(result);
+  });
+
   app.post<{
     Params: { orderId: string; adjustmentId: string };
   }>("/api/v1/customer/orders/:orderId/payment-adjustments/:adjustmentId/consent", async (request, reply) => {
@@ -539,6 +822,55 @@ app.patch<{
     return reply.code(200).send({ outcome: "declined", orderUnchanged: true });
   });
 
+
+  app.post<{
+    Params: { merchantId: string; integrationId: string };
+  }>("/api/v1/merchants/:merchantId/integrations/:integrationId/salla/oauth/start", async (request, reply) => {
+    const { merchantId, integrationId } = request.params;
+    const result = await authorizeRequest(request, options, {
+      resource: "merchant.integration", action: "update", scope: { merchantId }
+    });
+    if (!result.actor) return sendAuthorizationFailure(reply, result.statusCode, result.decision.reason);
+    if (!["merchant_owner", "merchant_admin"].includes(result.actor.role)) {
+      return reply.code(403).send({ error: "merchant_admin_only" });
+    }
+    if (!options.sallaOAuthFlow) return reply.code(503).send({ error: "salla_oauth_not_configured" });
+    if (!/^[a-zA-Z0-9_-]{2,80}$/.test(integrationId)) return reply.code(400).send({ error: "invalid_integration_id" });
+    const integration = await options.integrationHub?.get(merchantId, integrationId);
+    if (!integration) return reply.code(404).send({ error: "integration_not_found" });
+    if (integration.providerKey !== "salla" || integration.family !== "commerce") {
+      return reply.code(409).send({ error: "integration_provider_mismatch" });
+    }
+    if (integration.status !== "pending") {
+      return reply.code(409).send({ error: "integration_must_be_pending_before_authorization" });
+    }
+    const started = await options.sallaOAuthFlow.begin({ tenantId: merchantId, integrationId });
+    let url: URL;
+    try { url = new URL(started.authorizationUrl); } catch { return reply.code(502).send({ error: "invalid_provider_authorization_url" }); }
+    if (url.protocol !== "https:" || url.hostname !== "accounts.salla.sa" || url.username || url.password) {
+      return reply.code(502).send({ error: "invalid_provider_authorization_url" });
+    }
+    return reply.code(200).send({ authorizationUrl: url.toString() });
+  });
+
+  // Public callback: the injected flow service must consume and validate one-time state before storing tokens.
+  app.get<{
+    Querystring: { code?: string; state?: string; error?: string };
+  }>("/api/v1/integrations/salla/oauth/callback", async (request, reply) => {
+    if (!options.sallaOAuthFlow) return reply.code(503).send({ error: "salla_oauth_not_configured" });
+    const { code, state, error } = request.query;
+    if (error) return reply.code(400).send({ error: "salla_authorization_denied" });
+    if (typeof code !== "string" || code.length < 1 || code.length > 4096 ||
+        typeof state !== "string" || !/^[A-Za-z0-9_-]{32,256}$/.test(state)) {
+      return reply.code(400).send({ error: "invalid_oauth_callback" });
+    }
+    try {
+      const completed = await options.sallaOAuthFlow.complete({ code, state });
+      return reply.code(200).send({ outcome: "authorized", integrationId: completed.integrationId });
+    } catch {
+      return reply.code(400).send({ error: "oauth_callback_rejected" });
+    }
+  });
 
   app.get<{
     Params: { merchantId: string };
@@ -705,6 +1037,300 @@ app.patch<{
         createdAtUtc: now, updatedAtUtc: now
       }
     });
+  });
+
+
+  app.post<{
+    Params: { merchantId: string; integrationId: string };
+    Body: { sourceUrl?: unknown; cursor?: unknown; updatedSinceUtc?: unknown };
+  }>("/api/v1/merchants/:merchantId/integrations/:integrationId/catalog/import", async (request, reply) => {
+    const { merchantId, integrationId } = request.params;
+    const result = await authorizeRequest(request, options, {
+      resource: "merchant.integration", action: "create", scope: { merchantId }
+    });
+    if (!result.actor) return sendAuthorizationFailure(reply, result.statusCode, result.decision.reason);
+    if (!["merchant_owner", "merchant_admin"].includes(result.actor.role)) {
+      return reply.code(403).send({ error: "merchant_admin_only" });
+    }
+    if (!options.merchantCatalogImport) {
+      return reply.code(503).send({ error: "catalog_import_provider_not_configured" });
+    }
+    const body = request.body;
+    if (!body || typeof body.sourceUrl !== "string" || body.sourceUrl.length > 2000 ||
+        (body.cursor !== undefined && (typeof body.cursor !== "string" || body.cursor.length > 2000)) ||
+        (body.updatedSinceUtc !== undefined && (typeof body.updatedSinceUtc !== "string" ||
+          !Number.isFinite(Date.parse(body.updatedSinceUtc)) || !body.updatedSinceUtc.endsWith("Z")))) {
+      return reply.code(400).send({ error: "invalid_catalog_import_request" });
+    }
+    try {
+      const summary = await options.merchantCatalogImport.import({
+        tenantId: merchantId, integrationId, sourceUrl: body.sourceUrl,
+        ...(body.cursor === undefined ? {} : { cursor: body.cursor as string }),
+        ...(body.updatedSinceUtc === undefined ? {} : { updatedSinceUtc: body.updatedSinceUtc as string })
+      });
+      return reply.code(200).send({ import: summary });
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "";
+      if (code === "CATALOG_INTEGRATION_NOT_FOUND") return reply.code(404).send({ error: "integration_not_found" });
+      if (code === "CATALOG_INTEGRATION_NOT_CONNECTED") return reply.code(409).send({ error: "integration_not_connected" });
+      if (code === "CATALOG_PROVIDER_NOT_CONFIGURED") return reply.code(503).send({ error: "catalog_provider_not_configured" });
+      if (code === "CATALOG_INTEGRATION_FAMILY_UNSUPPORTED") return reply.code(409).send({ error: "integration_family_unsupported" });
+      if (code === "CATALOG_CAPABILITY_NOT_GRANTED") return reply.code(409).send({ error: "catalog_read_capability_not_granted" });
+      if (code === "SALLA_ACCESS_TOKEN_UNAVAILABLE") return reply.code(503).send({ error: "provider_credentials_unavailable" });
+      if (code.startsWith("SALLA_")) return reply.code(502).send({ error: "catalog_provider_request_failed" });
+      if (["UNTRUSTED_CATALOG_SOURCE", "INVALID_CATALOG_IMPORT_REQUEST", "INVALID_OR_REPEATED_CATALOG_CURSOR"].includes(code)) {
+        return reply.code(400).send({ error: "invalid_or_untrusted_catalog_source" });
+      }
+      throw error;
+    }
+  });
+
+  app.get<{
+    Params: { merchantId: string; branchId: string };
+    Querystring: { limit?: string };
+  }>("/api/v1/catalog/merchants/:merchantId/branches/:branchId/products", async (request, reply) => {
+    const { merchantId, branchId } = request.params;
+    if (!/^[a-zA-Z0-9._:-]{1,160}$/.test(merchantId) || !/^[a-zA-Z0-9._:-]{1,160}$/.test(branchId)) {
+      return reply.code(400).send({ error: "invalid_catalog_scope" });
+    }
+    const rawLimit = request.query.limit;
+    const limit = rawLimit === undefined ? 50 : Number(rawLimit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) return reply.code(400).send({ error: "invalid_limit" });
+    if (!options.merchantCatalog?.listPublishedBranchProducts) return reply.code(503).send({ error: "customer_catalog_unavailable" });
+    const products = await options.merchantCatalog.listPublishedBranchProducts({ merchantId, branchId, limit });
+    reply.header("cache-control", "no-store");
+    return reply.code(200).send({ products });
+  });
+
+  app.get<{
+    Params: { merchantId: string };
+    Querystring: { limit?: string };
+  }>("/api/v1/merchants/:merchantId/catalog/products", async (request, reply) => {
+    const { merchantId } = request.params;
+    const result = await authorizeRequest(request, options, {
+      resource: "merchant.integration", action: "read", scope: { merchantId }
+    });
+    if (!result.actor) return sendAuthorizationFailure(reply, result.statusCode, result.decision.reason);
+    if (!["merchant_owner", "merchant_admin"].includes(result.actor.role)) {
+      return reply.code(403).send({ error: "merchant_admin_only" });
+    }
+    if (!options.merchantCatalog) return reply.code(503).send({ error: "catalog_service_unavailable" });
+    const rawLimit = request.query.limit;
+    const limit = rawLimit === undefined ? 50 : Number(rawLimit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+      return reply.code(400).send({ error: "invalid_limit" });
+    }
+    const tenantId = await options.resolveMerchantTenantId?.(merchantId);
+    if (!tenantId) return reply.code(404).send({ error: "merchant_not_found" });
+    const products = await options.merchantCatalog.listProducts(tenantId, limit);
+    return reply.code(200).send({ products });
+  });
+
+  app.post<{
+    Params: { merchantId: string };
+    Body: {
+      integrationId: string; providerKey: string; externalProductId: string;
+      canonicalUrl: string; title: string; description?: string; brand?: string;
+      currency?: string; priceMinor?: number; imageUrls?: string[];
+      sourceType: CatalogProductInput["sourceType"]; sourceCapturedAt: string;
+      sourceContentSha256: string; sizeChartUrl?: string;
+      variants?: CatalogProductInput["variants"];
+    };
+  }>("/api/v1/merchants/:merchantId/catalog/products", async (request, reply) => {
+    const { merchantId } = request.params;
+    const result = await authorizeRequest(request, options, {
+      resource: "merchant.integration", action: "create", scope: { merchantId }
+    });
+    if (!result.actor) return sendAuthorizationFailure(reply, result.statusCode, result.decision.reason);
+    if (!["merchant_owner", "merchant_admin"].includes(result.actor.role)) {
+      return reply.code(403).send({ error: "merchant_admin_only" });
+    }
+    if (!options.merchantCatalog) return reply.code(503).send({ error: "catalog_service_unavailable" });
+    const tenantId = await options.resolveMerchantTenantId?.(merchantId);
+    if (!tenantId) return reply.code(404).send({ error: "merchant_not_found" });
+    const body = request.body;
+    const validText = (value: unknown, max: number) =>
+      typeof value === "string" && value.trim().length > 0 && value.length <= max;
+    const validMoney = (value: unknown) =>
+      value === undefined || (Number.isSafeInteger(value) && (value as number) >= 0);
+    const variants = body?.variants ?? [];
+    const validVariants = Array.isArray(variants) && variants.length <= 500 &&
+      variants.every(variant => variant && validText(variant.externalVariantId, 200) &&
+        (variant.sku === undefined || validText(variant.sku, 200)) &&
+        (variant.barcode === undefined || validText(variant.barcode, 100)) &&
+        (variant.sizeLabel === undefined || validText(variant.sizeLabel, 100)) &&
+        (variant.colorLabel === undefined || validText(variant.colorLabel, 100)) &&
+        (variant.currency === undefined || /^[A-Z]{3}$/.test(variant.currency)) &&
+        validMoney(variant.priceMinor) &&
+        (variant.availability === undefined || ["in_stock","out_of_stock","preorder","unknown"].includes(variant.availability)));
+    const capturedAt = typeof body?.sourceCapturedAt === "string" ? Date.parse(body.sourceCapturedAt) : NaN;
+    if (!body || !validText(body.integrationId, 100) ||
+        !/^[a-z0-9][a-z0-9._-]{1,79}$/.test(body.providerKey) ||
+        !validText(body.externalProductId, 200) ||
+        !validText(body.canonicalUrl, 2000) || !body.canonicalUrl.startsWith("https://") ||
+        !validText(body.title, 500) ||
+        (body.description !== undefined && (typeof body.description !== "string" || body.description.length > 10000)) ||
+        (body.brand !== undefined && !validText(body.brand, 200)) ||
+        (body.currency !== undefined && !/^[A-Z]{3}$/.test(body.currency)) ||
+        !validMoney(body.priceMinor) ||
+        !Array.isArray(body.imageUrls ?? []) || (body.imageUrls ?? []).length > 30 ||
+        (body.imageUrls ?? []).some(url => !validText(url, 2000) || !url.startsWith("https://")) ||
+        !["official_api","merchant_feed","structured_data","html_page","manual"].includes(body.sourceType) ||
+        !Number.isFinite(capturedAt) ||
+        !/^[a-f0-9]{64}$/.test(body.sourceContentSha256) ||
+        (body.sizeChartUrl !== undefined && (!validText(body.sizeChartUrl, 2000) || !body.sizeChartUrl.startsWith("https://"))) ||
+        !validVariants) {
+      return reply.code(400).send({ error: "invalid_catalog_product" });
+    }
+    try {
+      const product = await options.merchantCatalog.createProduct({
+        tenantId, integrationId: body.integrationId,
+        providerKey: body.providerKey, externalProductId: body.externalProductId,
+        canonicalUrl: body.canonicalUrl, title: body.title.trim(),
+        ...(body.description === undefined ? {} : { description: body.description }),
+        ...(body.brand === undefined ? {} : { brand: body.brand.trim() }),
+        ...(body.currency === undefined ? {} : { currency: body.currency }),
+        ...(body.priceMinor === undefined ? {} : { priceMinor: body.priceMinor }),
+        imageUrls: body.imageUrls ?? [], sourceType: body.sourceType,
+        sourceCapturedAt: new Date(capturedAt).toISOString(),
+        sourceContentSha256: body.sourceContentSha256,
+        ...(body.sizeChartUrl === undefined ? {} : { sizeChartUrl: body.sizeChartUrl }),
+        variants
+      });
+      return reply.code(201).send({ product });
+    } catch (error) {
+      if (error instanceof Error && error.message === "CATALOG_INTEGRATION_NOT_CONNECTED") {
+        return reply.code(409).send({ error: "catalog_integration_not_connected" });
+      }
+      if (error instanceof Error && error.message === "CATALOG_PRODUCT_ALREADY_EXISTS") {
+        return reply.code(409).send({ error: "catalog_product_already_exists" });
+      }
+      throw error;
+    }
+  });
+
+
+  app.get<{
+    Params: { merchantId: string; branchId: string };
+    Querystring: { limit?: string };
+  }>("/api/v1/merchants/:merchantId/branches/:branchId/inventory", async (request, reply) => {
+    const { merchantId, branchId } = request.params;
+    const access = await authorizeRequest(request, options, {
+      resource: "merchant.branch.inventory", action: "read", scope: { merchantId, branchId }
+    });
+    if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
+    const rawLimit = request.query.limit;
+    const limit = rawLimit === undefined ? 50 : Number(rawLimit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+      return reply.code(400).send({ error: "invalid_limit" });
+    }
+    if (!options.branchInventoryReader) return reply.code(503).send({ error: "inventory_read_unavailable" });
+    const tenantId = await options.resolveMerchantTenantId?.(merchantId);
+    if (!tenantId) return reply.code(404).send({ error: "merchant_not_found" });
+    const inventory = await options.branchInventoryReader.list({ tenantId, merchantId, branchId, limit });
+    return reply.code(200).send({ inventory });
+  });
+
+  app.put<{ Params: { merchantId: string; productId: string }; Body: { published: boolean } }>(
+    "/api/v1/merchants/:merchantId/catalog/products/:productId/publication", async (request, reply) => {
+      const { merchantId, productId } = request.params;
+      const access = await authorizeRequest(request, options, {
+        resource: "merchant.integration", action: "update", scope: { merchantId }
+      });
+      if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
+      if (!["merchant_owner", "merchant_admin"].includes(access.actor.role)) return reply.code(403).send({ error: "merchant_admin_only" });
+      if (!options.merchantCatalog?.setProductPublication) return reply.code(503).send({ error: "catalog_publication_unavailable" });
+      if (!request.body || typeof request.body.published !== "boolean") return reply.code(400).send({ error: "invalid_publication_request" });
+      const tenantId = await options.resolveMerchantTenantId?.(merchantId);
+      if (!tenantId) return reply.code(404).send({ error: "merchant_not_found" });
+      const result = await options.merchantCatalog.setProductPublication({ tenantId, productId, published: request.body.published });
+      if (result.outcome === "not_found") return reply.code(404).send({ error: "catalog_product_not_found" });
+      if (options.auditEvents) await options.auditEvents.append(createAuditEvent({
+        id: randomUUID(), type: "catalog.product.publication_changed", category: "catalog_governance",
+        occurredAt: new Date().toISOString(), actor: { id: access.actor.id, type: "merchant_user", role: access.actor.role },
+        action: request.body.published ? "catalog.product.publish" : "catalog.product.unpublish",
+        outcome: "success", resourceType: "commerce_catalog_product", resourceId: productId,
+        tenantId, merchantId, correlationId: request.id, source: "api", severity: "info",
+        metadata: { published: request.body.published, publishedAt: result.publishedAt }
+      }));
+      return reply.code(200).send({ productId, published: request.body.published, publishedAt: result.publishedAt });
+    });
+
+  app.post<{
+    Params: { merchantId: string; branchId: string };
+    Body: { source: "pos" | "erp" | "ecommerce" | "csv" | "merchant_portal" | "manual"; capturedAtUtc: string;
+      lines: Array<{ productVariantId: string; sku: string; availableQuantity: number }> };
+  }>("/api/v1/merchants/:merchantId/branches/:branchId/inventory/sync", async (request, reply) => {
+    const { merchantId, branchId } = request.params;
+    const access = await authorizeRequest(request, options, {
+      resource: "merchant.branch.inventory", action: "update", scope: { merchantId, branchId }
+    });
+    if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
+    if (!options.branchInventorySync) return reply.code(503).send({ error: "inventory_sync_unavailable" });
+    const tenantId = await options.resolveMerchantTenantId?.(merchantId);
+    if (!tenantId) return reply.code(404).send({ error: "merchant_not_found" });
+    const body = request.body;
+    if (!body || !["pos","erp","ecommerce","csv","merchant_portal","manual"].includes(body.source) ||
+        typeof body.capturedAtUtc !== "string" || !Array.isArray(body.lines) ||
+        body.lines.length < 1 || body.lines.length > 5000) {
+      return reply.code(400).send({ error: "invalid_inventory_snapshot" });
+    }
+    try {
+      const result = await options.branchInventorySync.sync({
+        tenantId, merchantId, branchId, source: body.source,
+        capturedAtUtc: body.capturedAtUtc, lines: body.lines
+      });
+      return reply.code(200).send({ result });
+    } catch (error) {
+      if (error instanceof Error && (error.message === "INVALID_BRANCH_INVENTORY_SNAPSHOT" ||
+          error.message === "INVALID_BRANCH_INVENTORY_LINE" ||
+          error.message === "FUTURE_BRANCH_INVENTORY_SNAPSHOT")) {
+        return reply.code(400).send({ error: "invalid_inventory_snapshot" });
+      }
+      if (error instanceof Error && error.message === "BRANCH_INVENTORY_SCOPE_NOT_FOUND") {
+        return reply.code(404).send({ error: "branch_not_found" });
+      }
+      if (error instanceof Error && error.message === "BRANCH_INVENTORY_RESERVED_STOCK_CONFLICT") {
+        return reply.code(409).send({ error: "snapshot_conflicts_with_reserved_stock" });
+      }
+      throw error;
+    }
+  });
+
+
+  app.post<{
+    Params: { merchantId: string; branchId: string; reservationId: string };
+    Body: { action: "release" | "expire" | "consume"; reason?: string; handoverVerified?: boolean; handoverReference?: string };
+  }>("/api/v1/merchants/:merchantId/branches/:branchId/inventory/reservations/:reservationId/finalize", async (request, reply) => {
+    const { merchantId, branchId, reservationId } = request.params;
+    const access = await authorizeRequest(request, options, {
+      resource: "merchant.branch.inventory_reservation", action: "execute", scope: { merchantId, branchId }
+    });
+    if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
+    const lifecycle = options.inventoryReservationLifecycle;
+    if (!lifecycle) return reply.code(503).send({ error: "inventory_reservation_lifecycle_unavailable" });
+    const tenantId = await options.resolveMerchantTenantId?.(merchantId);
+    if (!tenantId) return reply.code(404).send({ error: "merchant_not_found" });
+    const body = request.body;
+    if (!body || !["release","expire","consume"].includes(body.action)) {
+      return reply.code(400).send({ error: "invalid_reservation_action" });
+    }
+    // A client-supplied boolean/reference is not trusted proof of physical handover.
+    // Consumption must be initiated by a verified fulfillment event, never this public route.
+    if (body.action === "consume") {
+      return reply.code(409).send({ error: "verified_fulfillment_event_required" });
+    }
+    try {
+      const nowUtc = new Date().toISOString();
+      const result = body.action === "release"
+        ? await lifecycle.release({ tenantId, merchantId, branchId, reservationId, nowUtc, reason: body.reason ?? "" })
+        : await lifecycle.expire({ tenantId, merchantId, branchId, reservationId, nowUtc });
+      return reply.code(result.outcome === "not_found" ? 404 : 200).send({ result });
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "";
+      if (code.startsWith("inventory_reservation_")) return reply.code(409).send({ error: code });
+      throw error;
+    }
   });
 
   return app;
