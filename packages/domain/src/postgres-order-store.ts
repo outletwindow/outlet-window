@@ -167,10 +167,6 @@ export class PostgresOrderStore {
       "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
       [input.tenantId + ":" + input.customerId + ":" + input.idempotencyKey]
     );
-      await client.query(
-        "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
-        [input.tenantId + ":" + input.customerId + ":" + input.idempotencyKey]
-      );
       const existing = await client.query<{
         id: string; currency: string; total_minor: string | number; metadata: Record<string, unknown>;
       }>(
