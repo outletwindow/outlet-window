@@ -207,16 +207,15 @@ export class PostgresPlatformCheckoutReadinessStore {
         deliveryTotalMinor += Number(ledger.total_minor);
         if (!Number.isSafeInteger(deliveryTotalMinor)) return { outcome: "invalid_snapshot" };
       }
-      const firstSuborder = suborders[0];
-      const firstLedgerQuote = firstSuborder ? quoteBySuborder.get(firstSuborder.id) : undefined;
-      const firstSnapshot = firstLedgerQuote?.quote_snapshot;
-      if (!firstSuborder || !firstLedgerQuote || !validObject(firstSnapshot) ||
-          parent.delivery_branch_id !== firstSuborder.branch_id ||
-          quote.quoteId !== firstLedgerQuote.id || quote.ruleId !== firstSnapshot.ruleId ||
-          quote.ruleVersion !== firstSnapshot.ruleVersion ||
-          quote.totalMinor !== firstSnapshot.totalMinor ||
-          quote.createdAtUtc !== firstSnapshot.createdAtUtc ||
-          quote.expiresAtUtc !== firstSnapshot.expiresAtUtc) {
+      const parentQuoteLedger = deliveryQuotes.find(row => row.id === quote.quoteId);
+      const parentQuoteSnapshot = parentQuoteLedger?.quote_snapshot;
+      if (!parentQuoteLedger || !validObject(parentQuoteSnapshot) ||
+          parent.delivery_branch_id !== parentQuoteLedger.branch_id ||
+          quote.ruleId !== parentQuoteSnapshot.ruleId ||
+          quote.ruleVersion !== parentQuoteSnapshot.ruleVersion ||
+          quote.totalMinor !== parentQuoteSnapshot.totalMinor ||
+          quote.createdAtUtc !== parentQuoteSnapshot.createdAtUtc ||
+          quote.expiresAtUtc !== parentQuoteSnapshot.expiresAtUtc) {
         return { outcome: "invalid_snapshot" };
       }
 
