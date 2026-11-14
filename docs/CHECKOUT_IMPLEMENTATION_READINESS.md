@@ -421,3 +421,15 @@ checkout API route exists.
 - Branch inventory sync accepts complete branch snapshots. Variants omitted from a newer complete snapshot are now set to `available_quantity = reserved_quantity`, making free stock zero while preserving existing reservations. A timestamp guard prevents an older snapshot from clearing newer inventory.
 - Added tests for the unconfigured merchant reservation fail-closed path, complete-snapshot omission handling, and tenant/branch scope rejection.
 - No live POS/ERP provider is currently configured or claimed as verified. Do not enable automatic order confirmation until a provider's hard-reservation and compensation behavior is implemented and integration-tested.
+
+
+## Branch inventory snapshot and discrepancy safety (migrations 0041–0042)
+
+- Complete snapshots are serialized by locking the merchant branch row and comparing a branch-wide watermark. An older or equal snapshot is rejected before any variant upsert or omission handling.
+- A variant omitted from a newer complete snapshot is made unavailable for sale by setting on-hand quantity equal to the active platform reservation quantity; existing reservations are preserved.
+- If a source snapshot reports fewer units than the platform has reserved, the sync transaction clamps on-hand quantity to reserved quantity (zero free stock), lowers availability confidence to `low`, and persists an idempotent open reconciliation alert. The old sellable quantity is never retained as if the source count had been accepted.
+- Open discrepancy alerts are readable through the tenant-, merchant-, branch-, permission-scoped endpoint:
+  `GET /api/v1/merchants/:merchantId/branches/:branchId/inventory/reconciliation-alerts`.
+- Migration 0041 adds the branch snapshot watermark; migration 0042 adds durable discrepancy alerts. Both are registered in the migration runner and API/paid-checkout worker readiness gates, with PostgreSQL integration tests in CI.
+- This is still a reconciliation safeguard, not proof of an external POS/ERP hard reservation. The paid-checkout worker remains fail-closed until a provider adapter can guarantee atomic exact-variant holds.
+- The latest code changes are awaiting a complete CI run. Do not treat these changes as verified until the workflow for the current branch head completes successfully.
