@@ -5,9 +5,11 @@ BEGIN
   IF jsonb_typeof(NEW.reservation_references) = 'array' AND EXISTS (
     SELECT 1
     FROM jsonb_array_elements(NEW.reservation_references) AS evidence(value)
-    WHERE jsonb_typeof(evidence.value) <> 'object'
-       OR jsonb_typeof(evidence.value->'suborderId') <> 'string'
-       OR length(trim(evidence.value->>'suborderId')) = 0
+    WHERE jsonb_typeof(evidence.value) IS DISTINCT FROM 'object'
+       OR jsonb_typeof(evidence.value->'suborderId') IS DISTINCT FROM 'string'
+       OR COALESCE(length(trim(evidence.value->>'suborderId')), 0) NOT BETWEEN 1 AND 200
+       OR jsonb_typeof(evidence.value->'reservationReference') IS DISTINCT FROM 'string'
+       OR COALESCE(length(trim(evidence.value->>'reservationReference')), 0) NOT BETWEEN 1 AND 240
        OR NOT EXISTS (
          SELECT 1 FROM merchant_suborders suborder
          WHERE suborder.order_id = NEW.order_id
