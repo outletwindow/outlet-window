@@ -441,3 +441,11 @@ checkout API route exists.
 - Migration 0041 adds the branch snapshot watermark; migration 0042 adds durable discrepancy alerts. Both are registered in the migration runner and API/paid-checkout worker readiness gates, with PostgreSQL integration tests in CI.
 - This is still a reconciliation safeguard, not proof of an external POS/ERP hard reservation. The paid-checkout worker remains fail-closed until a provider adapter can guarantee atomic exact-variant holds.
 - CI verification: migrations 0040–0042, SQL integration checks, TypeScript typecheck, lint, unit tests, Compose validation, and production build passed on commit `8ec954e9bd14144e4b6915e29d0038d657f8fa95` (GitHub Actions run [#43623653728](https://github.com/outletwindow/outlet-window/actions/runs/43623653728)). This verifies repository checks only; it does not mean an external POS/ERP provider is connected or production checkout is enabled.
+
+## Platform-controlled POS/ERP branch-scope administration
+
+- Added a PostgreSQL scope store that grants only when the integration is connected, its family is POS/ERP, its platform-approved capability includes `inventory.hard_reservation`, and the merchant and branch are active and tenant-consistent.
+- Added platform-only API operations to grant and revoke an exact tenant/integration/merchant/branch scope. Both require a platform-wide `manage_access` grant and a platform owner/admin role; merchant roles are rejected.
+- Scope grant and revoke requests and outcomes are written to the durable audit stream. The API fails closed if audit persistence or the scope-management store is unavailable.
+- The reservation router continues to re-check active provider status, capability, merchant, branch, and scope at reservation time. Revoking a grant therefore removes future eligibility without deleting its audit history.
+- This is administrative control-plane support only. It does not make a provider live: the paid-checkout worker still has an empty adapter registry and will not confirm orders from an unverified provider.
