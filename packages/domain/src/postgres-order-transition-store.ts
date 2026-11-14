@@ -63,7 +63,15 @@ export class PostgresOrderTransitionStore {
       if (input.nextStatus === "ready_for_pickup") {
         const preparation = await client.query<{ item_count: number; verified_count: number }>(
           `SELECT COUNT(i.id)::int AS item_count,
-                  COUNT(c.order_item_id) FILTER (WHERE c.outcome = 'verified')::int AS verified_count
+                  COUNT(c.order_item_id) FILTER (
+                    WHERE c.outcome = 'verified'
+                      AND c.merchant_id = i.merchant_id
+                      AND c.branch_id = i.branch_id
+                      AND c.expected_sku = i.sku
+                      AND c.scanned_sku = i.sku
+                      AND c.expected_quantity = i.quantity
+                      AND c.verified_quantity = i.quantity
+                  )::int AS verified_count
            FROM customer_order_items i
            LEFT JOIN merchant_order_item_preparation_checks c
              ON c.tenant_id = i.tenant_id AND c.suborder_id = i.suborder_id
