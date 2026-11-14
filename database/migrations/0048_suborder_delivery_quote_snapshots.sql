@@ -5,6 +5,10 @@ ALTER TABLE merchant_suborders
   ADD CONSTRAINT merchant_suborders_delivery_quote_scope_key
   UNIQUE (tenant_id, order_id, id, merchant_id, branch_id);
 
+ALTER TABLE delivery_pricing_rules
+  ADD CONSTRAINT delivery_pricing_rules_quote_scope_key
+  UNIQUE (tenant_id, id, version, service_area_id);
+
 CREATE TABLE customer_order_suborder_delivery_quotes (
   id text PRIMARY KEY,
   tenant_id text NOT NULL,
@@ -26,8 +30,11 @@ CREATE TABLE customer_order_suborder_delivery_quotes (
     ON DELETE RESTRICT,
   FOREIGN KEY (service_area_tenant_id, service_area_id)
     REFERENCES delivery_service_areas (tenant_id, id) ON DELETE RESTRICT,
-  FOREIGN KEY (service_area_tenant_id, pricing_rule_id, pricing_rule_version)
-    REFERENCES delivery_pricing_rules (tenant_id, id, version) ON DELETE RESTRICT,
+  FOREIGN KEY (service_area_tenant_id, pricing_rule_id, pricing_rule_version, service_area_id)
+    REFERENCES delivery_pricing_rules (tenant_id, id, version, service_area_id) ON DELETE RESTRICT,
+  FOREIGN KEY (service_area_tenant_id, service_area_id, merchant_id, branch_id)
+    REFERENCES delivery_service_area_branches (tenant_id, service_area_id, merchant_id, branch_id)
+    ON DELETE RESTRICT,
   UNIQUE (tenant_id, order_id, suborder_id),
   UNIQUE (service_area_tenant_id, pricing_rule_id, pricing_rule_version, id),
   CHECK (length(trim(id)) BETWEEN 1 AND 200),
