@@ -66,6 +66,10 @@ RETURNS trigger LANGUAGE plpgsql AS $function$
 DECLARE
   snapshot_subtotal numeric;
   snapshot_discount numeric;
+  component jsonb;
+  component_amount numeric;
+  component_subtotal numeric := 0;
+  component_discount numeric := 0;
 BEGIN
   IF jsonb_typeof(NEW.quote_snapshot->'subtotalMinor') IS DISTINCT FROM 'number'
      OR jsonb_typeof(NEW.quote_snapshot->'discountMinor') IS DISTINCT FROM 'number' THEN
@@ -80,6 +84,40 @@ BEGIN
      OR snapshot_discount <> trunc(snapshot_discount)
      OR snapshot_subtotal - snapshot_discount <> NEW.total_minor THEN
     RAISE EXCEPTION 'delivery_quote_snapshot_totals_mismatch'
+      USING ERRCODE = '23514';
+  END IF;
+
+  IF jsonb_array_length(NEW.quote_snapshot->'components') = 0 THEN
+    RAISE EXCEPTION 'delivery_quote_snapshot_components_required'
+      USING ERRCODE = '23514';
+  END IF;
+
+  FOR component IN SELECT value FROM jsonb_array_elements(NEW.quote_snapshot->'components')
+  LOOP
+    IF jsonb_typeof(component) IS DISTINCT FROM 'object'
+       OR jsonb_typeof(component->'kind') IS DISTINCT FROM 'string'
+       OR component->>'kind' NOT IN ('product_subtotal','delivery','collection','platform_fee','packaging','tax','discount')
+       OR jsonb_typeof(component->'label') IS DISTINCT FROM 'string'
+       OR length(trim(component->>'label')) = 0
+       OR jsonb_typeof(component->'amountMinor') IS DISTINCT FROM 'number' THEN
+      RAISE EXCEPTION 'delivery_quote_snapshot_component_invalid'
+        USING ERRCODE = '23514';
+    END IF;
+    component_amount := (component->>'amountMinor')::numeric;
+    IF component_amount < 0 OR component_amount <> trunc(component_amount) THEN
+      RAISE EXCEPTION 'delivery_quote_snapshot_component_amount_invalid'
+        USING ERRCODE = '23514';
+    END IF;
+    IF component->>'kind' = 'discount' THEN
+      component_discount := component_discount + component_amount;
+    ELSE
+      component_subtotal := component_subtotal + component_amount;
+    END IF;
+  END LOOP;
+
+  IF component_subtotal <> snapshot_subtotal
+     OR component_discount <> snapshot_discount THEN
+    RAISE EXCEPTION 'delivery_quote_snapshot_component_totals_mismatch'
       USING ERRCODE = '23514';
   END IF;
 
