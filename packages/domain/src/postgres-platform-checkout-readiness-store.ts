@@ -1,0 +1,199 @@
+import type { AuditEvent } from "./audit.js";
+import { PostgresAuditEventStore } from "./postgres-audit-event-store.js";
+import type { PostgresPool } from "./postgres-iam-store.js";
+
+type LockedOrder = {
+  id: string; customer_id: string; status: string; version: number; currency: string;
+  delivery_destination: unknown; delivery_quote: unknown; delivery_zone_id: string | null;
+  delivery_branch_id: string | null;
+};
+type LockedSuborder = {
+  id: string; tenant_id: string; merchant_id: string; branch_id: string;
+  status: string; version: number;
+};
+type ItemTotals = { suborder_id: string; item_count: number; subtotal_minor: string | number };
+
+export type PlatformCheckoutReadinessResult =
+  | { outcome: "ready"; orderId: string; suborderIds: readonly string[]; parentVersion: number }
+  | { outcome: "not_found" | "conflict" | "invalid_snapshot" | "audit_mismatch" };
+
+function validObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * Platform-owned, all-or-nothing transition from pending_validation to awaiting_payment.
+ * It is deliberately separate from merchant transition APIs: every merchant suborder,
+ * the parent order, and its audit evidence commit in one PostgreSQL transaction.
+ */
+export class PostgresPlatformCheckoutReadinessStore {
+  constructor(private readonly pool: PostgresPool) {}
+
+  async transitionToAwaitingPayment(input: {
+    orderId: string;
+    customerId: string;
+    expectedVersion: number;
+    actorId: string;
+    actorRole: "platform_user" | "system";
+    occurredAt: string;
+    auditEvents: readonly AuditEvent[];
+  }): Promise<PlatformCheckoutReadinessResult> {
+    const occurredAt = Date.parse(input.occurredAt);
+    if (!input.orderId.trim() || !input.customerId.trim() || !input.actorId.trim() ||
+        !Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 1 ||
+        !Number.isFinite(occurredAt)) throw new Error("INVALID_PLATFORM_CHECKOUT_READINESS_INPUT");
+
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const parentResult = await client.query<LockedOrder>(
+        `SELECT id, customer_id, status, version, currency,
+                delivery_destination, delivery_quote, delivery_zone_id, delivery_branch_id
+         FROM customer_orders
+         WHERE id = $1 AND tenant_id = 'platform' AND customer_id = $2
+         FOR UPDATE`,
+        [input.orderId, input.customerId]
+      );
+      if (parentResult.rowCount !== 1 || !parentResult.rows[0]) {
+        await client.query("ROLLBACK");
+        return { outcome: "not_found" };
+      }
+      const parent = parentResult.rows[0];
+      if (parent.status !== "pending_validation" || parent.version !== input.expectedVersion) {
+        await client.query("ROLLBACK");
+        return { outcome: "conflict" };
+      }
+
+      // Lock every merchant row in deterministic order to avoid partial readiness and
+      // reduce deadlock risk when multiple checkout workers contend for the same order.
+      const subordersResult = await client.query<LockedSuborder>(
+        `SELECT id, tenant_id, merchant_id, branch_id, status, version
+         FROM merchant_suborders WHERE order_id = $1
+         ORDER BY id FOR UPDATE`,
+        [input.orderId]
+      );
+      const suborders = subordersResult.rows;
+      if (suborders.length === 0 || suborders.some(row => row.status !== "pending_validation")) {
+        await client.query("ROLLBACK");
+        return { outcome: "conflict" };
+      }
+
+      const destination = parent.delivery_destination;
+      const quote = parent.delivery_quote;
+      if (!validObject(destination) || !validObject(quote) ||
+          !parent.delivery_zone_id?.trim() || !parent.delivery_branch_id?.trim() ||
+          typeof quote.quoteId !== "string" || !quote.quoteId.trim() ||
+          typeof quote.ruleId !== "string" || !quote.ruleId.trim() ||
+          !Number.isSafeInteger(quote.ruleVersion) || (quote.ruleVersion as number) < 1 ||
+          quote.currency !== parent.currency ||
+          !Number.isSafeInteger(quote.totalMinor) || (quote.totalMinor as number) < 0 ||
+          typeof quote.createdAtUtc !== "string" || typeof quote.expiresAtUtc !== "string" ||
+          !Number.isFinite(Date.parse(quote.createdAtUtc)) ||
+          !Number.isFinite(Date.parse(quote.expiresAtUtc)) ||
+          Date.parse(quote.createdAtUtc) > occurredAt || Date.parse(quote.expiresAtUtc) <= occurredAt) {
+        await client.query("ROLLBACK");
+        return { outcome: "invalid_snapshot" };
+      }
+
+      const totals = await client.query<ItemTotals>(
+        `SELECT s.id AS suborder_id, COUNT(i.id)::int AS item_count,
+                COALESCE(SUM(i.quantity::bigint * i.unit_price_minor), 0)::text AS subtotal_minor
+         FROM merchant_suborders s
+         LEFT JOIN customer_order_items i
+           ON i.order_id = s.order_id AND i.suborder_id = s.id
+         WHERE s.order_id = $1
+         GROUP BY s.id ORDER BY s.id`,
+        [input.orderId]
+      );
+      if (totals.rows.length !== suborders.length || totals.rows.some((row, index) => {
+        const suborder = suborders[index];
+        return !suborder || row.suborder_id !== suborder.id ||
+          !Number.isSafeInteger(Number(row.item_count)) || Number(row.item_count) < 1 ||
+          !Number.isSafeInteger(Number(row.subtotal_minor)) ||
+          Number(row.subtotal_minor) < 0;
+      })) {
+        await client.query("ROLLBACK");
+        return { outcome: "invalid_snapshot" };
+      }
+      // Compare each calculated line total with its persisted merchant subtotal.
+      const subtotalRows = await client.query<{ id: string; subtotal_minor: string | number }>(
+        "SELECT id, subtotal_minor FROM merchant_suborders WHERE order_id = $1 ORDER BY id",
+        [input.orderId]
+      );
+      if (subtotalRows.rows.length !== totals.rows.length ||
+          totals.rows.some((row, index) =>
+            String(row.subtotal_minor) !== String(subtotalRows.rows[index]?.subtotal_minor))) {
+        await client.query("ROLLBACK");
+        return { outcome: "invalid_snapshot" };
+      }
+
+      const eventsBySuborder = new Map<string, AuditEvent>();
+      for (const event of input.auditEvents) {
+        if (!event.resourceId || eventsBySuborder.has(event.resourceId)) {
+          await client.query("ROLLBACK");
+          return { outcome: "audit_mismatch" };
+        }
+        eventsBySuborder.set(event.resourceId, event);
+      }
+      if (eventsBySuborder.size !== suborders.length || suborders.some(suborder => {
+        const event = eventsBySuborder.get(suborder.id);
+        return !event || event.tenantId !== suborder.tenant_id ||
+          event.merchantId !== suborder.merchant_id || event.branchId !== suborder.branch_id ||
+          event.actor.id !== input.actorId || event.actor.type !== input.actorRole ||
+          event.occurredAt !== input.occurredAt ||
+          event.action !== "order.suborder.transition" || event.outcome !== "success" ||
+          event.resourceType !== "merchant_suborder" ||
+          event.metadata.orderId !== input.orderId ||
+          event.metadata.previousStatus !== "pending_validation" ||
+          event.metadata.nextStatus !== "awaiting_payment";
+      })) {
+        await client.query("ROLLBACK");
+        return { outcome: "audit_mismatch" };
+      }
+
+      const changedSuborders = await client.query<{ id: string }>(
+        `UPDATE merchant_suborders
+         SET status = 'awaiting_payment', version = version + 1, updated_at = $2
+         WHERE order_id = $1 AND status = 'pending_validation'
+         RETURNING id`,
+        [input.orderId, input.occurredAt]
+      );
+      if (changedSuborders.rowCount !== suborders.length) {
+        await client.query("ROLLBACK");
+        return { outcome: "conflict" };
+      }
+      const changedParent = await client.query(
+        `UPDATE customer_orders
+         SET status = 'awaiting_payment', version = version + 1, updated_at = $3
+         WHERE id = $1 AND tenant_id = 'platform' AND customer_id = $2
+           AND status = 'pending_validation' AND version = $4`,
+        [input.orderId, input.customerId, input.occurredAt, input.expectedVersion]
+      );
+      if (changedParent.rowCount !== 1) {
+        await client.query("ROLLBACK");
+        return { outcome: "conflict" };
+      }
+
+      const auditStore = new PostgresAuditEventStore(client);
+      for (const suborder of suborders) {
+        const event = eventsBySuborder.get(suborder.id)!;
+        const persisted = await auditStore.append(event);
+        if (persisted !== "inserted") {
+          await client.query("ROLLBACK");
+          return { outcome: "audit_mismatch" };
+        }
+      }
+      await client.query("COMMIT");
+      return {
+        outcome: "ready", orderId: input.orderId,
+        suborderIds: suborders.map(row => row.id),
+        parentVersion: input.expectedVersion + 1
+      };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+}
