@@ -133,6 +133,32 @@ describe("PostgresPaidCheckoutInventoryReservationWorker", () => {
     }));
   });
 
+  it("holds paid orders when no merchant POS/ERP hard-reservation adapter is configured", async () => {
+    const db = createPool();
+    const inventory: InventoryReservationPort = {
+      reserveExactVariants: vi.fn().mockResolvedValue({
+        outcome: "unsupported", reason: "merchant_integration_missing"
+      })
+    };
+    const transition = vi.fn().mockResolvedValue({
+      outcome: "updated", parentStatus: "on_hold",
+      transition: { ok: true, previousStatus: "pending_validation", order: { status: "on_hold" } }
+    });
+    const { worker, recovery } = createWorker({ pool: db.pool, inventory, transition });
+    await expect(worker.runOnce()).resolves.toMatchObject({
+      outcome: "needs_review", failureCode: "INVENTORY_UNGUARANTEED"
+    });
+    expect(recovery).toHaveBeenCalledWith(expect.objectContaining({
+      failureCode: "INVENTORY_UNGUARANTEED", failedSuborderId: "sub-1"
+    }));
+    expect(transition).toHaveBeenCalledWith(expect.objectContaining({
+      nextStatus: "on_hold"
+    }));
+    expect(transition).not.toHaveBeenCalledWith(expect.objectContaining({
+      nextStatus: "confirmed"
+    }));
+  });
+
   it("routes unsupported multi-suborder paid orders to durable manual recovery", async () => {
     const db = createPool({ suborders: [suborder, { ...suborder, id: "sub-2" }] });
     const { worker, inventory, recovery } = createWorker({ pool: db.pool });
