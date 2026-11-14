@@ -21,7 +21,11 @@ const valid=(x:BeginPaymentIntentAttemptInput)=>Boolean(x.tenantId.trim()&&x.ord
   Number.isSafeInteger(x.amountMinor)&&x.amountMinor>=100&&/^[A-Z]{3}$/.test(x.currency);
 
 export class PostgresPaymentIntentCreationAttemptStore {
-  constructor(private readonly pool:PostgresPool,private readonly createId:()=>string=randomUUID){}
+  constructor(
+    private readonly pool:PostgresPool,
+    private readonly createId:()=>string=randomUUID,
+    private readonly now:()=>Date=()=>new Date()
+  ){}
   async begin(input:BeginPaymentIntentAttemptInput):Promise<BeginPaymentIntentAttemptResult>{
     if(!valid(input))throw new Error("INVALID_PAYMENT_INTENT_ATTEMPT");
     const id=this.createId();
@@ -95,7 +99,7 @@ export class PostgresPaymentIntentCreationAttemptStore {
   /** Persists the provider reference and attempt state in one database transaction. */
   async markCreated(input:{attemptId:string;providerPaymentReference:string;expiresAtUtc:string}):
     Promise<"created"|"not_found"|"conflict">{
-    const expiry=Date.parse(input.expiresAtUtc),now=Date.now();
+    const expiry=Date.parse(input.expiresAtUtc),now=this.now().getTime();
     if(!input.providerPaymentReference.trim()||input.providerPaymentReference.length>240||
       !Number.isFinite(expiry)||expiry<=now||expiry>now+24*60*60_000)throw new Error("INVALID_PAYMENT_INTENT_CREATION_RESULT");
     const client=await this.pool.connect();
