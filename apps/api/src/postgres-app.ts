@@ -180,7 +180,8 @@ export function buildPostgresApp(options: PostgresApiOptions) {
         "0042_branch_inventory_reconciliation_alerts",
         "0043_merchant_inventory_provider_branch_scopes",
         "0044_external_inventory_reservation_evidence",
-        "0045_checkout_recovery_suborder_scope"
+        "0045_checkout_recovery_suborder_scope",
+        "0046_checkout_recovery_reservation_scope"
       ];
       const result = await options.pool.query<{ version: string }>(
         "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",
