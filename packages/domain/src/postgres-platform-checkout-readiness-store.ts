@@ -177,9 +177,9 @@ export class PostgresPlatformCheckoutReadinessStore {
         `SELECT id,tenant_id,order_id,suborder_id,merchant_id,branch_id,currency,total_minor,
                 created_at,expires_at,quote_snapshot
          FROM customer_order_suborder_delivery_quotes
-         WHERE tenant_id='platform' AND order_id=$1
+         WHERE tenant_id=$1 AND order_id=$2
          ORDER BY suborder_id FOR SHARE`,
-        [input.orderId]
+        [suborders[0]?.tenant_id, input.orderId]
       );
       const deliveryQuote = deliveryQuotes.rows[0];
       const suborder = suborders[0];
