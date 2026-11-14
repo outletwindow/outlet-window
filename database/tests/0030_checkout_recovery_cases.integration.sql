@@ -68,7 +68,17 @@ DO $$ BEGIN
       '[{"suborderId":"suborder-2"}]'::jsonb
     WHERE id='recovery-test-1';
     RAISE EXCEPTION 'expected missing reservation reference update rejection';
-  EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+  EXCEPTION WHEN check_violation THEN NULL; END;
+  BEGIN
+    INSERT INTO checkout_recovery_cases
+    (id,tenant_id,order_id,idempotency_key,failure_code,payment_reference,
+     payment_captured_at,reservation_references)
+    VALUES ('recovery-test-invalid-shape','tenant-test','order-test',
+      'checkout-recovery:order-test:invalid-shape','TASK_COMMIT_REJECTED',
+      'capture-ref-1',now(),
+      '[{"suborderId":"suborder-2","reservationReference":""}]'::jsonb);
+    RAISE EXCEPTION 'expected malformed reservation evidence shape to be rejected';
+  EXCEPTION WHEN check_violation THEN NULL; END;
   BEGIN
     INSERT INTO checkout_recovery_cases
     (id,tenant_id,order_id,idempotency_key,failure_code,payment_reference,
