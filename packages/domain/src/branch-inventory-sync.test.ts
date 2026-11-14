@@ -32,6 +32,16 @@ describe("branch inventory snapshot sync", () => {
     expect(calls).toBe(0);
   });
 
+  it("accepts an empty complete snapshot to mark every previously listed variant unavailable", async () => {
+    let received: BranchInventorySyncRequest | undefined;
+    const service = new BranchInventorySyncService({
+      async applySnapshot(input) { received = input; return { accepted: 4, stale: 0 }; }
+    }, () => new Date("2026-11-09T10:03:00.000Z"));
+    const result = await service.sync({ ...base, lines: [] });
+    expect(received?.lines).toEqual([]);
+    expect(result).toMatchObject({ accepted: 4, stale: 0, confidence: "high" });
+  });
+
   it("rejects future-dated stock snapshots before they can poison freshness ordering", async () => {
     let calls = 0;
     const service = new BranchInventorySyncService({ async applySnapshot() { calls++; return { accepted: 0, stale: 0 }; } },
