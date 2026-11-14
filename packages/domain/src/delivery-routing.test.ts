@@ -49,4 +49,21 @@ describe("road ETA branch ranking", () => {
       provider: staleProvider, nowUtc
     })).toEqual([]);
   });
+  it("fails closed for non-object and incomplete routing-provider responses", async () => {
+    const malformedProvider = {
+      async estimateRoute() { return undefined as unknown as null; }
+    };
+    await expect(rankEligibleBranchesByRoadEta({
+      candidates: [candidates[0]!], destination: { latitude: 27, longitude: 49 },
+      provider: malformedProvider, nowUtc
+    })).resolves.toEqual([]);
+    const incompleteProvider = {
+      async estimateRoute() { return { distanceMeters: 100 } as never; }
+    };
+    await expect(rankEligibleBranchesByRoadEta({
+      candidates: [candidates[0]!], destination: { latitude: 27, longitude: 49 },
+      provider: incompleteProvider, nowUtc
+    })).resolves.toEqual([]);
+  });
+
 });
