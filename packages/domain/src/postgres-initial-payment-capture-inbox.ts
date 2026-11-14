@@ -133,6 +133,7 @@ export class PostgresInitialPaymentCaptureInbox {
           `payment-capture:${event.provider_key}:${event.provider_event_id}`]
       );
       let outcome:"applied"|"duplicate"="applied";
+      let verifiedCaptureId=inserted.rows[0]?.id;
       if(inserted.rowCount!==1) {
         const prior=await client.query<{id:string;tenant_id:string;order_id:string;provider_key:string;
           provider_event_id:string;provider_payment_reference:string;amount_minor:string|number;
@@ -163,6 +164,21 @@ export class PostgresInitialPaymentCaptureInbox {
           await client.query("COMMIT"); return "conflict";
         }
         outcome="duplicate";
+        verifiedCaptureId=p.id;
+      }
+      if (!verifiedCaptureId) throw new Error("INITIAL_CAPTURE_LEDGER_ID_MISSING");
+      await client.query(
+        `INSERT INTO paid_checkout_inventory_reservation_jobs
+         (id,tenant_id,order_id,capture_id)
+         VALUES ($1,$2,$3,$4) ON CONFLICT (tenant_id,order_id) DO NOTHING`,
+        [this.createId(),payment.tenant_id,payment.order_id,verifiedCaptureId]
+      );
+      const queued=await client.query<{capture_id:string}>(
+        `SELECT capture_id FROM paid_checkout_inventory_reservation_jobs
+         WHERE tenant_id=$1 AND order_id=$2`,[payment.tenant_id,payment.order_id]
+      );
+      if(queued.rowCount!==1 || queued.rows[0]!.capture_id!==verifiedCaptureId) {
+        throw new Error("PAID_CHECKOUT_RESERVATION_JOB_IDENTITY_COLLISION");
       }
       const finalized=await client.query(
         `UPDATE initial_payment_capture_webhook_events
