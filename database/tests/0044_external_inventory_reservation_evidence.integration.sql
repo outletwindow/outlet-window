@@ -79,7 +79,8 @@ BEGIN
     INSERT INTO inventory_provider_reservation_evidence
     (tenant_id,reservation_id,integration_id,provider_key,provider_reservation_reference,expires_at)
     VALUES ('provider-evidence-tenant','provider-evidence-reservation','provider-evidence-pos',
-            'wrong-provider','external-hold-wrong-provider',now()+interval '15 minutes');
+            'wrong-provider','external-hold-wrong-provider',
+            (SELECT expires_at FROM inventory_reservations WHERE id='provider-evidence-reservation'));
     RAISE EXCEPTION 'provider key mismatch unexpectedly accepted';
   EXCEPTION WHEN SQLSTATE '55000' THEN NULL;
   END;
