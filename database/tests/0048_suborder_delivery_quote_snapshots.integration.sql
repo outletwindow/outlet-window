@@ -54,7 +54,12 @@ BEGIN
     VALUES ('quote-snapshot-wrong-order','quote-snapshot-tenant','quote-snapshot-order',
             'quote-snapshot-other-suborder','quote-snapshot-merchant','quote-snapshot-branch',
             'platform','quote-snapshot-area','quote-snapshot-rule',1,
-            '{"quoteId":"wrong-order"}'::jsonb,'SAR',1000,now(),now()+interval '5 minutes');
+            jsonb_build_object('quoteId','quote-snapshot-wrong-order','ruleId','quote-snapshot-rule',
+              'ruleVersion',1,'currency','SAR','subtotalMinor',1000,'discountMinor',0,
+              'totalMinor',1000,'components',jsonb_build_array(
+                jsonb_build_object('kind','delivery','amountMinor',1000,'label','Delivery')),
+              'createdAtUtc',now()::text,'expiresAtUtc',(now()+interval '5 minutes')::text),
+            'SAR',1000,now(),now()+interval '5 minutes');
     RAISE EXCEPTION 'cross-order quote snapshot unexpectedly accepted';
   EXCEPTION WHEN foreign_key_violation THEN NULL;
   END;
