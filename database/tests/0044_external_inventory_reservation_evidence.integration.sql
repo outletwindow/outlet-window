@@ -1,12 +1,12 @@
 \set ON_ERROR_STOP on
 BEGIN;
 
-INSERT INTO customer_orders (id,tenant_id,customer_id,idempotency_key,status,currency,total_minor)
-VALUES ('provider-evidence-order','provider-evidence-tenant','provider-evidence-customer',
-        'provider-evidence-order-key','awaiting_payment','SAR',5000);
 INSERT INTO merchants (id,tenant_id,legal_name,display_name,country_code,status)
 VALUES ('provider-evidence-merchant','provider-evidence-tenant','Provider Evidence LLC',
         'Provider Evidence','SA','active');
+INSERT INTO customer_orders (id,tenant_id,customer_id,idempotency_key,status,currency,total_minor)
+VALUES ('provider-evidence-order','provider-evidence-tenant','provider-evidence-customer',
+        'provider-evidence-order-key','awaiting_payment','SAR',5000);
 INSERT INTO merchant_branches (id,merchant_id,display_name,city_code,status)
 VALUES ('provider-evidence-branch','provider-evidence-merchant','Provider Evidence Branch','JUB','active');
 INSERT INTO tenant_integrations
