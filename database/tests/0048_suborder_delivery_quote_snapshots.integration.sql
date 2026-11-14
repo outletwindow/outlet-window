@@ -37,7 +37,7 @@ INSERT INTO customer_order_suborder_delivery_quotes
 VALUES ('quote-snapshot-valid','quote-snapshot-tenant','quote-snapshot-order',
         'quote-snapshot-suborder','quote-snapshot-merchant','quote-snapshot-branch',
         'platform','quote-snapshot-area','quote-snapshot-rule',1,
-        '{"quoteId":"quote-snapshot-valid","ruleId":"quote-snapshot-rule","ruleVersion":1,"totalMinor":1000}'::jsonb,
+        '{"quoteId":"quote-snapshot-valid","ruleId":"quote-snapshot-rule","ruleVersion":1,"currency":"SAR","subtotalMinor":1000,"discountMinor":0,"totalMinor":1000,"components":[{"kind":"delivery","amountMinor":1000,"label":"Delivery"}],"createdAtUtc":"2026-11-14T19:00:00.000Z","expiresAtUtc":"2026-11-14T19:05:00.000Z"}'::jsonb,
         'SAR',1000,now(),now()+interval '5 minutes');
 
 DO $$
@@ -65,6 +65,20 @@ BEGIN
             'platform','quote-snapshot-area','quote-snapshot-rule',1,
             '{"quoteId":"invalid-window"}'::jsonb,'SAR',1000,now(),now());
     RAISE EXCEPTION 'non-positive quote validity window unexpectedly accepted';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO customer_order_suborder_delivery_quotes
+    (id,tenant_id,order_id,suborder_id,merchant_id,branch_id,service_area_tenant_id,
+     service_area_id,pricing_rule_id,pricing_rule_version,quote_snapshot,currency,total_minor,
+     created_at,expires_at)
+    VALUES ('quote-snapshot-mismatched-total','quote-snapshot-tenant','quote-snapshot-order',
+            'quote-snapshot-suborder','quote-snapshot-merchant','quote-snapshot-branch',
+            'platform','quote-snapshot-area','quote-snapshot-rule',1,
+            '{"quoteId":"quote-snapshot-mismatched-total","ruleId":"quote-snapshot-rule","ruleVersion":1,"currency":"SAR","totalMinor":999,"components":[],"createdAtUtc":"2026-11-14T19:00:00.000Z","expiresAtUtc":"2026-11-14T19:05:00.000Z"}'::jsonb,
+            'SAR',1000,now(),now()+interval '5 minutes');
+    RAISE EXCEPTION 'quote snapshot total mismatch unexpectedly accepted';
   EXCEPTION WHEN check_violation THEN NULL;
   END;
 
