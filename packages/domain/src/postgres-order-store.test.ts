@@ -16,7 +16,7 @@ const order: CreateCustomerOrderInput = {
   }]
 };
 
-function database(options: { existing?: boolean; existingTotal?: string; existingSuborderStatus?: string; unavailableBranch?: boolean } = {}) {
+function database(options: { existing?: boolean; existingTotal?: string; existingSuborderStatus?: string; unavailableBranch?: boolean; unavailableVariant?: boolean } = {}) {
   const statements: string[] = [];
   const query = vi.fn(async <Row>(sql: string, _args?: readonly unknown[]) => {
     statements.push(sql);
@@ -43,6 +43,9 @@ function database(options: { existing?: boolean; existingTotal?: string; existin
     } else if (sql.includes("INSERT INTO customer_orders")) {
       rows = [];
       rowCount = 1;
+    } else if (sql.includes("FROM commerce_catalog_variants v") && sql.includes("FOR SHARE OF v, p")) {
+      rows = options.unavailableVariant ? [] : [{ id: "variant-1" }];
+      rowCount = rows.length;
     } else if (sql.includes("INSERT INTO customer_order_items")) {
       rows = [];
       rowCount = 1;
@@ -74,6 +77,17 @@ describe("PostgresOrderStore", () => {
       .rejects.toThrow("Merchant branch is unavailable for order creation");
     expect(db.statements.at(-1)).toBe("ROLLBACK");
     expect(db.client.release).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a variant that is unpublished, belongs to another merchant, or has mismatched SKU/currency", async () => {
+    const db = database({ unavailableVariant: true });
+    await expect(new PostgresOrderStore(db.pool).create(order))
+      .rejects.toThrow("Order item variant is not published for this merchant or its SKU/currency does not match");
+    const validation = db.statements.find(sql => sql.includes("FROM commerce_catalog_variants v")) ?? "";
+    expect(validation).toContain("v.tenant_id = $1 AND v.id = $2 AND v.sku = $3");
+    expect(validation).toContain("p.published_at IS NOT NULL");
+    expect(db.statements.at(-1)).toBe("ROLLBACK");
+    expect(db.statements.some(sql => sql.includes("INSERT INTO customer_order_items"))).toBe(false);
   });
 
   it("returns already_exists only when the persisted order lines also match", async () => {
