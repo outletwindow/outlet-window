@@ -22,7 +22,7 @@ CREATE INDEX IF NOT EXISTS inventory_provider_reservation_evidence_expiry_idx
   ON inventory_provider_reservation_evidence (expires_at, tenant_id, reservation_id);
 
 CREATE OR REPLACE FUNCTION validate_inventory_provider_reservation_evidence()
-RETURNS trigger LANGUAGE plpgsql AS $
+RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
   reservation_expiry timestamptz;
   integration_provider_key text;
@@ -53,14 +53,14 @@ BEGIN
       USING ERRCODE='55000';
   END IF;
   RETURN NEW;
-END $;
+END $$;
 
 CREATE TRIGGER inventory_provider_reservation_evidence_validate
 BEFORE INSERT ON inventory_provider_reservation_evidence
 FOR EACH ROW EXECUTE FUNCTION validate_inventory_provider_reservation_evidence();
 
 CREATE OR REPLACE FUNCTION protect_inventory_provider_reservation_evidence()
-RETURNS trigger LANGUAGE plpgsql AS $
+RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   RAISE EXCEPTION 'inventory_provider_reservation_evidence_is_immutable'
     USING ERRCODE='55000';
