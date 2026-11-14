@@ -78,6 +78,15 @@ services:
       INITIAL_CAPTURE_WORKER_BATCH_SIZE: ${INITIAL_CAPTURE_WORKER_BATCH_SIZE:-10}
       INITIAL_CAPTURE_WORKER_LEASE_SECONDS: ${INITIAL_CAPTURE_WORKER_LEASE_SECONDS:-30}
 
+  paid-checkout-reservation-worker:
+    <<: *runtime
+    command: ["node", "apps/worker/dist/apps/worker/src/paid-checkout-inventory-reservation-main.js"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
+      PAID_CHECKOUT_RESERVATION_WORKER_POLL_MS: ${PAID_CHECKOUT_RESERVATION_WORKER_POLL_MS:-1000}
+      PAID_CHECKOUT_RESERVATION_WORKER_LEASE_SECONDS: ${PAID_CHECKOUT_RESERVATION_WORKER_LEASE_SECONDS:-60}
+
   inventory-expiry-worker:
     <<: *runtime
     command: ["node", "apps/worker/dist/apps/worker/src/inventory-reservation-expiry-main.js"]
