@@ -32,13 +32,25 @@ export class PostgresCustomerCartStore {
 
   async get(input: { customerId: string }): Promise<CustomerCart | null> {
     if (!input.customerId.trim()) throw new Error("invalid_customer_cart_owner");
-    const cart = await this.pool.query<CartRow>(
-      "SELECT id, customer_id, currency, version FROM customer_carts WHERE tenant_id=$1 AND customer_id=$2 AND status='active'",
-      [PLATFORM_TENANT, input.customerId]
-    );
-    const row = cart.rows[0];
-    if (!row) return null;
-    return this.readItems(row);
+    const client = await this.pool.connect();
+    try {
+      // Read the cart header and lines from one MVCC snapshot. Without this,
+      // a concurrent add/remove can pair an old cart version with new line data.
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const cart = await client.query<CartRow>(
+        "SELECT id, customer_id, currency, version FROM customer_carts WHERE tenant_id=$1 AND customer_id=$2 AND status='active'",
+        [PLATFORM_TENANT, input.customerId]
+      );
+      const row = cart.rows[0];
+      const result = row ? await this.readItems(row, client) : null;
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async addItem(input: {
