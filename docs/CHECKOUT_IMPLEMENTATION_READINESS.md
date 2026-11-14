@@ -319,6 +319,17 @@ into `PostgresOrderStore` would be unsafe and is intentionally not an acceptable
   cannot change mid-checkout.
 - Added tests for delivery snapshot persistence, incomplete snapshot rejection, share-lock
   query behavior, malformed checkout input, and multi-branch fail-closed rollback.
+- Hardened checkout idempotency recovery: the service now persists a canonical
+  `checkoutRequest` snapshot containing the expected cart version and customer-selected
+  destination, resolves a previously committed order before repricing, and checks again
+  after acquiring the customer-cart advisory lock. This covers the concurrent-retry case
+  where the first request commits and converts the cart while a second request is waiting.
+  A matching retry returns the original order; reusing the key with a different request
+  fails closed as `idempotency_conflict`.
+- Extended the PostgreSQL checkout integration test to retry after cart conversion, verify
+  the same order ID is returned without a duplicate order, and reject a changed destination
+  under the same idempotency key. CI execution for this latest change is still pending.
+
 - This remains a domain orchestration service, not a public API route. Payment intent creation,
   verified capture, post-capture inventory reservation, recovery/reconciliation, and end-to-end
   PostgreSQL concurrency/failure-injection tests remain release gates. Do not enable live
