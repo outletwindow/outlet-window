@@ -26,7 +26,7 @@ WHERE tenant_id = 'inventory-scope-tenant'
   AND family IN ('pos','erp')
   AND status = 'connected';
 
-DO $
+DO $$
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM tenant_integrations
@@ -41,7 +41,7 @@ BEGIN
   ) THEN RAISE EXCEPTION 'commerce integration gained POS/ERP hard reservation capability'; END IF;
 END $;
 
-DO $
+DO $$
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM tenant_integrations i
