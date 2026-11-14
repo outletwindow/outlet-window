@@ -39,7 +39,7 @@ BEGIN
     WHERE id='inventory-scope-commerce'
       AND capabilities @> '["inventory.hard_reservation"]'::jsonb
   ) THEN RAISE EXCEPTION 'commerce integration gained POS/ERP hard reservation capability'; END IF;
-END $;
+END $$;
 
 DO $$
 BEGIN
