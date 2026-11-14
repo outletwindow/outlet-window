@@ -117,6 +117,33 @@ describe("branch inventory sync API route", () => {
     expect(malformed.json()).toEqual({ error: "invalid_inventory_snapshot" });
   });
 
+  it("accepts an empty complete snapshot for a branch with no sellable variants", async () => {
+    let received: unknown;
+    const app = buildApp({
+      resolveActor: async () => inventoryManager,
+      resolveMerchantTenantId: async () => "tenant-1",
+      branchInventorySync: {
+        async sync(input: unknown) {
+          received = input;
+          return { accepted: 12, stale: 0, confidence: "high", capturedAtUtc: "2026-11-09T08:00:00.000Z" };
+        }
+      }
+    });
+    apps.push(app);
+    await app.ready();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/merchants/merchant-1/branches/branch-1/inventory/sync",
+      payload: { source: "pos", capturedAtUtc: "2026-11-09T08:00:00.000Z", lines: [] }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(received).toEqual({
+      tenantId: "tenant-1", merchantId: "merchant-1", branchId: "branch-1",
+      source: "pos", capturedAtUtc: "2026-11-09T08:00:00.000Z", lines: []
+    });
+  });
+
   it("maps future-dated inventory snapshots to a client validation error", async () => {
     const app = buildApp({
       resolveActor: async () => inventoryManager,
