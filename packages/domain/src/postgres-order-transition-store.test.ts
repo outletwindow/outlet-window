@@ -7,7 +7,7 @@ function fakePool(options: { version?: number; missing?: boolean; statuses?: str
   const calls: Array<{ sql: string; values?: readonly unknown[] }> = [];
   const query = vi.fn(async <Row>(sql: string, values?: readonly unknown[]) => {
     statements.push(sql);
-    calls.push({ sql, values });
+    calls.push(values === undefined ? { sql } : { sql, values });
     let rows: unknown[] = [];
     let rowCount: number | null = 1;
     if (sql.includes("FROM merchant_suborders s") && sql.includes("FOR UPDATE")) {
