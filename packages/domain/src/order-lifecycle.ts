@@ -105,6 +105,7 @@ export function transitionOrder(
 
 export function aggregateParentOrderStatus(suborders: readonly OrderStatus[]): OrderStatus {
   if (suborders.length === 0) throw new Error("A parent order must contain at least one suborder");
+  if (suborders.every(status => status === "refunded")) return "refunded";
   if (suborders.every(status => status === "cancelled" || status === "refunded")) return "cancelled";
   if (suborders.every(status => status === "completed" || status === "refunded")) return "completed";
   if (suborders.every(status => status === "delivered" || status === "completed" || status === "refunded")) return "delivered";
