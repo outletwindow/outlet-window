@@ -82,6 +82,11 @@ function sortedItems<T extends { id: string }>(items: readonly T[]): T[] {
   return [...items].sort((a, b) => a.id.localeCompare(b.id));
 }
 
+export type ResolveCustomerOrderIdempotencyResult =
+  | { outcome: "not_found" }
+  | { outcome: "conflict" }
+  | { outcome: "match"; orderId: string; suborderIds: readonly string[]; totalMinor: number; currency: string };
+
 export class PostgresOrderStore {
   constructor(private readonly pool: PostgresPool) {}
 
@@ -158,6 +163,44 @@ export class PostgresOrderStore {
     }
     return canonicalOrderMetadata;
   }
+  /**
+   * Resolves a previously committed customer checkout before attempting to reprice
+   * its cart. The request snapshot prevents reuse of one idempotency key for a
+   * different destination or cart version.
+   */
+  async resolveCustomerCheckoutIdempotencyInTransaction(input: {
+    tenantId: string;
+    customerId: string;
+    idempotencyKey: string;
+    request: Readonly<Record<string, unknown>>;
+  }, client: PostgresClient): Promise<ResolveCustomerOrderIdempotencyResult> {
+    const existing = await client.query<{
+      id: string; currency: string; total_minor: string | number; same_request: boolean | null;
+    }>(
+      `SELECT id, currency, total_minor,
+              (metadata->'checkoutRequest' = $4::jsonb) AS same_request
+       FROM customer_orders
+       WHERE tenant_id = $1 AND customer_id = $2 AND idempotency_key = $3
+       FOR UPDATE`,
+      [input.tenantId, input.customerId, input.idempotencyKey, JSON.stringify(input.request)]
+    );
+    const row = existing.rows[0];
+    if (existing.rowCount !== 1 || !row) return { outcome: "not_found" };
+    if (row.same_request !== true) return { outcome: "conflict" };
+    const totalMinor = typeof row.total_minor === "number" ? row.total_minor : Number(row.total_minor);
+    if (!Number.isSafeInteger(totalMinor) || totalMinor < 0) return { outcome: "conflict" };
+    const suborders = await client.query<{ id: string }>(
+      "SELECT id FROM merchant_suborders WHERE order_id = $1 ORDER BY id",
+      [row.id]
+    );
+    if (suborders.rows.length === 0) return { outcome: "conflict" };
+    return {
+      outcome: "match", orderId: row.id,
+      suborderIds: suborders.rows.map(suborder => suborder.id),
+      totalMinor, currency: row.currency
+    };
+  }
+
   async create(input: CreateCustomerOrderInput): Promise<CreateCustomerOrderResult> {
     this.validateInput(input);
     const client = await this.pool.connect();
