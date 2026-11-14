@@ -22,7 +22,8 @@ function database(options: { parentStatus?: string; version?: number; expiredQuo
     if (sql.includes("FROM customer_orders") && sql.includes("FOR UPDATE")) {
       rows = [{ id: "order-1", customer_id: "customer-1", status: options.parentStatus ?? "pending_validation",
         version: options.version ?? 4, currency: "SAR", total_minor: options.badOrderTotal ? "13501" : "13500",
-        metadata: { checkoutPricing: { currency: "SAR", discountMinor: 0, components: [
+        metadata: { checkoutPricing: { currency: "SAR", deliveryQuoteId: "quote-1",
+          deliveryRuleId: "rule-1", deliveryRuleVersion: 1, discountMinor: 0, components: [
           { kind: "product_subtotal", amountMinor: 12000, label: "Products" },
           { kind: "delivery", amountMinor: 1500, label: "Delivery" }
         ] } }, delivery_destination: { city: "Jubail" },

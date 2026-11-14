@@ -24,15 +24,21 @@ function validObject(value: unknown): value is Record<string, unknown> {
 
 function pricingSnapshotMatches(input: {
   metadata: unknown; currency: string; totalMinor: string | number;
-  itemSubtotal: number; deliveryMinor: number;
+  itemSubtotal: number; deliveryMinor: number; deliveryQuoteId: string;
+  deliveryRuleId: string; deliveryRuleVersion: number;
 }): boolean {
   if (!validObject(input.metadata) || !validObject(input.metadata.checkoutPricing)) return false;
   const pricing = input.metadata.checkoutPricing;
-  if (pricing.currency !== input.currency || !Array.isArray(pricing.components)) return false;
+  if (pricing.currency !== input.currency ||
+      pricing.deliveryQuoteId !== input.deliveryQuoteId ||
+      pricing.deliveryRuleId !== input.deliveryRuleId ||
+      pricing.deliveryRuleVersion !== input.deliveryRuleVersion ||
+      !Array.isArray(pricing.components)) return false;
   let subtotal = 0;
   let productSubtotalCount = 0;
   let deliveryCount = 0;
   let discountComponents = 0;
+  let hasDiscountComponent = false;
   for (const component of pricing.components) {
     if (!validObject(component) || typeof component.kind !== "string" ||
         typeof component.label !== "string" || !component.label.trim() ||
@@ -42,6 +48,7 @@ function pricingSnapshotMatches(input: {
     }
     const amount = component.amountMinor as number;
     if (component.kind === "discount") {
+      hasDiscountComponent = true;
       discountComponents += amount;
       if (!Number.isSafeInteger(discountComponents)) return false;
     } else {
@@ -61,7 +68,7 @@ function pricingSnapshotMatches(input: {
   const storedTotal = Number(input.totalMinor);
   return productSubtotalCount === 1 && deliveryCount === 1 &&
     Number.isSafeInteger(discount) && discount >= 0 && discount <= subtotal &&
-    (discountComponents === 0 || discountComponents === discount) &&
+    (!hasDiscountComponent || discountComponents === discount) &&
     Number.isSafeInteger(storedTotal) && storedTotal >= 0 &&
     subtotal - discount === storedTotal;
 }
@@ -175,7 +182,9 @@ export class PostgresPlatformCheckoutReadinessStore {
       const itemSubtotal = totals.rows.reduce((sum, row) => sum + Number(row.subtotal_minor), 0);
       if (!Number.isSafeInteger(itemSubtotal) || !pricingSnapshotMatches({
         metadata: parent.metadata, currency: parent.currency, totalMinor: parent.total_minor,
-        itemSubtotal, deliveryMinor: quote.totalMinor as number
+        itemSubtotal, deliveryMinor: quote.totalMinor as number,
+        deliveryQuoteId: quote.quoteId as string, deliveryRuleId: quote.ruleId as string,
+        deliveryRuleVersion: quote.ruleVersion as number
       })) {
         await client.query("ROLLBACK");
         return { outcome: "invalid_snapshot" };
