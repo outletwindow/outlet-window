@@ -37,7 +37,11 @@ INSERT INTO customer_order_suborder_delivery_quotes
 VALUES ('quote-snapshot-valid','quote-snapshot-tenant','quote-snapshot-order',
         'quote-snapshot-suborder','quote-snapshot-merchant','quote-snapshot-branch',
         'platform','quote-snapshot-area','quote-snapshot-rule',1,
-        '{"quoteId":"quote-snapshot-valid","ruleId":"quote-snapshot-rule","ruleVersion":1,"currency":"SAR","subtotalMinor":1000,"discountMinor":0,"totalMinor":1000,"components":[{"kind":"delivery","amountMinor":1000,"label":"Delivery"}],"createdAtUtc":"2026-11-14T19:00:00.000Z","expiresAtUtc":"2026-11-14T19:05:00.000Z"}'::jsonb,
+        jsonb_build_object('quoteId','quote-snapshot-valid','ruleId','quote-snapshot-rule',
+          'ruleVersion',1,'currency','SAR','subtotalMinor',1000,'discountMinor',0,
+          'totalMinor',1000,'components',jsonb_build_array(
+            jsonb_build_object('kind','delivery','amountMinor',1000,'label','Delivery')),
+          'createdAtUtc',now()::text,'expiresAtUtc',(now()+interval '5 minutes')::text),
         'SAR',1000,now(),now()+interval '5 minutes');
 
 DO $$
@@ -76,7 +80,10 @@ BEGIN
     VALUES ('quote-snapshot-mismatched-total','quote-snapshot-tenant','quote-snapshot-order',
             'quote-snapshot-suborder','quote-snapshot-merchant','quote-snapshot-branch',
             'platform','quote-snapshot-area','quote-snapshot-rule',1,
-            '{"quoteId":"quote-snapshot-mismatched-total","ruleId":"quote-snapshot-rule","ruleVersion":1,"currency":"SAR","totalMinor":999,"components":[],"createdAtUtc":"2026-11-14T19:00:00.000Z","expiresAtUtc":"2026-11-14T19:05:00.000Z"}'::jsonb,
+            jsonb_build_object('quoteId','quote-snapshot-mismatched-total','ruleId','quote-snapshot-rule',
+              'ruleVersion',1,'currency','SAR','subtotalMinor',999,'discountMinor',0,
+              'totalMinor',999,'components',jsonb_build_array(),
+              'createdAtUtc',now()::text,'expiresAtUtc',(now()+interval '5 minutes')::text),
             'SAR',1000,now(),now()+interval '5 minutes');
     RAISE EXCEPTION 'quote snapshot total mismatch unexpectedly accepted';
   EXCEPTION WHEN check_violation THEN NULL;
