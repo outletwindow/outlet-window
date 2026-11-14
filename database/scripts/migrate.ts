@@ -60,7 +60,8 @@ async function main(): Promise<void> {
       { version: "0041_branch_inventory_snapshot_watermark", file: "0041_branch_inventory_snapshot_watermark.sql" },
       { version: "0042_branch_inventory_reconciliation_alerts", file: "0042_branch_inventory_reconciliation_alerts.sql" },
       { version: "0043_merchant_inventory_provider_branch_scopes", file: "0043_merchant_inventory_provider_branch_scopes.sql" },
-      { version: "0044_external_inventory_reservation_evidence", file: "0044_external_inventory_reservation_evidence.sql" }
+      { version: "0044_external_inventory_reservation_evidence", file: "0044_external_inventory_reservation_evidence.sql" },
+      { version: "0045_checkout_recovery_suborder_scope", file: "0045_checkout_recovery_suborder_scope.sql" }
     ].map(async migration => ({
       version: migration.version,
       sql: await readFile(resolve(process.cwd(), `../../database/migrations/${migration.file}`), "utf8")
