@@ -13,6 +13,23 @@ function database(rowCount: number) {
 }
 
 describe("PostgresInventoryProviderBranchScopeStore", () => {
+  it("approves hard reservation capability only for connected POS/ERP integrations", async () => {
+    const db = database(1);
+    const store = new PostgresInventoryProviderBranchScopeStore(db.client);
+    await expect(store.approveHardReservationCapability({ tenantId: "tenant-1", integrationId: "pos-1" })).resolves.toBe("approved");
+    expect(db.query.mock.calls[0]?.[1]).toEqual(["tenant-1", "pos-1"]);
+    const sql = String(db.query.mock.calls[0]?.[0]);
+    expect(sql).toContain("family IN ('pos', 'erp')");
+    expect(sql).toContain("status = 'connected'");
+    expect(sql).toContain("capabilities || '[\"inventory.hard_reservation\"]'::jsonb");
+  });
+
+  it("does not approve unverified, non-POS/ERP, or missing integrations", async () => {
+    const db = database(0);
+    const store = new PostgresInventoryProviderBranchScopeStore(db.client);
+    await expect(store.approveHardReservationCapability({ tenantId: "tenant-1", integrationId: "pos-1" })).resolves.toBe("not_eligible");
+  });
+
   it("grants only connected POS/ERP integrations with platform-approved hard reservation capability", async () => {
     const db = database(1);
     const store = new PostgresInventoryProviderBranchScopeStore(db.client);
