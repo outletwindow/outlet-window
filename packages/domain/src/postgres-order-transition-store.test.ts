@@ -91,7 +91,7 @@ describe("PostgresOrderTransitionStore", () => {
     const result = await new PostgresOrderTransitionStore(db.pool).transitionSuborder({
       tenantId: "tenant-1", orderId: "order-1", suborderId: "sub-1",
       nextStatus: "ready_for_pickup", context,
-      auditEvent: { ...auditEvent, metadata: { orderId: "order-1", nextStatus: "ready_for_pickup" } }
+      auditEvent: { ...auditEvent, metadata: { orderId: "order-1", previousStatus: "preparing", nextStatus: "ready_for_pickup" } }
     });
     expect(result).toEqual({ outcome: "rejected", reason: "preparation_checks_incomplete" });
     expect(db.statements).toContain("ROLLBACK");
@@ -103,7 +103,7 @@ describe("PostgresOrderTransitionStore", () => {
     const result = await new PostgresOrderTransitionStore(db.pool).transitionSuborder({
       tenantId: "tenant-1", orderId: "order-1", suborderId: "sub-1",
       nextStatus: "ready_for_pickup", context,
-      auditEvent: { ...auditEvent, metadata: { orderId: "order-1", nextStatus: "ready_for_pickup" } }
+      auditEvent: { ...auditEvent, metadata: { orderId: "order-1", previousStatus: "preparing", nextStatus: "ready_for_pickup" } }
     });
     expect(result).toMatchObject({ outcome: "updated", transition: { ok: true, order: { status: "ready_for_pickup" } } });
     expect(db.statements.some(sql => sql.includes("COUNT(i.id)::int AS item_count"))).toBe(true);
@@ -115,6 +115,17 @@ describe("PostgresOrderTransitionStore", () => {
     expect(preparationQuery).toContain("c.expected_quantity = i.quantity");
     expect(preparationQuery).toContain("c.verified_quantity = i.quantity");
     expect(db.statements.at(-1)).toBe("COMMIT");
+  });
+
+  it("rejects audit evidence with a stale previous status", async () => {
+    const db = fakePool();
+    await expect(new PostgresOrderTransitionStore(db.pool).transitionSuborder({
+      tenantId: "tenant-1", orderId: "order-1", suborderId: "sub-1",
+      nextStatus: "awaiting_payment", context,
+      auditEvent: { ...auditEvent, metadata: { orderId: "order-1", previousStatus: "cancelled", nextStatus: "awaiting_payment" } }
+    })).rejects.toThrow("Order transition audit scope does not match the locked suborder");
+    expect(db.statements).toContain("ROLLBACK");
+    expect(db.statements.some(sql => sql.startsWith("UPDATE"))).toBe(false);
   });
 
   it("rejects audit evidence scoped to a different merchant branch", async () => {
@@ -133,7 +144,7 @@ describe("PostgresOrderTransitionStore", () => {
     const result = await new PostgresOrderTransitionStore(db.pool).transitionSuborder({
       tenantId: "tenant-1", orderId: "order-1", suborderId: "sub-1",
       nextStatus: "delivered", context,
-      auditEvent: { ...auditEvent, metadata: { orderId: "order-1", nextStatus: "delivered" } }
+      auditEvent: { ...auditEvent, metadata: { orderId: "order-1", previousStatus: "pending_validation", nextStatus: "delivered" } }
     });
     expect(result).toEqual({ outcome: "rejected", reason: "invalid_transition" });
     expect(db.statements).toContain("ROLLBACK");
