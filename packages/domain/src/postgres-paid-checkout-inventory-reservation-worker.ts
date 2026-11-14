@@ -143,7 +143,7 @@ export class PostgresPaidCheckoutInventoryReservationWorker {
     }
 
     const suborders = await this.pool.query<SuborderRow>(
-      `SELECT id,tenant_id,merchant_id,branch_id,status,version
+      `SELECT s.id,s.tenant_id,s.merchant_id,s.branch_id,s.status,s.version
        FROM merchant_suborders s
        JOIN customer_orders o ON o.id=s.order_id AND o.tenant_id=$2
        WHERE s.order_id=$1 ORDER BY s.id`,
