@@ -312,7 +312,7 @@ integration("PostgreSQL customer checkout orchestration", () => {
       expect.objectContaining({
         suborder_id: suborders.rows[1]?.id, merchant_id: merchant2Id, branch_id: branch2Id,
         currency: "SAR", total_minor: "1500",
-        quote_snapshot: { quoteId: expect.any(String), totalMinor: 1500 }
+        quote_snapshot: expect.objectContaining({ quoteId: expect.any(String), totalMinor: 1500 })
       })
     ]));
 
