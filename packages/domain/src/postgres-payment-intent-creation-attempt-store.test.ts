@@ -45,6 +45,17 @@ describe("durable payment-intent creation attempts",()=>{
   expect(query.mock.calls[0]?.[0]).toContain("expires_at <= clock_timestamp()");
   expect(query.mock.calls[0]?.[0]).toContain("status='created'");
  });
+ it("validates provider intent expiry against the injected clock",async()=>{
+  const connect=vi.fn();
+  const pool={query:vi.fn(),connect} as unknown as PostgresPool;
+  const now=()=>new Date("2026-11-14T15:00:00.000Z");
+  const store=new PostgresPaymentIntentCreationAttemptStore(pool,undefined,now);
+  await expect(store.markCreated({attemptId:"attempt-1",providerPaymentReference:"provider-intent-1",
+   expiresAtUtc:"2026-11-14T14:59:59.000Z"})).rejects.toThrow("INVALID_PAYMENT_INTENT_CREATION_RESULT");
+  await expect(store.markCreated({attemptId:"attempt-1",providerPaymentReference:"provider-intent-1",
+   expiresAtUtc:"2026-11-15T15:00:01.000Z"})).rejects.toThrow("INVALID_PAYMENT_INTENT_CREATION_RESULT");
+  expect(connect).not.toHaveBeenCalled();
+ });
  it("rejects empty provider expiration evidence before database access",async()=>{
   const query=vi.fn(async()=>({rows:[],rowCount:0}));
   const store=new PostgresPaymentIntentCreationAttemptStore({query,connect:vi.fn()} as unknown as PostgresPool);
