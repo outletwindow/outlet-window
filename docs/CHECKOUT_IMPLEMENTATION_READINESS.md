@@ -201,3 +201,17 @@ into `PostgresOrderStore` would be unsafe and is intentionally not an acceptable
   create that writer or make cart-to-order checkout atomic. Checkout remains blocked until
   transactional quote/order creation, cart conversion, reservation after verified capture,
   and recovery orchestration are implemented and tested.
+
+
+## Latest verification — order-creation stock revalidation
+
+- Hardened `PostgresOrderStore.create` to resolve the catalog variant external inventory key
+  and lock the exact merchant/branch/SKU stock row before inserting each order item.
+- It rejects missing, stale, low-confidence, or insufficient stock inside the same transaction
+  that creates the parent order, suborders, and item rows. This closes the gap where the
+  separate cart repricing preflight had released its stock locks before order creation.
+- The order-creation check does not reserve stock. `reserved_quantity` is still incremented
+  only by the existing verified-payment-capture reservation workflow. Stock can change after
+  order creation, so post-capture reservation and recovery remain mandatory.
+- Added tests for the row lock, exact external variant/SKU mapping, freshness, available quantity,
+  and rollback on stale/insufficient stock.

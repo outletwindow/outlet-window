@@ -17,7 +17,7 @@ const order: CreateCustomerOrderInput = {
 };
 
 function database(options: { existing?: boolean; existingTotal?: string; existingSuborderStatus?: string;
-  unavailableBranch?: boolean; unavailableVariant?: boolean; catalogPrice?: string; catalogCurrency?: string } = {}) {
+  unavailableBranch?: boolean; unavailableVariant?: boolean; catalogPrice?: string; catalogCurrency?: string; inventoryEligible?: boolean } = {}) {
   const statements: string[] = [];
   const query = vi.fn(async <Row>(sql: string, _args?: readonly unknown[]) => {
     statements.push(sql);
@@ -46,10 +46,14 @@ function database(options: { existing?: boolean; existingTotal?: string; existin
       rowCount = 1;
     } else if (sql.includes("FROM commerce_catalog_variants v") && sql.includes("FOR SHARE OF v, p")) {
       rows = options.unavailableVariant ? [] : [{
-        id: "variant-1", catalog_price_minor: options.catalogPrice ?? "6450",
+        id: "variant-1", external_variant_id: "external-variant-1",
+        catalog_price_minor: options.catalogPrice ?? "6450",
         catalog_currency: options.catalogCurrency ?? "SAR"
       }];
       rowCount = rows.length;
+    } else if (sql.includes("FROM branch_inventory i") && sql.includes("FOR UPDATE")) {
+      rows = [{ stock_eligible: options.inventoryEligible ?? true }];
+      rowCount = 1;
     } else if (sql.includes("INSERT INTO customer_order_items")) {
       rows = [];
       rowCount = 1;
@@ -101,6 +105,26 @@ describe("PostgresOrderStore", () => {
       .rejects.toThrow("Order item price does not match the current published catalog price");
     expect(db.statements.some(sql => sql.includes("INSERT INTO customer_order_items"))).toBe(false);
     expect(db.statements.at(-1)).toBe("ROLLBACK");
+  });
+
+  it("locks and validates exact fresh branch inventory before persisting each order line", async () => {
+    const db = database();
+    const result = await new PostgresOrderStore(db.pool).create(order);
+    expect(result).toEqual({ outcome: "created", orderId: "order-1" });
+    const inventoryCheck = db.statements.find(sql => sql.includes("FROM branch_inventory i")) ?? "";
+    expect(inventoryCheck).toContain("i.product_variant_id = $3 AND i.sku = $4");
+    expect(inventoryCheck).toContain("i.last_synced_at >= clock_timestamp()");
+    expect(inventoryCheck).toContain("i.available_quantity - i.reserved_quantity >= $5");
+    expect(inventoryCheck).toContain("FOR UPDATE");
+  });
+
+  it("rejects stale or insufficient branch inventory and rolls back order creation", async () => {
+    const db = database({ inventoryEligible: false });
+    await expect(new PostgresOrderStore(db.pool).create(order))
+      .rejects.toThrow("Order item inventory is stale or insufficient");
+    expect(db.statements.some(sql => sql.includes("INSERT INTO customer_order_items"))).toBe(false);
+    expect(db.statements.at(-1)).toBe("ROLLBACK");
+    expect(db.client.release).toHaveBeenCalledOnce();
   });
 
   it("rejects a caller-supplied currency that differs from the live catalog currency", async () => {

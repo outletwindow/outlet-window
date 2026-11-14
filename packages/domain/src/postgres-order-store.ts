@@ -238,9 +238,9 @@ export class PostgresOrderStore {
         }
         for (const item of suborder.items) {
           const variant = await client.query<{
-            id: string; catalog_price_minor: string | number | null; catalog_currency: string | null;
+            id: string; external_variant_id: string; catalog_price_minor: string | number | null; catalog_currency: string | null;
           }>(
-            `SELECT v.id, COALESCE(v.price_minor,p.price_minor) AS catalog_price_minor,
+            `SELECT v.id, v.external_variant_id, COALESCE(v.price_minor,p.price_minor) AS catalog_price_minor,
                     COALESCE(v.currency,p.currency) AS catalog_currency
              FROM commerce_catalog_variants v
              JOIN commerce_catalog_products p
@@ -264,6 +264,26 @@ export class PostgresOrderStore {
               catalogPrice !== item.unitPriceMinor || catalogVariant.catalog_currency !== item.currency) {
             throw new Error("Order item price does not match the current published catalog price");
           }
+
+          // Recheck exact branch stock inside the order-creation transaction. The cart
+          // repricing preflight releases its locks before this transaction, so it cannot
+          // authorize stock on its own. Reservation still occurs only after verified capture.
+          const inventory = await client.query<{ stock_eligible: boolean }> (
+            `SELECT (
+               i.last_synced_at >= clock_timestamp() - interval '30 minutes'
+               AND i.availability_confidence IN ('high','medium')
+               AND i.available_quantity - i.reserved_quantity >= $5
+             ) AS stock_eligible
+             FROM branch_inventory i
+             WHERE i.merchant_id = $1 AND i.branch_id = $2
+               AND i.product_variant_id = $3 AND i.sku = $4
+             FOR UPDATE`,
+            [suborder.merchantId, suborder.branchId, catalogVariant.external_variant_id, item.sku, item.quantity]
+          );
+          if (inventory.rowCount !== 1 || inventory.rows[0]?.stock_eligible !== true) {
+            throw new Error("Order item inventory is stale or insufficient");
+          }
+
           await client.query(
             `INSERT INTO customer_order_items
              (id, tenant_id, order_id, suborder_id, merchant_id, branch_id,
