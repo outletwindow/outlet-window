@@ -79,6 +79,18 @@ describe("PostgresOrderStore", () => {
     expect(db.client.release).toHaveBeenCalledOnce();
   });
 
+  it("supports order creation inside a caller-owned transaction without controlling its lifecycle", async () => {
+    const db = database();
+    const client = await db.pool.connect();
+    const result = await new PostgresOrderStore(db.pool).createInTransaction(order, client);
+    expect(result).toEqual({ outcome: "created", orderId: "order-1" });
+    expect(db.statements).not.toContain("BEGIN");
+    expect(db.statements).not.toContain("COMMIT");
+    expect(db.statements).not.toContain("ROLLBACK");
+    expect(client.release).not.toHaveBeenCalled();
+    expect(db.statements.filter(sql => sql.includes("pg_advisory_xact_lock"))).toHaveLength(1);
+  });
+
   it("rolls back when a merchant branch is unavailable", async () => {
     const db = database({ unavailableBranch: true });
     await expect(new PostgresOrderStore(db.pool).create(order))

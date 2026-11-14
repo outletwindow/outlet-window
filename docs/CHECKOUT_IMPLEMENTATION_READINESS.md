@@ -216,3 +216,16 @@ into `PostgresOrderStore` would be unsafe and is intentionally not an acceptable
 - Added tests for the row lock, exact external variant/SKU mapping, freshness, available quantity,
   and rollback on stale/insufficient stock. The PostgreSQL order-store integration fixture now
   seeds and cleans up the corresponding fresh branch-inventory row.
+
+## Transaction composition primitive
+
+- Added `PostgresOrderStore.createInTransaction(input, client)`. It performs the same input
+  validation, idempotency lock/replay check, catalog price verification, exact branch stock
+  lock, and order inserts, but deliberately does not issue BEGIN/COMMIT/ROLLBACK or release
+  the caller-owned PostgreSQL client.
+- The existing `create(input)` remains the self-managed transaction wrapper. This is a
+  prerequisite for a future cart-to-order orchestrator to atomically reprice, quote, persist
+  order/pricing snapshots, and close the cart in one transaction; it does not itself implement
+  that orchestration or make checkout production-ready.
+- Added a unit test proving the transaction helper leaves commit/rollback and connection
+  lifecycle to its caller.
