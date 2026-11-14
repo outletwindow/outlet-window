@@ -116,6 +116,8 @@ describe("PostgresInitialPaymentCaptureInbox", () => {
         order_status: "awaiting_payment"
       }], rowCount: 1 })
       .mockResolvedValueOnce({ rows: [{ id: "capture-1" }], rowCount: 1 }) // capture evidence
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 }) // enqueue reservation job
+      .mockResolvedValueOnce({ rows: [{ capture_id: "capture-1" }], rowCount: 1 }) // verify job identity
       .mockResolvedValueOnce({ rows: [], rowCount: 1 }) // finalize receipt
       .mockResolvedValueOnce({ rows: [], rowCount: 0 }); // COMMIT
     const client = { query: clientQuery, release: vi.fn() } as unknown as PostgresClient;
@@ -127,6 +129,8 @@ describe("PostgresInitialPaymentCaptureInbox", () => {
     const intentLookup = String(clientQuery.mock.calls[2]?.[0]);
     expect(intentLookup).not.toContain("expires_at");
     expect(clientQuery.mock.calls[3]?.[0]).toContain("INSERT INTO verified_order_payment_captures");
+    expect(clientQuery.mock.calls[4]?.[0]).toContain("INSERT INTO paid_checkout_inventory_reservation_jobs");
+    expect(clientQuery.mock.calls[5]?.[0]).toContain("SELECT capture_id FROM paid_checkout_inventory_reservation_jobs");
     expect(clientQuery.mock.calls.at(-1)?.[0]).toBe("COMMIT");
     expect(client.release).toHaveBeenCalledOnce();
   });
