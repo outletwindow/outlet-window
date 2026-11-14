@@ -3,7 +3,10 @@ import { PostgresDeliveryQuoteService } from "./postgres-delivery-quote-service.
 import type { PostgresQueryable, PostgresQueryResult } from "./postgres-iam-store.js";
 
 class FakeDatabase implements PostgresQueryable {
-  constructor(private readonly mode: "valid" | "no_rule" | "no_branch" = "valid") {}
+  constructor(
+    private readonly mode: "valid" | "no_rule" | "no_branch" = "valid",
+    private readonly ruleExpiresAt: string | null = null
+  ) {}
   async query<Row = Record<string, unknown>>(sql: string): Promise<PostgresQueryResult<Row>> {
     if (sql.includes("FROM delivery_service_areas")) return { rows: [{
       id: "area-1", center_latitude: 27.0046, center_longitude: 49.646,
@@ -12,7 +15,7 @@ class FakeDatabase implements PostgresQueryable {
     if (sql.includes("FROM delivery_pricing_rules")) return this.mode === "no_rule"
       ? { rows: [], rowCount: 0 }
       : { rows: [{
-          id: "rule-1", version: 2, currency: "SAR",
+          id: "rule-1", version: 2, currency: "SAR", effective_until: this.ruleExpiresAt,
           calculation_config: { method: "fixed_plus_distance", base_fee_minor: 1000, per_km_minor: 200 }
         } as Row], rowCount: 1 };
     if (sql.includes("branch.latitude")) return this.mode === "no_branch"
@@ -42,6 +45,21 @@ describe("PostgresDeliveryQuoteService", () => {
     expect(result.quote.currency).toBe("SAR");
     expect(result.quote.totalMinor).toBeGreaterThanOrEqual(1000);
     expect(result.quote.expiresAtUtc).toBe("2026-11-08T12:05:00.000Z");
+  });
+
+  it("caps quote validity at the approved pricing rule's effective end", async () => {
+    const database = new FakeDatabase("valid", "2026-11-08T12:02:00.000Z");
+    const result = await new PostgresDeliveryQuoteService(database).quote(request);
+    expect(result.status).toBe("quoted");
+    if (result.status === "quoted") {
+      expect(result.quote.expiresAtUtc).toBe("2026-11-08T12:02:00.000Z");
+    }
+  });
+
+  it("rejects a pricing rule whose effective window has already ended", async () => {
+    const database = new FakeDatabase("valid", "2026-11-08T11:59:59.000Z");
+    const result = await new PostgresDeliveryQuoteService(database).quote(request);
+    expect(result).toEqual({ status: "no_active_pricing_rule" });
   });
 
   it("rejects destinations outside configured service areas", async () => {
