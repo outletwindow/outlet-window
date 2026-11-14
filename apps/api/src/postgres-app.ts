@@ -182,7 +182,8 @@ export function buildPostgresApp(options: PostgresApiOptions) {
         "0044_external_inventory_reservation_evidence",
         "0045_checkout_recovery_suborder_scope",
         "0046_checkout_recovery_reservation_scope",
-        "0047_checkout_recovery_reservation_error_codes"
+        "0047_checkout_recovery_reservation_error_codes",
+        "0048_suborder_delivery_quote_snapshots"
       ];
       const result = await options.pool.query<{ version: string }>(
         "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",
