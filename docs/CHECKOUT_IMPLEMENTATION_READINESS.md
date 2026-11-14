@@ -157,3 +157,32 @@ into `PostgresOrderStore` would be unsafe and is intentionally not an acceptable
 - This remains a guarded repository operation, not an exposed checkout route. The upstream
   cart repricing, inventory/cart locking, immutable price snapshot writer, idempotent order
   creation, and recovery orchestration are still required before release.
+
+
+## Latest verification — authoritative catalog repricing
+
+- Added `PostgresCustomerCartRepricingService` as a guarded domain preflight. It serializes
+  with customer cart add/remove operations using the same advisory lock, checks the expected
+  cart version, joins each line to its exact tenant-owned published catalog variant, merchant,
+  branch, and branch inventory, and locks the catalog/stock rows while calculating totals.
+- Cart display prices are not read. Unit prices are derived from
+  `COALESCE(commerce_catalog_variants.price_minor, commerce_catalog_products.price_minor)`;
+  stale/insufficient inventory, missing catalog/stock mappings, currency drift, and unsafe
+  integer totals fail closed. Lines are grouped by exact merchant and branch.
+- Important boundary: this preflight returns after its transaction commits, so its returned
+  snapshot is not a durable authorization to create an order later. Final order creation must
+  revalidate in its own transaction. The preflight is not exposed as a public checkout route.
+- Hardened `PostgresOrderStore.create`: while holding `FOR SHARE` locks on the exact
+  tenant-owned published variant and product, it now compares each supplied unit price and
+  currency against the current catalog values before inserting the order line. This prevents
+  callers from lowering or otherwise forging item prices.
+- Added regression tests for live-catalog repricing, stale cart versions, missing inventory
+  joins, stock ineligibility, currency drift, unsafe totals, and order-line price/currency
+  mismatch.
+- CI Push #1698 passed on commit
+  `6928dc64d3e51b203c653d8bda948109f9f2823a`: PostgreSQL migrations/integration checks,
+  TypeScript typecheck, lint, all tests, and build succeeded.
+- Checkout is still not production-ready: this preflight is not yet composed atomically with
+  delivery quoting, immutable order creation, cart conversion, platform readiness transition,
+  and payment recovery. Multi-branch/multi-stop delivery pricing must also be defined and
+  verified before enabling multi-store checkout.
