@@ -24,6 +24,7 @@ INSERT INTO commerce_catalog_variants
  (id,tenant_id,product_id,external_variant_id,sku,currency,price_minor,availability)
 VALUES
  ('ow-order-scope-variant-a','ow-order-scope-merchant-a','ow-order-scope-product-a','external-a','SKU-A','SAR',1000,'in_stock'),
+ ('ow-order-scope-variant-a2','ow-order-scope-merchant-a','ow-order-scope-product-a','external-a2','SKU-A2','SAR',1000,'in_stock'),
  ('ow-order-scope-variant-b','ow-order-scope-merchant-b','ow-order-scope-product-b','external-b','SKU-B','SAR',1000,'in_stock');
 
 INSERT INTO customer_orders (id,tenant_id,customer_id,idempotency_key,status,currency,total_minor)
@@ -42,7 +43,7 @@ BEGIN
     INSERT INTO customer_order_items
      (id,tenant_id,order_id,suborder_id,merchant_id,branch_id,product_variant_id,sku,quantity,unit_price_minor,currency)
     VALUES
-     ('ow-order-scope-item-wrong-sku','ow-order-scope-merchant-a','ow-order-scope-order','ow-order-scope-suborder','ow-order-scope-merchant-a','ow-order-scope-branch-a','ow-order-scope-variant-a','SKU-WRONG',1,1000,'SAR');
+     ('ow-order-scope-item-wrong-sku','ow-order-scope-merchant-a','ow-order-scope-order','ow-order-scope-suborder','ow-order-scope-merchant-a','ow-order-scope-branch-a','ow-order-scope-variant-a2','SKU-WRONG',1,1000,'SAR');
     RAISE EXCEPTION 'mismatched catalog SKU unexpectedly accepted';
   EXCEPTION WHEN foreign_key_violation THEN NULL;
   END;
