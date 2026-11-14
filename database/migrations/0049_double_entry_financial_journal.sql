@@ -26,6 +26,7 @@ CREATE TABLE financial_journals (
   posted_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (tenant_id,id),
+  UNIQUE (tenant_id,id,currency),
   UNIQUE (tenant_id,idempotency_key),
   CHECK ((status='draft' AND posted_at IS NULL) OR (status='posted' AND posted_at IS NOT NULL))
 );
@@ -43,8 +44,8 @@ CREATE TABLE financial_journal_lines (
   credit_minor bigint NOT NULL DEFAULT 0 CHECK (credit_minor >= 0),
   memo text,
   created_at timestamptz NOT NULL DEFAULT now(),
-  FOREIGN KEY (tenant_id,journal_id)
-    REFERENCES financial_journals (tenant_id,id) ON DELETE RESTRICT,
+  FOREIGN KEY (tenant_id,journal_id,currency)
+    REFERENCES financial_journals (tenant_id,id,currency) ON DELETE RESTRICT,
   FOREIGN KEY (tenant_id,account_id,currency)
     REFERENCES financial_accounts (tenant_id,id,currency) ON DELETE RESTRICT,
   UNIQUE (tenant_id,journal_id,line_number),
@@ -112,8 +113,8 @@ DECLARE
   scoped_tenant text;
   scoped_journal text;
 BEGIN
-  scoped_tenant := COALESCE(OLD.tenant_id,NEW.tenant_id);
-  scoped_journal := COALESCE(OLD.journal_id,NEW.journal_id);
+  scoped_tenant := CASE WHEN TG_OP='DELETE' THEN OLD.tenant_id ELSE NEW.tenant_id END;
+  scoped_journal := CASE WHEN TG_OP='DELETE' THEN OLD.journal_id ELSE NEW.journal_id END;
   SELECT status INTO journal_status FROM financial_journals
   WHERE tenant_id=scoped_tenant AND id=scoped_journal;
   IF journal_status='posted' THEN
@@ -125,7 +126,7 @@ BEGIN
 END $$;
 
 CREATE TRIGGER financial_journal_lines_immutable_after_posting
-BEFORE UPDATE OR DELETE ON financial_journal_lines
+BEFORE INSERT OR UPDATE OR DELETE ON financial_journal_lines
 FOR EACH ROW EXECUTE FUNCTION protect_posted_financial_journal_lines();
 
 CREATE OR REPLACE FUNCTION prevent_financial_journal_lines_truncate()
