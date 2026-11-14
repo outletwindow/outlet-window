@@ -65,6 +65,7 @@ export class PostgresOrderTransitionStore {
           input.auditEvent.resourceType !== "merchant_suborder" ||
           input.auditEvent.occurredAt !== input.context.occurredAt ||
           input.auditEvent.metadata.orderId !== input.orderId ||
+          input.auditEvent.metadata.previousStatus !== current.status ||
           input.auditEvent.metadata.nextStatus !== input.nextStatus) {
         throw new Error("Order transition audit scope does not match the locked suborder");
       }
