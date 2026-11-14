@@ -400,7 +400,7 @@ checkout API route exists.
 - Added migration `0040_paid_checkout_inventory_reservation_jobs` with a durable, single-job-per-order queue, immutable capture/order identity, lease fields, bounded attempts, and a claim index.
 - The verified initial-capture inbox now inserts or verifies the reservation job in the **same PostgreSQL transaction** that writes the immutable capture evidence and marks the webhook receipt applied. A duplicate delivery reuses the original capture and cannot create a second job for the same order.
 - Registered migration 0040 in the migration runner and API/initial-capture-worker readiness gates; added a PostgreSQL integration script to CI for uniqueness and lease-state constraints.
-- **Important remaining gap:** this commit creates the durable handoff only. A reservation-job consumer that claims leases, reads exact order lines, invokes the branch inventory adapter, records recovery cases, and confirms suborders has not yet been wired. Until that worker is implemented and its integration tests pass, payment capture does not automatically reserve stock or confirm an order. Do not enable live production checkout on the strength of the outbox alone.
+- The reservation-job consumer has since been implemented and CI-verified (see the section below). The default worker composition intentionally does **not** claim that a local stock snapshot is an external merchant hard reservation: until a verified POS/ERP adapter is configured, paid orders are moved to manual review and are not confirmed.
 
 
 ## Paid checkout reservation consumer implementation
@@ -412,3 +412,12 @@ checkout API route exists.
 - Added a dedicated worker entrypoint, Compose service, package scripts, and unit coverage for successful reservation/confirmation, missing capture evidence, and multi-suborder fail-closed recovery.
 - **CI verification:** the consumer, its unit tests, migration 0040, SQL integration tests, typecheck, lint, Compose validation, and full build passed on commit `60d9b7cadc7ed10ef3385128e3e96ac566231882` (GitHub Actions run [#43622287478](https://github.com/outletwindow/outlet-window/actions/runs/43622287478)).
 - **Production release gates remain:** apply migration 0040 to the target database, validate merchant inventory sync freshness and reconciliation operations, configure and verify the payment provider in the target environment, and monitor `needs_review` jobs plus `checkout_recovery_cases`. The platform reservation ledger prevents platform-side overselling but does not itself prove that an external POS/ERP has acknowledged a hard stock hold. Refunds and stock release remain separate audited workflows.
+
+
+## Merchant inventory integration safety and snapshot correctness
+
+- The worker's production composition now uses `UnconfiguredMerchantInventoryReservationAdapter` as a fail-closed default. It returns `merchant_integration_missing`; the paid order is recorded for recovery and moved to `on_hold` rather than being confirmed from the platform's cached stock alone.
+- The PostgreSQL branch inventory adapter remains a platform-side ledger and advisory-stock allocator. Its `reserved` result must not be interpreted as proof that a merchant POS/ERP accepted a hard hold. A provider-specific adapter must satisfy the exact-variant, branch-scoped, atomic, idempotent reservation contract before it can be injected into the worker.
+- Branch inventory sync accepts complete branch snapshots. Variants omitted from a newer complete snapshot are now set to `available_quantity = reserved_quantity`, making free stock zero while preserving existing reservations. A timestamp guard prevents an older snapshot from clearing newer inventory.
+- Added tests for the unconfigured merchant reservation fail-closed path, complete-snapshot omission handling, and tenant/branch scope rejection.
+- No live POS/ERP provider is currently configured or claimed as verified. Do not enable automatic order confirmation until a provider's hard-reservation and compensation behavior is implemented and integration-tested.
