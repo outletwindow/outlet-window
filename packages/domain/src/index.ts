@@ -98,3 +98,4 @@ export * from "./postgres-initial-payment-capture-inbox.js";
 export * from "./postgres-checkout-recovery-case-store.js";
 
 export * from "./postgres-customer-payment-intent-checkout.js";
+export * from "./postgres-platform-checkout-readiness-store.js";
