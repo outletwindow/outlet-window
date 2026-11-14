@@ -30,7 +30,7 @@ function createPool(options: {
         id:"local-res-1",tenant_id:request.tenantId,order_id:request.orderId,
         suborder_id:request.suborderId,merchant_id:request.merchantId,branch_id:request.branchId,
         status:"reserved",integration_id:"pos-1",provider_key:"pos-acme",
-        provider_reservation_reference:"external-hold-1"
+        provider_reservation_reference:"external-hold-1",expires_at:"2026-11-14T12:15:00.000Z"
       }] : [];
     } else if(sql.includes("FROM inventory_reservation_lines")) {
       rows=[{catalog_variant_id:"catalog-variant-1",sku:"SKU-1",quantity:2}];
@@ -58,7 +58,7 @@ describe("PostgresExternalInventoryReservationEvidenceStore",()=>{
   it("persists the verified provider receipt and exact local reservation atomically",async()=>{
     const db=createPool();
     const store=new PostgresExternalInventoryReservationEvidenceStore(db.pool,()=> "local-res-1");
-    await expect(store.record(evidence)).resolves.toEqual({reservationId:"local-res-1"});
+    await expect(store.record(evidence)).resolves.toEqual({reservationId:"local-res-1",expiresAtUtc:"2026-11-14T12:15:00.000Z"});
     expect(db.calls[0]?.sql).toBe("BEGIN");
     expect(db.calls.some(c=>c.sql.includes("FOR UPDATE OF i,s,m,b"))).toBe(true);
     expect(db.calls.some(c=>c.sql.includes("INSERT INTO inventory_provider_reservation_evidence"))).toBe(true);
@@ -73,6 +73,14 @@ describe("PostgresExternalInventoryReservationEvidenceStore",()=>{
     await expect(store.record(evidence)).resolves.toEqual({reservationId:"local-res-1"});
     expect(db.calls.some(c=>c.sql.includes("INSERT INTO inventory_reservations"))).toBe(false);
     expect(db.calls.at(-1)?.sql).toBe("COMMIT");
+  });
+
+  it("rejects an idempotent replay when the provider changes the hold expiry",async()=>{
+    const db=createPool({existing:true});
+    const store=new PostgresExternalInventoryReservationEvidenceStore(db.pool,()=> "unused");
+    await expect(store.record({...evidence,expiresAtUtc:"2026-11-14T12:20:00.000Z"}))
+      .rejects.toThrow("external_inventory_reservation_idempotency_conflict");
+    expect(db.calls.at(-1)?.sql).toBe("ROLLBACK");
   });
 
   it("rejects a revoked provider scope and rolls back",async()=>{
