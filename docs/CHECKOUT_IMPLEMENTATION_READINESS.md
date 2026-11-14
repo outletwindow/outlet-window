@@ -450,3 +450,10 @@ checkout API route exists.
 - The reservation router continues to re-check active provider status, capability, merchant, branch, and scope at reservation time. Revoking a grant therefore removes future eligibility without deleting its audit history.
 - This is administrative control-plane support only. It does not make a provider live: the paid-checkout worker still has an empty adapter registry and will not confirm orders from an unverified provider.
 - A platform-only approval endpoint now promotes `inventory.hard_reservation` only on connected POS/ERP integrations. It is guarded by a platform-wide `manage_access` grant plus a platform owner/admin role and writes requested/final audit events. The subsequent branch grant still validates tenant, merchant, branch, connection state, and capability in SQL.
+## Verified POS/ERP reservation adapter boundary
+
+- Added a provider-neutral adapter contract. Provider-specific clients receive the exact integration, tenant, merchant, branch, idempotency key, and requested variant/SKU quantities.
+- Acknowledgements are accepted only when tenant, merchant, branch, idempotency key, every variant/SKU/quantity, reservation reference, and future UTC expiry match the original request.
+- Out-of-scope unavailable-line identifiers and malformed/partial acknowledgements are rejected and flow into the worker's retry/recovery path; they cannot confirm an order.
+- Provider clients remain responsible for provider authentication, TLS/signature verification, secret resolution, and authoritative external branch/SKU mapping. Do not implement a generic arbitrary-URL adapter.
+- No live adapter is registered in the worker composition root yet. The router remains fail-closed until a concrete provider client is implemented and configured.
