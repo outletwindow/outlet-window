@@ -210,6 +210,10 @@ jobs:
         env:
           PGPASSWORD: ci_only_password
         run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0041_branch_inventory_snapshot_watermark.integration.sql
+      - name: Verify durable branch inventory reconciliation alerts
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0042_branch_inventory_reconciliation_alerts.integration.sql
       - name: Validate automatic runtime Compose configuration
         env:
           DATABASE_URL: postgres://outlet_window:ci_only_password@127.0.0.1:5432/outlet_window_test
