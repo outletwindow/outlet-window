@@ -22,7 +22,7 @@ type AreaRow = {
   id: string; center_latitude: string | number; center_longitude: string | number;
   radius_meters: number; currency: string;
 };
-type RuleRow = { id: string; version: number; currency: string; calculation_config: Record<string, unknown> };
+type RuleRow = { id: string; version: number; currency: string; calculation_config: Record<string, unknown>; effective_until: Date | string | null };
 type BranchRow = { merchant_id: string; branch_id: string };
 type GeocodedBranchRow = { merchant_id: string; branch_id: string; latitude: string | number; longitude: string | number };
 
@@ -68,12 +68,13 @@ export class PostgresDeliveryQuoteService {
     if (!selected) return { status: "no_routable_branch" };
 
     const ruleResult = await this.database.query<RuleRow>(
-      `SELECT id, version, currency, calculation_config
+      `SELECT id, version, currency, calculation_config, effective_until
        FROM delivery_pricing_rules
        WHERE tenant_id = $1 AND id = $2 AND version = $3
          AND service_area_id = $4 AND status = 'active'
-         AND approved_by IS NOT NULL AND approved_at IS NOT NULL`,
-      [input.request.tenantId, result.quote.ruleId, result.quote.ruleVersion, result.serviceAreaId]
+         AND approved_by IS NOT NULL AND approved_at IS NOT NULL
+         AND effective_from <= $5 AND (effective_until IS NULL OR effective_until > $5)`,
+      [input.request.tenantId, result.quote.ruleId, result.quote.ruleVersion, result.serviceAreaId, input.request.nowUtc]
     );
     const config = ruleResult.rows[0]?.calculation_config;
     const baseFee = config?.base_fee_minor;
@@ -129,7 +130,7 @@ export class PostgresDeliveryQuoteService {
     if (!area) return { status: "outside_service_area" };
 
     const rules = await this.database.query<RuleRow>(
-      `SELECT id, version, currency, calculation_config
+      `SELECT id, version, currency, calculation_config, effective_until
        FROM delivery_pricing_rules
        WHERE tenant_id = $1 AND service_area_id = $2 AND service_code = $3
          AND currency = $4 AND status = 'active'
@@ -171,12 +172,20 @@ export class PostgresDeliveryQuoteService {
     const deliveryFee = baseFee + distanceKmCeiling * perKm;
     if (!Number.isSafeInteger(deliveryFee)) return { status: "no_active_pricing_rule" };
 
+    const ruleExpiry = rule.effective_until === null
+      ? Number.POSITIVE_INFINITY : new Date(rule.effective_until).getTime();
+    const quoteExpiry = Math.min(now + validity * 1000, ruleExpiry);
+    if (!Number.isFinite(ruleExpiry) && rule.effective_until !== null) {
+      return { status: "no_active_pricing_rule" };
+    }
+    if (quoteExpiry <= now) return { status: "no_active_pricing_rule" };
+
     const quote = calculatePricingQuote({
       quoteId: request.quoteId, ruleId: rule.id, ruleVersion: rule.version,
       currency: rule.currency,
       components: [{ kind: "delivery", amountMinor: deliveryFee, label: "Delivery fee (zone-center distance estimate)" }],
       createdAtUtc: new Date(now).toISOString(),
-      expiresAtUtc: new Date(now + validity * 1000).toISOString()
+      expiresAtUtc: new Date(quoteExpiry).toISOString()
     });
     return {
       status: "quoted", serviceAreaId: area.id, currency: area.currency,
