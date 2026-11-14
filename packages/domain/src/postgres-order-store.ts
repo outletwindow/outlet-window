@@ -178,7 +178,7 @@ export class PostgresOrderStore {
       id: string; currency: string; total_minor: string | number; same_request: boolean | null;
     }>(
       `SELECT id, currency, total_minor,
-              (metadata->'checkoutRequest' = $4::jsonb) AS same_request
+              (metadata->'checkoutPricing'->'checkoutRequest' = $4::jsonb) AS same_request
        FROM customer_orders
        WHERE tenant_id = $1 AND customer_id = $2 AND idempotency_key = $3
        FOR UPDATE`,
