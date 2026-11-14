@@ -432,4 +432,4 @@ checkout API route exists.
   `GET /api/v1/merchants/:merchantId/branches/:branchId/inventory/reconciliation-alerts`.
 - Migration 0041 adds the branch snapshot watermark; migration 0042 adds durable discrepancy alerts. Both are registered in the migration runner and API/paid-checkout worker readiness gates, with PostgreSQL integration tests in CI.
 - This is still a reconciliation safeguard, not proof of an external POS/ERP hard reservation. The paid-checkout worker remains fail-closed until a provider adapter can guarantee atomic exact-variant holds.
-- The latest code changes are awaiting a complete CI run. Do not treat these changes as verified until the workflow for the current branch head completes successfully.
+- CI verification: migrations 0040–0042, SQL integration checks, TypeScript typecheck, lint, unit tests, Compose validation, and production build passed on commit `8ec954e9bd14144e4b6915e29d0038d657f8fa95` (GitHub Actions run [#43623653728](https://github.com/outletwindow/outlet-window/actions/runs/43623653728)). This verifies repository checks only; it does not mean an external POS/ERP provider is connected or production checkout is enabled.
