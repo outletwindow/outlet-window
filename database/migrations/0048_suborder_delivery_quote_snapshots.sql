@@ -42,7 +42,20 @@ CREATE TABLE customer_order_suborder_delivery_quotes (
   CHECK (length(trim(suborder_id)) BETWEEN 1 AND 200),
   CHECK (length(trim(merchant_id)) BETWEEN 1 AND 200),
   CHECK (length(trim(branch_id)) BETWEEN 1 AND 200),
-  CHECK (expires_at > created_at)
+  CHECK (expires_at > created_at),
+  CHECK (jsonb_typeof(quote_snapshot->'quoteId') = 'string'
+         AND quote_snapshot->>'quoteId' = id),
+  CHECK (jsonb_typeof(quote_snapshot->'ruleId') = 'string'
+         AND quote_snapshot->>'ruleId' = pricing_rule_id),
+  CHECK (jsonb_typeof(quote_snapshot->'ruleVersion') = 'number'
+         AND quote_snapshot->>'ruleVersion' = pricing_rule_version::text),
+  CHECK (jsonb_typeof(quote_snapshot->'currency') = 'string'
+         AND quote_snapshot->>'currency' = currency::text),
+  CHECK (jsonb_typeof(quote_snapshot->'totalMinor') = 'number'
+         AND quote_snapshot->>'totalMinor' = total_minor::text),
+  CHECK (jsonb_typeof(quote_snapshot->'components') = 'array'),
+  CHECK (jsonb_typeof(quote_snapshot->'createdAtUtc') = 'string'),
+  CHECK (jsonb_typeof(quote_snapshot->'expiresAtUtc') = 'string')
 );
 
 CREATE INDEX customer_order_suborder_delivery_quotes_order_idx
