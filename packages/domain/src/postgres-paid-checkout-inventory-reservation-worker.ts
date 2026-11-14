@@ -161,6 +161,11 @@ export class PostgresPaidCheckoutInventoryReservationWorker {
       return { needsReview: true, failureCode: "ORDER_STATUS_NOT_PAYABLE" };
     }
 
+    // A confirmed suborder has already passed the transition store's capture and
+    // reservation evidence gates. Short-circuit retries before touching a reservation
+    // that may since have been consumed by a verified handover.
+    if (suborder.status === "confirmed") return { needsReview: false };
+
     const itemResult = await this.pool.query<OrderLineRow>(
       `SELECT product_variant_id,sku,quantity FROM customer_order_items
        WHERE tenant_id=$1 AND order_id=$2 AND suborder_id=$3
@@ -199,7 +204,6 @@ export class PostgresPaidCheckoutInventoryReservationWorker {
       return { needsReview: true, failureCode: code };
     }
 
-    if (suborder.status === "confirmed") return { needsReview: false };
     let current = suborder;
     if (current.status === "pending_validation") {
       const awaiting = await this.transition(current, job.order_id, "awaiting_payment");
