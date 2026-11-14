@@ -19,6 +19,7 @@ function createPool(options: {
   existing?: boolean;
   eligible?: boolean;
   stockMatches?: boolean;
+  quantityMatches?: boolean;
 } = {}) {
   const calls: Array<{sql:string;values:readonly unknown[]}> = [];
   const query = vi.fn(async <Row>(sql:string,values:readonly unknown[]=[]):Promise<PostgresQueryResult<Row>> => {
@@ -39,7 +40,8 @@ function createPool(options: {
       rows=[{id:"suborder-1"}];
     } else if(sql.includes("FROM customer_order_items oi")) {
       rows=options.stockMatches===false ? [] : [{
-        catalog_variant_id:"catalog-variant-1",external_variant_id:"external-variant-1",sku:"SKU-1"
+        catalog_variant_id:"catalog-variant-1",external_variant_id:"external-variant-1",sku:"SKU-1",
+        order_quantity:options.quantityMatches===false ? 1 : 2
       }];
     } else if(sql.includes("UPDATE branch_inventory")) {
       return {rows:[],rowCount:1};
@@ -85,6 +87,14 @@ describe("PostgresExternalInventoryReservationEvidenceStore",()=>{
     const store=new PostgresExternalInventoryReservationEvidenceStore(db.pool,()=> "local-res-1");
     await expect(store.record(evidence)).rejects.toThrow("external_inventory_reservation_catalog_mapping_mismatch");
     expect(db.calls.at(-1)?.sql).toBe("ROLLBACK");
+  });
+
+  it("rejects a provider reservation quantity that differs from persisted order items",async()=>{
+    const db=createPool({quantityMatches:false});
+    const store=new PostgresExternalInventoryReservationEvidenceStore(db.pool,()=> "local-res-1");
+    await expect(store.record(evidence)).rejects.toThrow("external_inventory_reservation_catalog_mapping_mismatch");
+    expect(db.calls.at(-1)?.sql).toBe("ROLLBACK");
+    expect(db.calls.some(c=>c.sql.includes("INSERT INTO inventory_reservations"))).toBe(false);
   });
 
   it("rejects malformed external references before opening a database transaction",async()=>{
