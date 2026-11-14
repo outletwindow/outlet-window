@@ -20,7 +20,7 @@ export type DeliveryQuoteResult =
 
 type AreaRow = {
   id: string; center_latitude: string | number; center_longitude: string | number;
-  radius_meters: number; currency: string;
+  radius_meters: number; currency: string; effective_until: Date | string | null;
 };
 type RuleRow = { id: string; version: number; currency: string; calculation_config: Record<string, unknown>; effective_until: Date | string | null };
 type BranchRow = { merchant_id: string; branch_id: string };
@@ -115,7 +115,7 @@ export class PostgresDeliveryQuoteService {
     }
 
     const areas = await this.database.query<AreaRow>(
-      `SELECT id, center_latitude, center_longitude, radius_meters, currency
+      `SELECT id, center_latitude, center_longitude, radius_meters, currency, effective_until
        FROM delivery_service_areas
        WHERE tenant_id = $1 AND country_code = $2 AND city_code = $3
          AND status = 'active' AND effective_from <= $4
@@ -174,10 +174,13 @@ export class PostgresDeliveryQuoteService {
 
     const ruleExpiry = rule.effective_until === null
       ? Number.POSITIVE_INFINITY : new Date(rule.effective_until).getTime();
-    const quoteExpiry = Math.min(now + validity * 1000, ruleExpiry);
-    if (!Number.isFinite(ruleExpiry) && rule.effective_until !== null) {
+    const areaExpiry = area.effective_until === null
+      ? Number.POSITIVE_INFINITY : new Date(area.effective_until).getTime();
+    if ((!Number.isFinite(ruleExpiry) && rule.effective_until !== null) ||
+        (!Number.isFinite(areaExpiry) && area.effective_until !== null)) {
       return { status: "no_active_pricing_rule" };
     }
+    const quoteExpiry = Math.min(now + validity * 1000, ruleExpiry, areaExpiry);
     if (quoteExpiry <= now) return { status: "no_active_pricing_rule" };
 
     const quote = calculatePricingQuote({
