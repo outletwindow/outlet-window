@@ -3,12 +3,14 @@ import { PostgresDeliveryQuoteService } from "./postgres-delivery-quote-service.
 import type { PostgresQueryable, PostgresQueryResult } from "./postgres-iam-store.js";
 
 class FakeDatabase implements PostgresQueryable {
+  readonly statements: string[] = [];
   constructor(
     private readonly mode: "valid" | "no_rule" | "no_branch" = "valid",
     private readonly ruleExpiresAt: string | null = null,
     private readonly areaExpiresAt: string | null = null
   ) {}
   async query<Row = Record<string, unknown>>(sql: string): Promise<PostgresQueryResult<Row>> {
+    this.statements.push(sql);
     if (sql.includes("FROM delivery_service_areas")) return { rows: [{
       id: "area-1", center_latitude: 27.0046, center_longitude: 49.646,
       radius_meters: 10_000, currency: "SAR", effective_until: this.areaExpiresAt
@@ -38,13 +40,17 @@ const request = {
 
 describe("PostgresDeliveryQuoteService", () => {
   it("resolves a service area, approved rule and eligible branches into an expiring quote", async () => {
-    const result = await new PostgresDeliveryQuoteService(new FakeDatabase()).quote(request);
+    const database = new FakeDatabase();
+    const result = await new PostgresDeliveryQuoteService(database).quote(request);
     expect(result.status).toBe("quoted");
     if (result.status !== "quoted") return;
     expect(result.eligibleBranches).toEqual([{ merchantId: "merchant-1", branchId: "branch-1" }]);
     expect(result.quote.ruleVersion).toBe(2);
     expect(result.quote.currency).toBe("SAR");
     expect(result.quote.totalMinor).toBeGreaterThanOrEqual(1000);
+    expect(database.statements.some(sql => sql.includes("delivery_service_areas") && sql.includes("FOR SHARE"))).toBe(true);
+    expect(database.statements.some(sql => sql.includes("delivery_pricing_rules") && sql.includes("FOR SHARE"))).toBe(true);
+    expect(database.statements.some(sql => sql.includes("delivery_service_area_branches") && sql.includes("FOR SHARE"))).toBe(true);
     expect(result.quote.expiresAtUtc).toBe("2026-11-08T12:05:00.000Z");
   });
 

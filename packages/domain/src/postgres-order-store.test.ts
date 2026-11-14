@@ -79,6 +79,33 @@ describe("PostgresOrderStore", () => {
     expect(db.client.release).toHaveBeenCalledOnce();
   });
 
+  it("persists the delivery snapshot fields required by platform readiness", async () => {
+    const db = database();
+    const input: CreateCustomerOrderInput = {
+      ...order,
+      deliveryDestination: { latitude: 27.01, longitude: 49.65, countryCode: "SA", cityCode: "JUBAIL" },
+      deliveryQuote: { quoteId: "quote-1", ruleId: "rule-1", ruleVersion: 1, currency: "SAR",
+        totalMinor: 1500, createdAtUtc: "2026-11-14T16:00:00.000Z",
+        expiresAtUtc: "2026-11-14T16:05:00.000Z" },
+      deliveryZoneId: "zone-1",
+      deliveryBranchId: "branch-1"
+    };
+    await new PostgresOrderStore(db.pool).create(input);
+    const insert = db.statements.find(sql => sql.includes("INSERT INTO customer_orders")) ?? "";
+    expect(insert).toContain("delivery_destination");
+    expect(insert).toContain("delivery_quote");
+    expect(insert).toContain("delivery_zone_id");
+    expect(insert).toContain("delivery_branch_id");
+  });
+
+  it("rejects incomplete delivery snapshots before opening a transaction", async () => {
+    const db = database();
+    await expect(new PostgresOrderStore(db.pool).create({
+      ...order, deliveryDestination: { latitude: 27.01, longitude: 49.65 }
+    })).rejects.toThrow("Delivery destination, quote, zone, and branch must be supplied together");
+    expect(db.pool.connect).not.toHaveBeenCalled();
+  });
+
   it("supports order creation inside a caller-owned transaction without controlling its lifecycle", async () => {
     const db = database();
     const client = await db.pool.connect();

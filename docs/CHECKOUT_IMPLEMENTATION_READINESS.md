@@ -293,3 +293,33 @@ into `PostgresOrderStore` would be unsafe and is intentionally not an acceptable
 - Added a unit test proving the transaction-scoped readiness method leaves transaction
   lifecycle entirely to its caller. This is another composition primitive, not yet a complete
   cart-to-order orchestrator or a production checkout endpoint.
+
+
+## Single-branch atomic checkout orchestration
+
+- Added `PostgresCustomerCheckoutService` to compose cart repricing, delivery quote lookup,
+  parent/suborder/item creation, immutable pricing metadata, platform readiness transition,
+  and cart conversion in one caller-owned PostgreSQL transaction.
+- The service derives line prices from the locked live catalog snapshot, computes the
+  product-plus-delivery total using integer minor units, persists the delivery destination,
+  exact quote, service-area ID, and selected branch on the parent order, and records the
+  `checkoutPricing` snapshot on the initial insert.
+- It accepts only a cart grouped into exactly one merchant/branch suborder. Multi-branch carts
+  fail closed before quote or order creation; the current zone-center delivery quote is not a
+  multi-stop route quote.
+- The selected merchant/branch must be present in the quote's eligible branch set and the
+  quote currency must match the cart currency. The readiness transition and cart conversion
+  occur before the same transaction commits; any conflict rolls back all order, status, audit,
+  and cart writes.
+- `PostgresOrderStore` now persists delivery destination, quote, zone, and branch fields
+  together and rejects partial delivery snapshots. Existing callers without delivery data
+  remain supported for non-checkout order workflows.
+- Delivery quote resolution now takes share locks on the active service area, pricing rule,
+  and eligible branch/merchant assignments so their commercial and eligibility snapshots
+  cannot change mid-checkout.
+- Added tests for delivery snapshot persistence, incomplete snapshot rejection, share-lock
+  query behavior, malformed checkout input, and multi-branch fail-closed rollback.
+- This remains a domain orchestration service, not a public API route. Payment intent creation,
+  verified capture, post-capture inventory reservation, recovery/reconciliation, and end-to-end
+  PostgreSQL concurrency/failure-injection tests remain release gates. Do not enable live
+  payment capture or production checkout.

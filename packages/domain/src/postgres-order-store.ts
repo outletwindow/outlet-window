@@ -28,6 +28,10 @@ export interface CreateCustomerOrderInput {
   currency: string;
   totalMinor: number;
   metadata?: Readonly<Record<string, unknown>>;
+  deliveryDestination?: Readonly<Record<string, unknown>>;
+  deliveryQuote?: Readonly<Record<string, unknown>>;
+  deliveryZoneId?: string;
+  deliveryBranchId?: string;
   suborders: readonly CreateOrderSuborderInput[];
 }
 export type CreateCustomerOrderResult =
@@ -88,6 +92,16 @@ export class PostgresOrderStore {
     requireIdentifier(input.idempotencyKey, "Idempotency key");
     if (input.idempotencyKey.trim().length < 8 || input.idempotencyKey.trim().length > 200) throw new Error("Idempotency key must contain 8 to 200 characters");
     const canonicalOrderMetadata = validateMetadata(input.metadata, "Order metadata");
+    const deliveryFields = [input.deliveryDestination, input.deliveryQuote, input.deliveryZoneId, input.deliveryBranchId];
+    if (deliveryFields.some(value => value !== undefined) &&
+        (deliveryFields.some(value => value === undefined) ||
+         !input.deliveryZoneId?.trim() || !input.deliveryBranchId?.trim())) {
+      throw new Error("Delivery destination, quote, zone, and branch must be supplied together");
+    }
+    if (input.deliveryDestination !== undefined) {
+      validateMetadata(input.deliveryDestination, "Delivery destination");
+      validateMetadata(input.deliveryQuote, "Delivery quote");
+    }
     if (!Array.isArray(input.suborders) || !input.suborders.length) {
       throw new Error("An order requires at least one merchant suborder");
     }
@@ -236,10 +250,14 @@ export class PostgresOrderStore {
 
       await client.query(
         `INSERT INTO customer_orders
-         (id, tenant_id, customer_id, idempotency_key, status, currency, total_minor, metadata)
-         VALUES ($1,$2,$3,$4,'pending_validation',$5,$6,$7::jsonb)`,
+         (id, tenant_id, customer_id, idempotency_key, status, currency, total_minor, metadata,
+          delivery_destination, delivery_quote, delivery_zone_id, delivery_branch_id)
+         VALUES ($1,$2,$3,$4,'pending_validation',$5,$6,$7::jsonb,$8::jsonb,$9::jsonb,$10,$11)`,
         [input.id, input.tenantId, input.customerId, input.idempotencyKey,
-          input.currency, input.totalMinor, JSON.stringify(input.metadata ?? {})]
+          input.currency, input.totalMinor, JSON.stringify(input.metadata ?? {}),
+          input.deliveryDestination === undefined ? null : JSON.stringify(input.deliveryDestination),
+          input.deliveryQuote === undefined ? null : JSON.stringify(input.deliveryQuote),
+          input.deliveryZoneId ?? null, input.deliveryBranchId ?? null]
       );
       for (const suborder of input.suborders) {
         const inserted = await client.query<{ id: string; tenant_id: string }>(

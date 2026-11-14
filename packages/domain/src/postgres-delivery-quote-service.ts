@@ -135,7 +135,7 @@ export class PostgresDeliveryQuoteService {
        WHERE tenant_id = $1 AND country_code = $2 AND city_code = $3
          AND status = 'active' AND effective_from <= $4
          AND (effective_until IS NULL OR effective_until > $4)
-       ORDER BY id`,
+       ORDER BY id FOR SHARE`,
       [request.tenantId, request.countryCode, request.cityCode, request.nowUtc]
     );
     const area = areas.rows.find(row => distanceBetweenCoordinatesMeters(
@@ -151,7 +151,7 @@ export class PostgresDeliveryQuoteService {
          AND currency = $4 AND status = 'active'
          AND approved_by IS NOT NULL AND approved_at IS NOT NULL
          AND effective_from <= $5 AND (effective_until IS NULL OR effective_until > $5)
-       ORDER BY version DESC LIMIT 1`,
+       ORDER BY version DESC LIMIT 1 FOR SHARE`,
       [request.tenantId, area.id, request.serviceCode, area.currency, request.nowUtc]
     );
     const rule = rules.rows[0];
@@ -165,7 +165,8 @@ export class PostgresDeliveryQuoteService {
        JOIN merchants merchant ON merchant.id = link.merchant_id
        WHERE link.tenant_id = $1 AND link.service_area_id = $2
          AND branch.status = 'active' AND merchant.status = 'active'
-       ORDER BY link.merchant_id, link.branch_id`,
+       ORDER BY link.merchant_id, link.branch_id
+       FOR SHARE OF link, branch, merchant`,
       [request.tenantId, area.id]
     );
     if (branchResult.rows.length === 0) return { status: "no_eligible_branch" };

@@ -101,3 +101,5 @@ export * from "./postgres-customer-payment-intent-checkout.js";
 export * from "./postgres-platform-checkout-readiness-store.js";
 export * from "./postgres-customer-cart-store.js";
 export * from "./postgres-customer-cart-repricing.js";
+
+export * from "./postgres-customer-checkout.js";
