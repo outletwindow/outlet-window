@@ -136,7 +136,7 @@ export class PostgresPaidCheckoutInventoryReservationWorker {
       [job.order_id, job.capture_id, job.tenant_id]
     );
     const payment = paid.rows[0];
-    if (paid.rowCount !== 1 || !payment ||
+    if (paid.rows.length !== 1 || !payment ||
         Number(payment.total_minor) !== Number(payment.capture_amount_minor) ||
         payment.currency !== payment.capture_currency) {
       throw new Error("PAID_CHECKOUT_CAPTURE_EVIDENCE_MISMATCH");
@@ -147,7 +147,7 @@ export class PostgresPaidCheckoutInventoryReservationWorker {
        FROM merchant_suborders WHERE order_id=$1 ORDER BY id`,
       [job.order_id]
     );
-    if (suborders.rowCount !== 1) {
+    if (suborders.rows.length !== 1) {
       await this.recordRecovery(job, payment, "TASK_COMMIT_REJECTED", undefined, []);
       return { needsReview: true, failureCode: "UNSUPPORTED_SUBORDER_COUNT" };
     }
@@ -168,7 +168,7 @@ export class PostgresPaidCheckoutInventoryReservationWorker {
        ORDER BY product_variant_id`,
       [suborder.tenant_id, job.order_id, suborder.id, suborder.merchant_id, suborder.branch_id]
     );
-    if (itemResult.rowCount < 1) {
+    if (itemResult.rows.length < 1) {
       await this.recordRecovery(job, payment, "TASK_COMMIT_REJECTED", suborder.id, []);
       return { needsReview: true, failureCode: "ORDER_LINES_MISSING" };
     }
@@ -275,7 +275,7 @@ export class PostgresPaidCheckoutInventoryReservationWorker {
   ): Promise<void> {
     const result = await this.recovery.record({
       tenantId: payment.tenant_id, orderId: job.order_id,
-      idempotencyKey: `paid-checkout-recovery:${job.tenant_id}:${job.order_id}:${failureCode}`,
+      idempotencyKey: `paid-checkout-recovery:${job.id}:${failureCode}`,
       failureCode, ...(suborderId === undefined ? {} : { failedSuborderId: suborderId }),
       paymentReference: payment.provider_payment_reference,
       paymentCapturedAtUtc: new Date(payment.captured_at).toISOString(),
