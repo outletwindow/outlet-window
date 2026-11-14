@@ -150,7 +150,13 @@ export interface AppOptions {
   fulfillmentWebhookAuthorizationResolver?: (providerKey: string, event: VerifiedFulfillmentHandoverEvent) => Promise<boolean>;
   sallaOAuthFlow?: SallaOAuthFlow;
   branchInventorySync?: { sync(input: BranchInventorySyncRequest): Promise<BranchInventorySyncResult> };
-  branchInventoryReader?: { list(input: { tenantId: string; merchantId: string; branchId: string; limit?: number }): Promise<readonly BranchInventoryRecord[]> };
+  branchInventoryReader?: {
+    list(input: { tenantId: string; merchantId: string; branchId: string; limit?: number }): Promise<readonly BranchInventoryRecord[]>;
+    listOpenReconciliationAlerts?(input: { tenantId: string; merchantId: string; branchId: string; limit?: number }): Promise<readonly {
+      id: string; productVariantId: string; source: "pos" | "erp" | "ecommerce" | "csv" | "merchant_portal" | "manual";
+      capturedAtUtc: string; reportedAvailableQuantity: number; platformReservedQuantity: number; createdAtUtc: string;
+    }[]>;
+  };
   inventoryReservationLifecycle?: {
     release(input: { tenantId: string; merchantId: string; branchId: string; reservationId: string; nowUtc: string; reason: string }): Promise<InventoryReservationFinalizeResult>;
     expire(input: { tenantId: string; merchantId: string; branchId: string; reservationId: string; nowUtc: string }): Promise<InventoryReservationFinalizeResult>;
@@ -1289,6 +1295,30 @@ app.patch<{
     if (!tenantId) return reply.code(404).send({ error: "merchant_not_found" });
     const inventory = await options.branchInventoryReader.list({ tenantId, merchantId, branchId, limit });
     return reply.code(200).send({ inventory });
+  });
+
+  app.get<{
+    Params: { merchantId: string; branchId: string };
+    Querystring: { limit?: string };
+  }>("/api/v1/merchants/:merchantId/branches/:branchId/inventory/reconciliation-alerts", async (request, reply) => {
+    const { merchantId, branchId } = request.params;
+    const access = await authorizeRequest(request, options, {
+      resource: "merchant.branch.inventory", action: "read", scope: { merchantId, branchId }
+    });
+    if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
+    const reader = options.branchInventoryReader;
+    if (!reader?.listOpenReconciliationAlerts) {
+      return reply.code(503).send({ error: "inventory_reconciliation_read_unavailable" });
+    }
+    const rawLimit = request.query.limit;
+    const limit = rawLimit === undefined ? 50 : Number(rawLimit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+      return reply.code(400).send({ error: "invalid_limit" });
+    }
+    const tenantId = await options.resolveMerchantTenantId?.(merchantId);
+    if (!tenantId) return reply.code(404).send({ error: "merchant_not_found" });
+    const alerts = await reader.listOpenReconciliationAlerts({ tenantId, merchantId, branchId, limit });
+    return reply.code(200).send({ alerts });
   });
 
   app.put<{ Params: { merchantId: string; productId: string }; Body: { published: boolean } }>(
