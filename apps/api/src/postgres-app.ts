@@ -128,7 +128,7 @@ export function buildPostgresApp(options: PostgresApiOptions) {
       };
     })(),
     ...(options.customerDeliveryDestinations === undefined ? {} : { customerDeliveryDestinations: options.customerDeliveryDestinations }),
-    ...(options.moyasarPaymentIntentClient === undefined || options.paymentCallbackUrl === undefined ? {} : { customerPaymentIntentCheckout: new PostgresCustomerPaymentIntentCheckout(options.pool,options.moyasarPaymentIntentClient,options.paymentCallbackUrl) }),
+    ...(options.moyasarPaymentIntentClient === undefined || options.paymentCallbackUrl === undefined ? {} : { customerPaymentIntentCheckout: new PostgresCustomerPaymentIntentCheckout(options.pool,options.moyasarPaymentIntentClient,options.paymentCallbackUrl,options.now) }),
     readinessCheck: async () => {
       const requiredMigrations = [
         "0001_identity_access_sessions",
