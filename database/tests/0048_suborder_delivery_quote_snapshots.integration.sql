@@ -77,6 +77,23 @@ BEGIN
     (id,tenant_id,order_id,suborder_id,merchant_id,branch_id,service_area_tenant_id,
      service_area_id,pricing_rule_id,pricing_rule_version,quote_snapshot,currency,total_minor,
      created_at,expires_at)
+    VALUES ('quote-snapshot-invalid-components','quote-snapshot-tenant','quote-snapshot-order',
+            'quote-snapshot-suborder','quote-snapshot-merchant','quote-snapshot-branch',
+            'platform','quote-snapshot-area','quote-snapshot-rule',1,
+            jsonb_build_object('quoteId','quote-snapshot-invalid-components','ruleId','quote-snapshot-rule',
+              'ruleVersion',1,'currency','SAR','subtotalMinor',1000,'discountMinor',0,
+              'totalMinor',1000,'components','not-an-array',
+              'createdAtUtc',now()::text,'expiresAtUtc',(now()+interval '5 minutes')::text),
+            'SAR',1000,now(),now()+interval '5 minutes');
+    RAISE EXCEPTION 'non-array quote components unexpectedly accepted';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO customer_order_suborder_delivery_quotes
+    (id,tenant_id,order_id,suborder_id,merchant_id,branch_id,service_area_tenant_id,
+     service_area_id,pricing_rule_id,pricing_rule_version,quote_snapshot,currency,total_minor,
+     created_at,expires_at)
     VALUES ('quote-snapshot-mismatched-total','quote-snapshot-tenant','quote-snapshot-order',
             'quote-snapshot-suborder','quote-snapshot-merchant','quote-snapshot-branch',
             'platform','quote-snapshot-area','quote-snapshot-rule',1,
