@@ -8,7 +8,10 @@ const input = {
 };
 
 function database(rowCount: number) {
-  const query = vi.fn(async () => ({ rows: rowCount ? [{ integration_id: "pos-1" }] : [], rowCount }));
+  const query = vi.fn(async (_sql: string, _values?: readonly unknown[]) => ({
+    rows: rowCount ? [{ integration_id: "pos-1", id: "pos-1" }] : [],
+    rowCount
+  }));
   return { client: { query } as unknown as PostgresQueryable, query };
 }
 
