@@ -8,7 +8,7 @@ class SnapshotClient implements PostgresClient {
   async query<Row>(sql: string, values: readonly unknown[] = []): Promise<PostgresQueryResult<Row>> {
     this.statements.push({ sql: sql.trim().replace(/\s+/g, " "), values });
     if (sql.includes("SELECT b.id FROM merchant_branches")) {
-      return { rows: [{ id: "branch-1" } as Row], rowCount: 1 };
+      return { rows: [{ id: "branch-1", inventory_snapshot_at: null } as Row], rowCount: 1 };
     }
     if (sql.includes("INSERT INTO branch_inventory")) {
       return { rows: [{ product_variant_id: "variant-present" } as Row], rowCount: 1 };
@@ -48,6 +48,35 @@ describe("PostgreSQL complete branch inventory snapshots", () => {
     ]);
     expect(pool.client.statements.at(-1)?.sql).toBe("COMMIT");
     expect(pool.client.released).toBe(true);
+  });
+
+  it("rejects an older complete snapshot before updating any variant or clearing omissions", async () => {
+    class NewerSnapshotClient extends SnapshotClient {
+      override async query<Row>(sql: string, values: readonly unknown[] = []): Promise<PostgresQueryResult<Row>> {
+        this.statements.push({ sql: sql.trim(), values });
+        if (sql.includes("SELECT b.id FROM merchant_branches")) {
+          return { rows: [{ id: "branch-1", inventory_snapshot_at: "2026-11-14T12:05:00.000Z" } as Row], rowCount: 1 };
+        }
+        return { rows: [], rowCount: 0 };
+      }
+    }
+    const client = new NewerSnapshotClient();
+    const pool: PostgresPool = {
+      async query<Row>(): Promise<PostgresQueryResult<Row>> { return { rows: [], rowCount: 0 }; },
+      async connect(): Promise<PostgresClient> { return client; }
+    };
+    const store = new PostgresBranchInventorySyncStore(pool);
+    const result = await store.applySnapshot({
+      tenantId: "tenant-1", merchantId: "merchant-1", branchId: "branch-1",
+      source: "pos", capturedAtUtc: "2026-11-14T12:00:00.000Z", confidence: "low",
+      lines: [{ productVariantId: "variant-old", sku: "SKU-OLD", availableQuantity: 2 }]
+    });
+    expect(result).toEqual({ accepted: 0, stale: 1 });
+    expect(client.statements.some(item => item.sql.includes("INSERT INTO branch_inventory"))).toBe(false);
+    expect(client.statements.some(item => item.sql.includes("UPDATE branch_inventory"))).toBe(false);
+    expect(client.statements.some(item => item.sql.includes("UPDATE merchant_branches"))).toBe(false);
+    expect(client.statements.at(-1)?.sql).toBe("COMMIT");
+    expect(client.released).toBe(true);
   });
 
   it("rolls back when the tenant does not own the branch", async () => {
