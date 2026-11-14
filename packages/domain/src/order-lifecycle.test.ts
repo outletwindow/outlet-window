@@ -45,6 +45,7 @@ describe("order lifecycle", () => {
     expect(aggregateParentOrderStatus(["completed", "delivered"])).toBe("delivered");
     expect(aggregateParentOrderStatus(["completed", "disputed"])).toBe("disputed");
     expect(aggregateParentOrderStatus(["cancelled", "refunded"])).toBe("cancelled");
+    expect(aggregateParentOrderStatus(["refunded", "refunded"])).toBe("refunded");
     expect(() => aggregateParentOrderStatus([])).toThrow();
   });
 });
