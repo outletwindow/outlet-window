@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { PostgresPool } from "./postgres-iam-store.js";
 
 export type BranchInventorySource = "pos" | "erp" | "ecommerce" | "csv" | "merchant_portal" | "manual";
@@ -133,7 +134,33 @@ export class PostgresBranchInventorySyncStore implements BranchInventorySyncStor
           const row = current.rows[0];
           if (row && Date.parse(input.capturedAtUtc) >= new Date(row.last_synced_at).getTime() &&
               line.availableQuantity < row.reserved_quantity) {
-            throw new Error("BRANCH_INVENTORY_RESERVED_STOCK_CONFLICT");
+            // The source-of-truth count is below our active reservations. Never keep
+            // the previous free quantity sellable: clamp on-hand to reserved (zero free),
+            // downgrade confidence, and persist a durable reconciliation alert atomically.
+            const clamped = await client.query(
+              `UPDATE branch_inventory
+               SET available_quantity = reserved_quantity, source = $4,
+                   last_synced_at = $5, availability_confidence = 'low', updated_at = now()
+               WHERE merchant_id = $1 AND branch_id = $2 AND product_variant_id = $3
+                 AND last_synced_at <= $5
+               RETURNING reserved_quantity`,
+              [input.merchantId, input.branchId, line.productVariantId, input.source, input.capturedAtUtc]
+            );
+            if (clamped.rows.length === 1) {
+              const reservedQuantity = Number(clamped.rows[0]!.reserved_quantity);
+              await client.query(
+                `INSERT INTO branch_inventory_reconciliation_alerts
+                 (id, tenant_id, merchant_id, branch_id, product_variant_id, source,
+                  captured_at, reported_available_quantity, platform_reserved_quantity)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+                 ON CONFLICT (merchant_id, branch_id, product_variant_id, captured_at) DO NOTHING`,
+                [randomUUID(), input.tenantId, input.merchantId, input.branchId,
+                  line.productVariantId, input.source, input.capturedAtUtc,
+                  line.availableQuantity, reservedQuantity]
+              );
+              accepted++;
+              continue;
+            }
           }
           stale++;
         }
