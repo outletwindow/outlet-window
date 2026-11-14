@@ -17,8 +17,14 @@ integration("PostgreSQL customer checkout orchestration", () => {
   let integrationId: string;
   let productId: string;
   let variantId: string;
+  let merchant2Id: string;
+  let branch2Id: string;
+  let integration2Id: string;
+  let product2Id: string;
+  let variant2Id: string;
   let cartId: string;
   let cartItemId: string;
+  let cartItem2Id: string;
   let areaId: string;
   let ruleId: string;
   let correlationId: string;
@@ -32,8 +38,14 @@ integration("PostgreSQL customer checkout orchestration", () => {
     integrationId = "checkout-integration-" + suffix;
     productId = "checkout-product-" + suffix;
     variantId = "checkout-variant-" + suffix;
+    merchant2Id = "zz-checkout-merchant-" + suffix;
+    branch2Id = "zz-checkout-branch-" + suffix;
+    integration2Id = "zz-checkout-integration-" + suffix;
+    product2Id = "zz-checkout-product-" + suffix;
+    variant2Id = "zz-checkout-variant-" + suffix;
     cartId = "checkout-cart-" + suffix;
     cartItemId = "checkout-cart-item-" + suffix;
+    cartItem2Id = "zz-checkout-cart-item-" + suffix;
     areaId = "checkout-area-" + suffix;
     ruleId = "checkout-rule-" + suffix;
     correlationId = "checkout-correlation-" + suffix;
@@ -60,6 +72,44 @@ integration("PostgreSQL customer checkout orchestration", () => {
        VALUES ($1,$2,'commerce','manual','Checkout Test Catalog','connected',now(),now())`,
       [integrationId, merchantId]
     );
+    await pool.query(
+      `INSERT INTO merchants (id,legal_name,display_name,country_code,status)
+       VALUES ($1,'Checkout Merchant Two LLC','Checkout Merchant Two','SA','active')`,
+      [merchant2Id]
+    );
+    await pool.query(
+      `INSERT INTO merchant_branches (id,merchant_id,display_name,city_code,address,status,latitude,longitude)
+       VALUES ($1,$2,'Checkout Branch Two','JUBAIL','{}'::jsonb,'active',27.011000,49.651000)`,
+      [branch2Id, merchant2Id]
+    );
+    await pool.query(
+      `INSERT INTO tenant_integrations
+       (id,tenant_id,family,provider_key,display_name,status,created_at,updated_at)
+       VALUES ($1,$2,'commerce','manual','Checkout Test Catalog Two','connected',now(),now())`,
+      [integration2Id, merchant2Id]
+    );
+    await pool.query(
+      `INSERT INTO commerce_catalog_products
+       (id,tenant_id,integration_id,provider_key,external_product_id,canonical_url,title,
+        currency,price_minor,source_type,source_captured_at,source_content_sha256,published_at)
+       VALUES ($1,$2,$3,'manual',$4,'https://catalog.example.test/checkout-product-two',
+        'Checkout Test Product Two','SAR',3000,'manual',now(),repeat('c',64),now())`,
+      [product2Id, merchant2Id, integration2Id, "external-product-two-" + suffix]
+    );
+    await pool.query(
+      `INSERT INTO commerce_catalog_variants
+       (id,tenant_id,product_id,external_variant_id,sku,currency,price_minor)
+       VALUES ($1,$2,$3,$4,$5,'SAR',3000)`,
+      [variant2Id, merchant2Id, product2Id, "external-variant-two-" + suffix, "CHECKOUT-SKU-TWO-" + suffix]
+    );
+    await pool.query(
+      `INSERT INTO branch_inventory
+       (merchant_id,branch_id,product_variant_id,sku,available_quantity,reserved_quantity,
+        source,last_synced_at,availability_confidence)
+       VALUES ($1,$2,$3,$4,10,0,'manual',now(),'high')`,
+      [merchant2Id, branch2Id, "external-variant-two-" + suffix, "CHECKOUT-SKU-TWO-" + suffix]
+    );
+
     await pool.query(
       `INSERT INTO commerce_catalog_products
        (id,tenant_id,integration_id,provider_key,external_product_id,canonical_url,title,
@@ -93,6 +143,13 @@ integration("PostgreSQL customer checkout orchestration", () => {
       [cartItemId, cartId, merchantId, merchantId, branchId, variantId]
     );
     await pool.query(
+      `INSERT INTO customer_cart_items
+       (id,tenant_id,cart_id,merchant_tenant_id,merchant_id,branch_id,product_variant_id,quantity)
+       VALUES ($1,'platform',$2,$3,$4,$5,$6,1)`,
+      [cartItem2Id, cartId, merchant2Id, merchant2Id, branch2Id, variant2Id]
+    );
+
+    await pool.query(
       `INSERT INTO delivery_service_areas
        (id,tenant_id,country_code,city_code,display_name,center_latitude,center_longitude,
         radius_meters,currency,status,effective_from,created_by)
@@ -105,6 +162,12 @@ integration("PostgreSQL customer checkout orchestration", () => {
        VALUES ('platform',$1,$2,$3)`,
       [areaId, merchantId, branchId]
     );
+    await pool.query(
+      `INSERT INTO delivery_service_area_branches (tenant_id,service_area_id,merchant_id,branch_id)
+       VALUES ('platform',$1,$2,$3)`,
+      [areaId, merchant2Id, branch2Id]
+    );
+
     await pool.query(
       `INSERT INTO delivery_pricing_rules
        (id,tenant_id,service_area_id,version,service_code,currency,calculation_config,status,
@@ -133,12 +196,12 @@ integration("PostgreSQL customer checkout orchestration", () => {
     await pool.query("DELETE FROM delivery_pricing_rules WHERE tenant_id='platform' AND id=$1", [ruleId]);
     await pool.query("DELETE FROM delivery_service_area_branches WHERE tenant_id='platform' AND service_area_id=$1", [areaId]);
     await pool.query("DELETE FROM delivery_service_areas WHERE tenant_id='platform' AND id=$1", [areaId]);
-    await pool.query("DELETE FROM branch_inventory WHERE merchant_id=$1", [merchantId]);
-    await pool.query("DELETE FROM commerce_catalog_products WHERE tenant_id=$1", [merchantId]);
-    await pool.query("DELETE FROM tenant_integrations WHERE tenant_id=$1", [merchantId]);
-    await pool.query("DELETE FROM merchant_branches WHERE merchant_id=$1", [merchantId]);
-    await pool.query("DELETE FROM merchants WHERE id=$1", [merchantId]);
-    await pool.query("DELETE FROM tenants WHERE id=$1 AND tenant_type='merchant'", [merchantId]);
+    await pool.query("DELETE FROM branch_inventory WHERE merchant_id = ANY($1::text[])", [[merchantId, merchant2Id]]);
+    await pool.query("DELETE FROM commerce_catalog_products WHERE tenant_id = ANY($1::text[])", [[merchantId, merchant2Id]]);
+    await pool.query("DELETE FROM tenant_integrations WHERE tenant_id = ANY($1::text[])", [[merchantId, merchant2Id]]);
+    await pool.query("DELETE FROM merchant_branches WHERE merchant_id = ANY($1::text[])", [[merchantId, merchant2Id]]);
+    await pool.query("DELETE FROM merchants WHERE id = ANY($1::text[])", [[merchantId, merchant2Id]]);
+    await pool.query("DELETE FROM tenants WHERE id = ANY($1::text[]) AND tenant_type='merchant'", [[merchantId, merchant2Id]]);
     await pool.query("DELETE FROM identities WHERE id=$1", [customerId]);
   }
 
