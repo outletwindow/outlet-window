@@ -46,8 +46,9 @@ function createPool(options: {
     }
     return {rows:rows as Row[],rowCount:rows.length};
   });
-  const client:PostgresClient={query,release:vi.fn()};
-  const pool:PostgresPool={query,connect:vi.fn().mockResolvedValue(client)};
+  const typedQuery = query as unknown as PostgresClient["query"];
+  const client:PostgresClient={query:typedQuery,release:vi.fn()};
+  const pool:PostgresPool={query:typedQuery,connect:vi.fn().mockResolvedValue(client)};
   return {pool,client,calls,query};
 }
 
