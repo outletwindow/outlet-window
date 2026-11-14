@@ -107,3 +107,4 @@ export * from "./postgres-customer-checkout.js";
 export * from "./postgres-paid-checkout-inventory-reservation-worker.js";
 export * from "./postgres-merchant-inventory-reservation-router.js";
 export * from "./postgres-inventory-provider-branch-scope-store.js";
+export * from "./verified-inventory-provider-reservation-adapter.js";
