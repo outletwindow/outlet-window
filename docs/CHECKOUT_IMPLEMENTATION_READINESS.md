@@ -58,11 +58,13 @@ checkout is complete.
    order store persists item unit prices and totals, but a checkout application service must
    also persist enough immutable provenance to explain the source price, catalog variant,
    currency, pricing rule/version, tax/discount components, and delivery quote used.
-5. **The pending-validation to awaiting-payment transition is not implemented as a trusted
-   checkout operation.** Merchant transitions explicitly reject this transition. A new
-   customer/platform-owned repository operation must lock the parent and all suborders,
-   revalidate the order snapshot, and atomically move every row to `awaiting_payment`
-   while recording a matching audit event.
+5. **The atomic readiness transition now exists at domain/repository level, but is not
+   wired to a checkout application service or API route.** `PostgresPlatformCheckoutReadinessStore`
+   locks the platform parent and every merchant suborder, checks the delivery snapshot and
+   expiry, verifies each suborder's persisted item totals, and atomically advances all rows
+   to `awaiting_payment` with per-suborder audit events. It is not a substitute for cart
+   repricing, inventory locking, or immutable price provenance, and must not be called until
+   those upstream steps have committed their trusted order snapshot.
 6. **Payment capture and inventory reservation are deliberately separate.** The existing
    reservation adapter requires verified capture evidence. Do not reserve stock based only
    on a client callback, a payment intent being created, or an unverified webhook.
@@ -97,10 +99,13 @@ checkout is complete.
    and validity to the persisted snapshot, and reject expired or mismatched quotes.
 4. Create the parent order, merchant suborders, immutable item/price/delivery snapshots,
    and checkout idempotency record atomically.
-5. Add a platform-owned order-readiness transition that locks the parent and every
-   suborder, verifies every snapshot and required field, and moves all rows from
-   `pending_validation` to `awaiting_payment` in one transaction with an audit record.
-6. Only then allow the existing payment-intent service to dispatch. Keep capture webhook
+5. Use `PostgresPlatformCheckoutReadinessStore` only after the cart-to-order transaction
+   has persisted authoritative item prices, immutable price provenance, and a valid delivery
+   destination/quote snapshot. The operation locks the parent and every suborder, verifies
+   item totals and quote validity, and advances all rows to `awaiting_payment` atomically
+   with per-suborder audit records.
+6. Wire the readiness operation into the authenticated checkout application service and
+   API route only after steps 1–5 are complete. Only then allow the existing payment-intent service to dispatch. Keep capture webhook
    verification, inventory reservation, fulfillment outbox creation, and recovery handling
    as separate idempotent stages with explicit reconciliation.
 7. Add PostgreSQL integration tests for concurrent cart mutation, price changes, inventory
@@ -112,3 +117,25 @@ checkout is complete.
 Do not expose a production checkout endpoint until steps 1–7 have implementation, database
 constraints, integration tests, and passing CI. A route that simply copies cart display prices
 into `PostgresOrderStore` would be unsafe and is intentionally not an acceptable shortcut.
+
+
+## Latest verification — platform readiness repository
+
+- Added `PostgresPlatformCheckoutReadinessStore` on the build branch. It only accepts the
+  platform parent tenant, locks the parent and all merchant suborders in deterministic order,
+  rejects stale parent versions and non-pending suborders, checks that the delivery destination
+  and quote are present and unexpired, and compares each persisted suborder subtotal with the
+  sum of its persisted item lines.
+- The transition updates all merchant suborders and the parent in one transaction, then
+  appends one scope-matched audit event per merchant suborder before commit. Any mismatch or
+  write conflict rolls the transaction back.
+- Added unit tests for successful multi-tenant transition, expired quote rejection, audit
+  branch mismatch, and stale parent version.
+- CI Push #1684 passed on commit
+  `63dd16d18ae10ed41264cf6ec8a2c218f86ea57b`: PostgreSQL migrations/integration scripts,
+  TypeScript typecheck, lint, test, and build all succeeded.
+- This is a repository capability only. No cart-to-order orchestrator, HTTP endpoint, or
+  production payment activation is included in this change. Checkout remains blocked from
+  production release until authoritative cart repricing, inventory and cart concurrency
+  controls, immutable pricing provenance, idempotent order creation, failure recovery, and
+  end-to-end PostgreSQL integration tests are complete.
