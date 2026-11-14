@@ -159,17 +159,44 @@ describe("PostgresPaidCheckoutInventoryReservationWorker", () => {
     }));
   });
 
-  it("routes unsupported multi-suborder paid orders to durable manual recovery", async () => {
-    const db = createPool({ suborders: [suborder, { ...suborder, id: "sub-2" }] });
+  it("reserves every merchant suborder before confirming any of them", async () => {
+    const db = createPool({ suborders: [suborder, { ...suborder, id: "sub-2", merchant_id: "merchant-2", branch_id: "branch-2" }] });
     const { worker, inventory, transition, recovery } = createWorker({ pool: db.pool });
-    await expect(worker.runOnce()).resolves.toMatchObject({
-      outcome: "needs_review", failureCode: "UNSUPPORTED_SUBORDER_COUNT"
-    });
-    // A multi-branch capture must never partially reserve stock or confirm one branch.
-    expect(inventory.reserveExactVariants).not.toHaveBeenCalled();
-    expect(transition).not.toHaveBeenCalled();
-    expect(recovery).toHaveBeenCalledWith(expect.objectContaining({
-      tenantId: "platform", orderId: "order-1", failureCode: "TASK_COMMIT_REJECTED"
+    await expect(worker.runOnce()).resolves.toMatchObject({ outcome: "completed", jobId: "job-1" });
+    expect(inventory.reserveExactVariants).toHaveBeenCalledTimes(2);
+    expect(inventory.reserveExactVariants).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      suborderId: "sub-2", merchantId: "merchant-2", branchId: "branch-2",
+      idempotencyKey: "paid-checkout:platform:order-1:sub-2"
     }));
+    expect(transition).toHaveBeenCalledTimes(4);
+    expect(transition.mock.calls.map(call => call[0].nextStatus)).toEqual([
+      "awaiting_payment", "confirmed", "awaiting_payment", "confirmed"
+    ]);
+    expect(recovery).not.toHaveBeenCalled();
+  });
+
+  it("records earlier branch reservations and holds every unpaid suborder when a later branch is unavailable", async () => {
+    const db = createPool({ suborders: [suborder, { ...suborder, id: "sub-2", merchant_id: "merchant-2", branch_id: "branch-2" }] });
+    const inventory: InventoryReservationPort = {
+      reserveExactVariants: vi.fn()
+        .mockResolvedValueOnce({ outcome: "reserved", reservationReference: "reservation-1" })
+        .mockResolvedValueOnce({ outcome: "unavailable", unavailableLines: ["catalog-v2"] })
+    };
+    const transition = vi.fn().mockResolvedValue({
+      outcome: "updated", parentStatus: "on_hold",
+      transition: { ok: true, previousStatus: "pending_validation", order: { status: "on_hold" } }
+    });
+    const { worker, recovery } = createWorker({ pool: db.pool, inventory, transition });
+    await expect(worker.runOnce()).resolves.toMatchObject({
+      outcome: "needs_review", failureCode: "INVENTORY_UNAVAILABLE"
+    });
+    expect(inventory.reserveExactVariants).toHaveBeenCalledTimes(2);
+    expect(recovery).toHaveBeenCalledWith(expect.objectContaining({
+      failureCode: "INVENTORY_UNAVAILABLE", failedSuborderId: "sub-2",
+      reservationReferences: [{ suborderId: "sub-1", reservationReference: "reservation-1" }]
+    }));
+    expect(transition).toHaveBeenCalledTimes(2);
+    expect(transition.mock.calls.every(call => call[0].nextStatus === "on_hold")).toBe(true);
+    expect(transition).not.toHaveBeenCalledWith(expect.objectContaining({ nextStatus: "confirmed" }));
   });
 });
