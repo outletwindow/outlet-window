@@ -110,6 +110,29 @@ describe("PostgresPaidCheckoutInventoryReservationWorker", () => {
     expect(inventory.reserveExactVariants).not.toHaveBeenCalled();
   });
 
+  it("holds a paid order and records recovery when exact branch stock is unavailable", async () => {
+    const db = createPool();
+    const inventory: InventoryReservationPort = {
+      reserveExactVariants: vi.fn().mockResolvedValue({
+        outcome: "unavailable", unavailableLines: ["catalog-v1"]
+      })
+    };
+    const transition = vi.fn().mockResolvedValue({
+      outcome: "updated", parentStatus: "on_hold",
+      transition: { ok: true, previousStatus: "pending_validation", order: { status: "on_hold" } }
+    });
+    const { worker, recovery } = createWorker({ pool: db.pool, inventory, transition });
+    await expect(worker.runOnce()).resolves.toMatchObject({
+      outcome: "needs_review", failureCode: "INVENTORY_UNAVAILABLE"
+    });
+    expect(recovery).toHaveBeenCalledWith(expect.objectContaining({
+      failureCode: "INVENTORY_UNAVAILABLE", failedSuborderId: "sub-1"
+    }));
+    expect(transition).toHaveBeenCalledWith(expect.objectContaining({
+      nextStatus: "on_hold", context: expect.objectContaining({ reason: expect.any(String) })
+    }));
+  });
+
   it("routes unsupported multi-suborder paid orders to durable manual recovery", async () => {
     const db = createPool({ suborders: [suborder, { ...suborder, id: "sub-2" }] });
     const { worker, inventory, recovery } = createWorker({ pool: db.pool });
