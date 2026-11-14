@@ -4,8 +4,10 @@ import type { PostgresPool, PostgresQueryResult } from "./postgres-iam-store.js"
 
 function fakePool(options: { version?: number; missing?: boolean; statuses?: string[]; status?: string; itemCount?: number; verifiedCount?: number } = {}) {
   const statements: string[] = [];
-  const query = vi.fn(async <Row>(sql: string, _values?: readonly unknown[]) => {
+  const calls: Array<{ sql: string; values?: readonly unknown[] }> = [];
+  const query = vi.fn(async <Row>(sql: string, values?: readonly unknown[]) => {
     statements.push(sql);
+    calls.push({ sql, values });
     let rows: unknown[] = [];
     let rowCount: number | null = 1;
     if (sql.includes("FROM merchant_suborders s") && sql.includes("FOR UPDATE")) {
@@ -26,7 +28,7 @@ function fakePool(options: { version?: number; missing?: boolean; statuses?: str
   });
   const client = { query, release: vi.fn() };
   const pool = { query, connect: vi.fn(async () => client) } as unknown as PostgresPool;
-  return { pool, query, statements, client };
+  return { pool, query, statements, calls, client };
 }
 
 const context = {
@@ -61,6 +63,8 @@ describe("PostgresOrderTransitionStore", () => {
     expect(db.statements.at(-1)).toBe("COMMIT");
     expect(db.statements.some(sql => sql.includes("WHERE tenant_id = $1 AND order_id = $2 AND id = $3 AND version = $6"))).toBe(true);
     expect(db.statements.some(sql => sql.includes("SET status = $2, version = version + 1"))).toBe(true);
+    const suborderUpdate = db.calls.find(call => call.sql.includes("UPDATE merchant_suborders"));
+    expect(suborderUpdate?.values?.[4]).toBe(context.occurredAt);
     expect(db.client.release).toHaveBeenCalledOnce();
   });
 
