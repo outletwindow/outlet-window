@@ -81,28 +81,7 @@ function sortedItems<T extends { id: string }>(items: readonly T[]): T[] {
 export class PostgresOrderStore {
   constructor(private readonly pool: PostgresPool) {}
 
-  async create(input: CreateCustomerOrderInput): Promise<CreateCustomerOrderResult> {
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN");
-      const result = await this.createInTransaction(input, client);
-      await client.query("COMMIT");
-      return result;
-    } catch (error) {
-      await client.query("ROLLBACK").catch(() => undefined);
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-
-  /**
-   * Creates or idempotently resolves an order using a caller-owned transaction.
-   * The caller must have already issued BEGIN and owns COMMIT/ROLLBACK/release.
-   * This lets cart conversion, order persistence, pricing snapshots, and cart closure
-   * share one database transaction without nesting transactions or releasing its client.
-   */
-  async createInTransaction(input: CreateCustomerOrderInput, client: PostgresClient): Promise<CreateCustomerOrderResult> {
+  private validateInput(input: CreateCustomerOrderInput): string {
     requireIdentifier(input.id, "Order ID");
     requireIdentifier(input.tenantId, "Tenant ID");
     requireIdentifier(input.customerId, "Customer ID");
@@ -163,6 +142,32 @@ export class PostgresOrderStore {
         throw new Error("Order item totals must equal the merchant suborder subtotal");
       }
     }
+    return canonicalOrderMetadata;
+  }
+  async create(input: CreateCustomerOrderInput): Promise<CreateCustomerOrderResult> {
+    this.validateInput(input);
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await this.createInTransaction(input, client);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Creates or idempotently resolves an order using a caller-owned transaction.
+   * The caller must have already issued BEGIN and owns COMMIT/ROLLBACK/release.
+   * This lets cart conversion, order persistence, pricing snapshots, and cart closure
+   * share one database transaction without nesting transactions or releasing its client.
+   */
+  async createInTransaction(input: CreateCustomerOrderInput, client: PostgresClient): Promise<CreateCustomerOrderResult> {
+    const canonicalOrderMetadata = this.validateInput(input);
     await client.query(
       "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
       [input.tenantId + ":" + input.customerId + ":" + input.idempotencyKey]
