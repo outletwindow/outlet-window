@@ -21,7 +21,8 @@ describe("merchant catalog import route", () => {
         return { pagesImported: 1, productsImported: 4, completed: true };
       }
     } as unknown as MerchantCatalogImportService;
-    const app = buildApp({ resolveActor: async () => owner, merchantCatalogImport: service });
+    const app = buildApp({ resolveActor: async () => owner,
+      resolveMerchantTenantId: async (merchantId) => merchantId, merchantCatalogImport: service });
     apps.push(app);
     await app.ready();
     const response = await app.inject({
@@ -64,7 +65,8 @@ describe("merchant catalog import route", () => {
     const service = {
       async import() { throw new Error("CATALOG_CAPABILITY_NOT_GRANTED"); }
     } as unknown as MerchantCatalogImportService;
-    const app = buildApp({ resolveActor: async () => owner, merchantCatalogImport: service });
+    const app = buildApp({ resolveActor: async () => owner,
+      resolveMerchantTenantId: async (merchantId) => merchantId, merchantCatalogImport: service });
     apps.push(app);
     await app.ready();
     const response = await app.inject({
@@ -80,7 +82,8 @@ describe("merchant catalog import route", () => {
     const service = {
       async import() { throw new Error("SALLA_ACCESS_TOKEN_UNAVAILABLE"); }
     } as unknown as MerchantCatalogImportService;
-    const app = buildApp({ resolveActor: async () => owner, merchantCatalogImport: service });
+    const app = buildApp({ resolveActor: async () => owner,
+      resolveMerchantTenantId: async (merchantId) => merchantId, merchantCatalogImport: service });
     apps.push(app);
     await app.ready();
     const response = await app.inject({
@@ -94,7 +97,8 @@ describe("merchant catalog import route", () => {
 
   it("rejects malformed cursors and timestamps", async () => {
     const service = { async import() { throw new Error("must-not-run"); } } as unknown as MerchantCatalogImportService;
-    const app = buildApp({ resolveActor: async () => owner, merchantCatalogImport: service });
+    const app = buildApp({ resolveActor: async () => owner,
+      resolveMerchantTenantId: async (merchantId) => merchantId, merchantCatalogImport: service });
     apps.push(app);
     await app.ready();
     const response = await app.inject({
