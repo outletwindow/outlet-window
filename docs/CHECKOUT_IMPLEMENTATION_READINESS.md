@@ -423,6 +423,14 @@ checkout API route exists.
 - No live POS/ERP provider is currently configured or claimed as verified. Do not enable automatic order confirmation until a provider's hard-reservation and compensation behavior is implemented and integration-tested.
 
 
+## POS/ERP hard-reservation routing (migration 0043)
+
+- Migration 0043 adds explicit tenant/merchant/branch grants for inventory providers. A connected POS/ERP registration is not eligible unless its grant is active and its capabilities include `inventory.hard_reservation`.
+- `PostgresMerchantInventoryReservationRouter` resolves at most two eligible integrations and fails closed when there are none, more than one, or no adapter is registered for the provider.
+- The router injects the exact selected integration ID into the trusted reservation request so a future provider adapter can resolve that tenant's secret-manager reference without guessing from a provider key.
+- The paid-checkout worker now uses the router in its composition root. Its adapter registry is intentionally empty, so it remains fail-closed until a provider-specific adapter is implemented, credential resolution is wired, and end-to-end reservation/expiry/compensation tests pass.
+- CI verifies the 0043 grant schema, cross-tenant rejection, capability filtering, router selection, ambiguity handling, typecheck, lint, tests, and build. No live POS/ERP provider is claimed.
+
 ## Branch inventory snapshot and discrepancy safety (migrations 0041–0042)
 
 - Complete snapshots are serialized by locking the merchant branch row and comparing a branch-wide watermark. An older or equal snapshot is rejected before any variant upsert or omission handling.
