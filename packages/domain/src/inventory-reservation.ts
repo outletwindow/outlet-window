@@ -26,6 +26,16 @@ export interface InventoryReservationPort {
   reserveExactVariants(request: InventoryReservationRequest): Promise<InventoryReservationPortResult>;
 }
 
+/**
+ * Safe default for deployments without a verified merchant POS/ERP reservation adapter.
+ * Local inventory snapshots are advisory and must never be treated as an external hard hold.
+ */
+export class UnconfiguredMerchantInventoryReservationAdapter implements InventoryReservationPort {
+  async reserveExactVariants(): Promise<InventoryReservationPortResult> {
+    return { outcome: "unsupported", reason: "merchant_integration_missing" };
+  }
+}
+
 export type InventoryReservationResult =
   | { state: "reserved"; reservationReference: string; expiresAtUtc?: string }
   | { state: "unavailable"; unavailableLines: readonly string[] }
