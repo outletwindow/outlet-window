@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import {
-  UnconfiguredMerchantInventoryReservationAdapter,
+  PostgresMerchantInventoryReservationRouter,
   PostgresCheckoutRecoveryCaseStore,
   PostgresOrderTransitionStore,
   PostgresPaidCheckoutInventoryReservationWorker
@@ -24,7 +24,9 @@ const pool = new Pool({
 const workerId = randomUUID();
 const worker = new PostgresPaidCheckoutInventoryReservationWorker(
   pool,
-  new UnconfiguredMerchantInventoryReservationAdapter(),
+  // The routing layer is active, but no POS/ERP adapters are registered yet.
+  // This deliberately remains fail-closed until a verified provider adapter is deployed.
+  new PostgresMerchantInventoryReservationRouter(pool, new Map()),
   new PostgresOrderTransitionStore(pool),
   new PostgresCheckoutRecoveryCaseStore(pool),
   { workerId, leaseSeconds }
