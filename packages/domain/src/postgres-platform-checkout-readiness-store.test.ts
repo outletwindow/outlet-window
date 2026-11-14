@@ -21,11 +21,18 @@ function database(options: { parentStatus?: string; version?: number; expiredQuo
     let rowCount: number | null = 1;
     if (sql.includes("FROM customer_orders") && sql.includes("FOR UPDATE")) {
       rows = [{ id: "order-1", customer_id: "customer-1", status: options.parentStatus ?? "pending_validation",
-        version: options.version ?? 4, currency: "SAR", total_minor: options.badOrderTotal ? "13501" : options.hiddenDiscount ? "13000" : "13500",
+        version: options.version ?? 4, currency: "SAR", total_minor: options.multiBranch ? (options.badOrderTotal ? "15001" : "15000") :
+          options.badOrderTotal ? "13501" : options.hiddenDiscount ? "13000" : "13500",
         metadata: { checkoutPricing: { currency: "SAR", deliveryQuoteId: "quote-1",
-          deliveryRuleId: "rule-1", deliveryRuleVersion: 1, discountMinor: options.hiddenDiscount ? 500 : 0, components: [
-          { kind: "product_subtotal", amountMinor: 12000, label: "Products" },
-          { kind: "delivery", amountMinor: 1500, label: "Delivery" }
+          deliveryRuleId: "rule-1", deliveryRuleVersion: 1, discountMinor: options.hiddenDiscount ? 500 : 0,
+          deliveryQuotes: [
+            { merchantId: "merchant-1", branchId: "branch-1", quoteId: "quote-1", ruleId: "rule-1", ruleVersion: 1, totalMinor: 1500 },
+            ...(options.multiBranch ? [{ merchantId: "merchant-2", branchId: "branch-2", quoteId: "quote-2", ruleId: "rule-1", ruleVersion: 1, totalMinor: 1500 }] : [])
+          ],
+          components: [
+            { kind: "product_subtotal", amountMinor: 12000, label: "Products" },
+            { kind: "delivery", amountMinor: 1500, label: "Delivery - branch-1", suborderKey: "merchant-1:branch-1", quoteId: "quote-1" },
+            ...(options.multiBranch ? [{ kind: "delivery", amountMinor: 1500, label: "Delivery - branch-2", suborderKey: "merchant-2:branch-2", quoteId: "quote-2" }] : [])
         ] } }, delivery_destination: { city: "Jubail" },
         delivery_quote: { quoteId: "quote-1", ruleId: "rule-1", ruleVersion: 1, currency: "SAR",
           totalMinor: 1500, createdAtUtc: "2026-11-14T15:59:00.000Z",
@@ -39,19 +46,33 @@ function database(options: { parentStatus?: string; version?: number; expiredQuo
         ] : [])
       ];
     } else if (sql.includes("FROM customer_order_suborder_delivery_quotes")) {
-      rows = options.missingDeliveryQuote ? [] : [{
-        id: "quote-1", tenant_id: "merchant-tenant-1", order_id: "order-1",
-        suborder_id: "sub-1", merchant_id: "merchant-1",
-        branch_id: options.mismatchedDeliveryQuote ? "wrong-branch" : "branch-1",
-        currency: "SAR", total_minor: "1500",
-        created_at: "2026-11-14T15:59:00.000Z",
-        expires_at: "2026-11-14T16:05:00.000Z",
-        quote_snapshot: {
-          quoteId: "quote-1", ruleId: "rule-1", ruleVersion: 1, currency: "SAR",
-          totalMinor: 1500, createdAtUtc: "2026-11-14T15:59:00.000Z",
-          expiresAtUtc: "2026-11-14T16:05:00.000Z"
-        }
-      }];
+      rows = options.missingDeliveryQuote ? [] : [
+        {
+          id: "quote-1", tenant_id: "merchant-tenant-1", order_id: "order-1",
+          suborder_id: "sub-1", merchant_id: "merchant-1",
+          branch_id: options.mismatchedDeliveryQuote ? "wrong-branch" : "branch-1",
+          service_area_id: "zone-1", currency: "SAR", total_minor: "1500",
+          created_at: "2026-11-14T15:59:00.000Z",
+          expires_at: "2026-11-14T16:05:00.000Z",
+          quote_snapshot: {
+            quoteId: "quote-1", ruleId: "rule-1", ruleVersion: 1, currency: "SAR",
+            totalMinor: 1500, createdAtUtc: "2026-11-14T15:59:00.000Z",
+            expiresAtUtc: "2026-11-14T16:05:00.000Z"
+          }
+        },
+        ...(options.multiBranch ? [{
+          id: "quote-2", tenant_id: "merchant-tenant-2", order_id: "order-1",
+          suborder_id: "sub-2", merchant_id: "merchant-2", branch_id: "branch-2",
+          service_area_id: "zone-1", currency: "SAR", total_minor: "1500",
+          created_at: "2026-11-14T15:59:00.000Z",
+          expires_at: "2026-11-14T16:05:00.000Z",
+          quote_snapshot: {
+            quoteId: "quote-2", ruleId: "rule-1", ruleVersion: 1, currency: "SAR",
+            totalMinor: 1500, createdAtUtc: "2026-11-14T15:59:00.000Z",
+            expiresAtUtc: "2026-11-14T16:05:00.000Z"
+          }
+        }] : [])
+      ];
     } else if (sql.includes("COUNT(i.id)::int AS item_count")) {
       rows = [
         { suborder_id: "sub-1", item_count: 1, subtotal_minor: options.multiBranch ? "5000" : "12000" },
@@ -127,16 +148,16 @@ describe("PostgresPlatformCheckoutReadinessStore", () => {
     expect(db.statements.some(sql => sql.startsWith("UPDATE"))).toBe(false);
   });
 
-  it("rejects multiple delivery branches when the parent stores only one branch quote", async () => {
+  it("accepts multiple branches when every suborder has its own matching immutable quote", async () => {
     const db = database({ multiBranch: true });
     const input = { ...baseInput, auditEvents: [
       event("audit-1", "sub-1", "merchant-tenant-1", "merchant-1", "branch-1"),
       event("audit-2", "sub-2", "merchant-tenant-2", "merchant-2", "branch-2")
     ] };
     const result = await new PostgresPlatformCheckoutReadinessStore(db.pool).transitionToAwaitingPayment(input);
-    expect(result).toEqual({ outcome: "invalid_snapshot" });
-    expect(db.statements).toContain("ROLLBACK");
-    expect(db.statements.some(sql => sql.startsWith("UPDATE"))).toBe(false);
+    expect(result).toEqual({ outcome: "ready", orderId: "order-1", suborderIds: ["sub-1", "sub-2"], parentVersion: 5 });
+    expect(db.statements.filter(sql => sql.includes("INSERT INTO audit_events"))).toHaveLength(2);
+    expect(db.statements.at(-1)).toBe("COMMIT");
   });
 
   it("rejects a parent total that does not reconcile to the persisted pricing components", async () => {
