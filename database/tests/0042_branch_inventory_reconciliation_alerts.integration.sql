@@ -40,6 +40,16 @@ BEGIN
     RAISE EXCEPTION 'resolved alert without resolved_at unexpectedly accepted';
   EXCEPTION WHEN check_violation THEN NULL;
   END;
-END $$;
+  UPDATE branch_inventory_reconciliation_alerts
+  SET status='resolved', resolved_at='2026-11-14T12:05:00Z'
+  WHERE id='inventory-alert-1';
+  IF NOT EXISTS (
+    SELECT 1 FROM branch_inventory_reconciliation_alerts
+    WHERE id='inventory-alert-1' AND status='resolved'
+      AND resolved_at='2026-11-14T12:05:00Z'
+  ) THEN
+    RAISE EXCEPTION 'reconciled alert could not be closed with resolution timestamp';
+  END IF;
+END $;
 
 ROLLBACK;
