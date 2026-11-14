@@ -7,7 +7,7 @@ class SnapshotClient implements PostgresClient {
   released = false;
   async query<Row>(sql: string, values: readonly unknown[] = []): Promise<PostgresQueryResult<Row>> {
     this.statements.push({ sql: sql.trim().replace(/\s+/g, " "), values });
-    if (sql.includes("SELECT b.id FROM merchant_branches")) {
+    if (sql.includes("FROM merchant_branches b")) {
       return { rows: [{ id: "branch-1", inventory_snapshot_at: null } as Row], rowCount: 1 };
     }
     if (sql.includes("INSERT INTO branch_inventory")) {
@@ -54,7 +54,7 @@ describe("PostgreSQL complete branch inventory snapshots", () => {
     class NewerSnapshotClient extends SnapshotClient {
       override async query<Row>(sql: string, values: readonly unknown[] = []): Promise<PostgresQueryResult<Row>> {
         this.statements.push({ sql: sql.trim(), values });
-        if (sql.includes("SELECT b.id FROM merchant_branches")) {
+        if (sql.includes("FROM merchant_branches b")) {
           return { rows: [{ id: "branch-1", inventory_snapshot_at: "2026-11-14T12:05:00.000Z" } as Row], rowCount: 1 };
         }
         return { rows: [], rowCount: 0 };
@@ -83,7 +83,7 @@ describe("PostgreSQL complete branch inventory snapshots", () => {
     class MissingBranchClient extends SnapshotClient {
       override async query<Row>(sql: string, values: readonly unknown[] = []): Promise<PostgresQueryResult<Row>> {
         this.statements.push({ sql: sql.trim().replace(/\s+/g, " "), values });
-        if (sql.includes("SELECT b.id FROM merchant_branches")) return { rows: [], rowCount: 0 };
+        if (sql.includes("FROM merchant_branches b")) return { rows: [], rowCount: 0 };
         return { rows: [], rowCount: 1 };
       }
     }
