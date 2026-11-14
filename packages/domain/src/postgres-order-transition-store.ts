@@ -100,6 +100,36 @@ export class PostgresOrderTransitionStore {
         await client.query("ROLLBACK");
         return { outcome: "conflict" };
       }
+      // Never trust caller-supplied payment/inventory booleans. Confirmation requires
+      // immutable exact-match capture evidence and a live, branch-scoped reservation.
+      let transitionContext = input.context;
+      if (input.nextStatus === "confirmed" && current.status === "awaiting_payment") {
+        const payment = await client.query<{ authorized: boolean }>(
+          `SELECT EXISTS (
+             SELECT 1
+             FROM customer_orders o
+             JOIN verified_order_payment_captures p
+               ON p.tenant_id = o.tenant_id AND p.order_id = o.id
+              AND p.amount_minor = o.total_minor AND p.currency = o.currency
+             WHERE o.tenant_id = $1 AND o.id = $2
+           ) AS authorized`,
+          [input.tenantId, input.orderId]
+        );
+        const reservation = await client.query<{ id: string }>(
+          `SELECT id
+           FROM inventory_reservations
+           WHERE tenant_id = $1 AND order_id = $2 AND suborder_id = $3
+             AND merchant_id = $4 AND branch_id = $5 AND status = 'reserved'
+             AND (expires_at IS NULL OR expires_at > clock_timestamp())
+           FOR UPDATE`,
+          [input.tenantId, input.orderId, current.id, current.merchant_id, current.branch_id]
+        );
+        transitionContext = {
+          ...input.context,
+          paymentAuthorized: payment.rows[0]?.authorized === true,
+          inventoryReserved: reservation.rowCount > 0
+        };
+      }
       const transition = transitionOrder({
         orderId: current.id,
         status: current.status,
@@ -108,7 +138,7 @@ export class PostgresOrderTransitionStore {
         merchantId: current.merchant_id,
         branchId: current.branch_id,
         parentOrderId: current.order_id
-      }, input.nextStatus, input.context);
+      }, input.nextStatus, transitionContext);
       if (!transition.ok) {
         await client.query("ROLLBACK");
         return { outcome: "rejected", reason: transition.reason };
