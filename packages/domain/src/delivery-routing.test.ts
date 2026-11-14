@@ -66,4 +66,21 @@ describe("road ETA branch ranking", () => {
     })).resolves.toEqual([]);
   });
 
+  it("keeps successful branch routes when another provider lookup fails", async () => {
+    const partialFailureProvider = {
+      async estimateRoute({ origin }: { origin: { latitude: number; longitude: number } }) {
+        if (origin.latitude === 27.02) throw new Error("routing provider timeout");
+        return {
+          distanceMeters: 2400, durationSeconds: 480,
+          providerReference: "healthy-route", estimatedAtUtc: nowUtc
+        };
+      }
+    };
+    const ranked = await rankEligibleBranchesByRoadEta({
+      candidates: candidates.slice(0, 2), destination: { latitude: 27, longitude: 49 },
+      provider: partialFailureProvider, nowUtc
+    });
+    expect(ranked.map(route => route.branchId)).toEqual(["b1"]);
+  });
+
 });
