@@ -50,6 +50,6 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'reconciled alert could not be closed with resolution timestamp';
   END IF;
-END $;
+END $$;
 
 ROLLBACK;
