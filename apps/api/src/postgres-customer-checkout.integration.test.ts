@@ -10,21 +10,34 @@ integration("PostgreSQL customer checkout orchestration", () => {
   const configuredPool = databaseUrl ? new Pool({ connectionString: databaseUrl, max: 4 }) : null;
   if (!configuredPool) throw new Error("Pool must exist when DATABASE_URL is configured");
   const pool: Pool = configuredPool;
-  const suffix = randomUUID();
-  const customerId = "checkout-customer-" + suffix;
-  const merchantId = "checkout-merchant-" + suffix;
-  const branchId = "checkout-branch-" + suffix;
-  const integrationId = "checkout-integration-" + suffix;
-  const productId = "checkout-product-" + suffix;
-  const variantId = "checkout-variant-" + suffix;
-  const cartId = "checkout-cart-" + suffix;
-  const cartItemId = "checkout-cart-item-" + suffix;
-  const areaId = "checkout-area-" + suffix;
-  const ruleId = "checkout-rule-" + suffix;
+  let suffix: string;
+  let customerId: string;
+  let merchantId: string;
+  let branchId: string;
+  let integrationId: string;
+  let productId: string;
+  let variantId: string;
+  let cartId: string;
+  let cartItemId: string;
+  let areaId: string;
+  let ruleId: string;
+  let correlationId: string;
   const orderIds: string[] = [];
-  const correlationId = "checkout-correlation-" + suffix;
 
   beforeEach(async () => {
+    suffix = randomUUID();
+    customerId = "checkout-customer-" + suffix;
+    merchantId = "checkout-merchant-" + suffix;
+    branchId = "checkout-branch-" + suffix;
+    integrationId = "checkout-integration-" + suffix;
+    productId = "checkout-product-" + suffix;
+    variantId = "checkout-variant-" + suffix;
+    cartId = "checkout-cart-" + suffix;
+    cartItemId = "checkout-cart-item-" + suffix;
+    areaId = "checkout-area-" + suffix;
+    ruleId = "checkout-rule-" + suffix;
+    correlationId = "checkout-correlation-" + suffix;
+    orderIds.length = 0;
     const now = new Date();
     await pool.query(
       `INSERT INTO identities (id,principal_type,status,display_name,primary_email,created_at,updated_at)
@@ -104,6 +117,14 @@ integration("PostgreSQL customer checkout orchestration", () => {
   });
 
   async function cleanup() {
+    // Delivery quote snapshots are intentionally append-only and retain their
+    // suborder FK. Keep the successful checkout fixture intact; each test receives
+    // a fresh UUID namespace so no later test can collide with these durable rows.
+    const immutableQuotes = await pool.query<{ count: string }>(
+      "SELECT COUNT(*)::text AS count FROM customer_order_suborder_delivery_quotes WHERE order_id = ANY($1::text[])",
+      [orderIds]
+    );
+    if (immutableQuotes.rows[0]?.count !== "0") return;
     await pool.query("DELETE FROM customer_order_items WHERE order_id = ANY($1::text[])", [orderIds]);
     await pool.query("DELETE FROM merchant_suborders WHERE order_id = ANY($1::text[])", [orderIds]);
     await pool.query("DELETE FROM customer_orders WHERE id = ANY($1::text[])", [orderIds]);
