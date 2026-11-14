@@ -3,7 +3,7 @@
 Status: **not ready for a production checkout endpoint**
 
 This note records the verified repository state on branch `work/outlet-window-build` at branch head commit
-`860bd22f0d53ba761a0101e9a984735b5843a9ad`. It is an implementation gate, not a claim that
+`1d184e38e3d9f1f36038bcbcd47b7435983a7374`. It is an implementation gate, not a claim that
 checkout is complete.
 
 ## Verified building blocks
@@ -29,8 +29,9 @@ checkout is complete.
 
 ## Latest verification
 
-- CI run `43609104454` (workflow run #1600) on branch head `860bd22f0d53ba761a0101e9a984735b5843a9ad` passed all 48 job steps, including PostgreSQL migration/constraint checks, TypeScript, lint, tests, and build.
-- The latest run verifies the repository state at the current branch head. It does not close the checkout orchestration gaps below; the cart remains separate from order creation and payment execution.
+- CI run `43611671089` (push workflow #1657) and run `43611672988` (pull-request workflow #1658) both passed on branch head `1d184e38e3d9f1f36038bcbcd47b7435983a7374`.
+- The pull-request workflow completed successfully, including the API build, tests, and typecheck job. The push workflow also completed successfully.
+- These runs verify the current branch head; they do not close the checkout orchestration gaps below. The cart remains separate from order creation and payment execution.
 
 ## Blocking gaps before a real cart-to-order checkout
 
