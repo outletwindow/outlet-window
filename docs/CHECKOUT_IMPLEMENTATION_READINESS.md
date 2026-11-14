@@ -457,3 +457,12 @@ checkout API route exists.
 - Out-of-scope unavailable-line identifiers and malformed/partial acknowledgements are rejected and flow into the worker's retry/recovery path; they cannot confirm an order.
 - Provider clients remain responsible for provider authentication, TLS/signature verification, secret resolution, and authoritative external branch/SKU mapping. Do not implement a generic arbitrary-URL adapter.
 - No live adapter is registered in the worker composition root yet. The router remains fail-closed until a concrete provider client is implemented and configured.
+
+## External POS/ERP reservation evidence mirrored into checkout ledger
+
+- Migration 0044 adds an evidence row linking the platform reservation to the exact tenant integration, provider key, external reservation reference, and provider expiry.
+- The ledger-backed adapter verifies the provider acknowledgement first, then transactionally records the local reservation, exact catalog-to-branch SKU lines, reserved quantities, and external evidence.
+- Confirmation continues to require a live local reservation. This closes the gap between an external provider hold and the local transition guard.
+- Idempotent retries reuse the same provider reservation reference and local reservation. Scope revocation, catalog mapping changes, mismatched provider identity, or persistence failure prevent confirmation.
+- Provider holds can outlive a local persistence failure; provider clients must honor idempotency keys so retries can safely recover the same hold. A compensating-release worker is still required for terminal local failures after external success.
+- The worker adapter registry remains empty until a concrete provider client is implemented, credentials are configured, and sandbox contract tests pass.
