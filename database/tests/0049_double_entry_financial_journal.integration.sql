@@ -21,7 +21,7 @@ VALUES ('ledger-balanced','ledger-tenant','ledger-balanced-key','payment_capture
 INSERT INTO financial_journal_lines
 (id,tenant_id,journal_id,account_id,currency,line_number,debit_minor,credit_minor)
 VALUES ('ledger-line-1','ledger-tenant','ledger-balanced','ledger-cash','SAR',1,10000,0),
-       ('ledger-line-2','ledger-tenant','ledger-balanced','ledger-payable','SAR',2,9000,0),
+       ('ledger-line-2','ledger-tenant','ledger-balanced','ledger-payable','SAR',2,0,9000),
        ('ledger-line-3','ledger-tenant','ledger-balanced','ledger-revenue','SAR',3,0,1000),
        ('ledger-line-4','ledger-tenant','ledger-unbalanced','ledger-cash','SAR',1,10000,0),
        ('ledger-line-5','ledger-tenant','ledger-unbalanced','ledger-revenue','SAR',2,0,900),
