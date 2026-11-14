@@ -225,6 +225,29 @@ export class PostgresCustomerCheckoutService {
         return { outcome: "idempotency_conflict" };
       }
 
+      // Persist the branch-scoped immutable quote in the same transaction as its
+      // suborder. The parent quote remains a compatibility snapshot; readiness and
+      // downstream fulfillment can rely on this ledger as the authoritative scope.
+      const quoteSnapshot = {
+        ...quoteResult.quote,
+        subtotalMinor: quoteResult.quote.totalMinor,
+        discountMinor: 0
+      };
+      await client.query(
+        `INSERT INTO customer_order_suborder_delivery_quotes (
+           id, tenant_id, order_id, suborder_id, merchant_id, branch_id,
+           service_area_tenant_id, service_area_id, pricing_rule_id, pricing_rule_version,
+           quote_snapshot, currency, total_minor, created_at, expires_at
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13,$14,$15)`,
+        [
+          quoteResult.quote.quoteId, suborder.merchantTenantId, orderId, suborderId,
+          suborder.merchantId, suborder.branchId, "platform", quoteResult.serviceAreaId,
+          quoteResult.quote.ruleId, quoteResult.quote.ruleVersion,
+          JSON.stringify(quoteSnapshot), quoteResult.currency, quoteResult.quote.totalMinor,
+          quoteResult.quote.createdAtUtc, quoteResult.quote.expiresAtUtc
+        ]
+      );
+
       const auditEvents = [createAuditEvent({
         id: this.createId(),
         type: "order.suborder.transitioned",
