@@ -18,6 +18,15 @@ DO $$ BEGIN
   EXCEPTION WHEN unique_violation THEN NULL; END;
   BEGIN
     INSERT INTO checkout_recovery_cases
+    (id,tenant_id,order_id,idempotency_key,failure_code,failed_suborder_id,
+     payment_reference,payment_captured_at,reservation_references)
+    VALUES ('recovery-test-wrong-suborder','tenant-test','order-test',
+      'checkout-recovery:order-test:wrong-suborder','TASK_COMMIT_REJECTED',
+      'suborder-from-another-order','capture-ref-1',now(),'[]'::jsonb);
+    RAISE EXCEPTION 'expected same-order suborder foreign key rejection';
+  EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+  BEGIN
+    INSERT INTO checkout_recovery_cases
     (id,tenant_id,order_id,idempotency_key,failure_code,payment_reference,
      payment_captured_at,reservation_references)
     VALUES ('recovery-test-invalid','tenant-test','order-test',
