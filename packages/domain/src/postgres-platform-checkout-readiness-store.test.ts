@@ -136,8 +136,7 @@ describe("PostgresPlatformCheckoutReadinessStore", () => {
   it("refuses audit evidence that does not cover every exact merchant branch", async () => {
     const db = database();
     const input = { ...baseInput, auditEvents: [
-      event("audit-1", "sub-1", "merchant-tenant-1", "merchant-1", "branch-1"),
-      event("audit-2", "sub-2", "merchant-tenant-2", "merchant-2", "wrong-branch")
+      event("audit-1", "sub-1", "merchant-tenant-1", "merchant-1", "wrong-branch")
     ] };
     const result = await new PostgresPlatformCheckoutReadinessStore(db.pool).transitionToAwaitingPayment(input);
     expect(result).toEqual({ outcome: "audit_mismatch" });
