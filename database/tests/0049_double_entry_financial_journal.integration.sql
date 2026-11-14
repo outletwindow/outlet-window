@@ -73,6 +73,12 @@ BEGIN
   END;
 
   BEGIN
+    UPDATE financial_journal_lines SET journal_id='ledger-unbalanced' WHERE id='ledger-line-1';
+    RAISE EXCEPTION 'posted journal line unexpectedly moved to another journal';
+  EXCEPTION WHEN SQLSTATE '55000' THEN NULL;
+  END;
+
+  BEGIN
     INSERT INTO financial_journal_lines
     (id,tenant_id,journal_id,account_id,currency,line_number,debit_minor,credit_minor)
     VALUES ('ledger-cross-currency','ledger-tenant','ledger-unbalanced','ledger-usd','USD',3,1,0);
