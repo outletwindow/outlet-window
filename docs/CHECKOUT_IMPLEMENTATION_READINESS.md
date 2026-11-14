@@ -139,3 +139,21 @@ into `PostgresOrderStore` would be unsafe and is intentionally not an acceptable
   production release until authoritative cart repricing, inventory and cart concurrency
   controls, immutable pricing provenance, idempotent order creation, failure recovery, and
   end-to-end PostgreSQL integration tests are complete.
+
+
+## Latest verification — pricing reconciliation gate
+
+- The platform readiness transition now requires the locked parent order to include a
+  structured `metadata.checkoutPricing` snapshot. Its currency, product subtotal, delivery
+  quote ID/rule/version, fee/tax components, discount, and computed total must reconcile
+  exactly with persisted order lines, the delivery quote, and `customer_orders.total_minor`.
+- A missing or malformed pricing snapshot, mismatched quote provenance, or parent total
+  mismatch returns `invalid_snapshot` and rolls back before any status update.
+- Added a regression test proving a parent total that differs by one minor unit is rejected.
+- CI Push #1692 passed on commit `3bca0fb2b6b9ad6574c23f5b4264d3dbce408627`:
+  PostgreSQL migration/integration checks, typecheck, lint, tests, and build all succeeded.
+- CI #1690 initially exposed a TypeScript narrowing error in the discount field; the value
+  is now explicitly narrowed before arithmetic. The final #1692 run is green.
+- This remains a guarded repository operation, not an exposed checkout route. The upstream
+  cart repricing, inventory/cart locking, immutable price snapshot writer, idempotent order
+  creation, and recovery orchestration are still required before release.
