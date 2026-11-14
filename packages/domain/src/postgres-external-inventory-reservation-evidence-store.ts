@@ -10,7 +10,7 @@ export interface ExternalInventoryReservationEvidenceInput {
 }
 
 export interface ExternalInventoryReservationEvidenceStore {
-  record(input: ExternalInventoryReservationEvidenceInput): Promise<{ reservationId: string }>;
+  record(input: ExternalInventoryReservationEvidenceInput): Promise<{ reservationId: string; expiresAtUtc: string }>;
 }
 
 /**
@@ -40,12 +40,12 @@ export class PostgresExternalInventoryReservationEvidenceStore implements Extern
       await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [request.idempotencyKey]);
 
       const existing = await client.query<{
-        id: string; tenant_id: string; order_id: string; suborder_id: string;
+        id: string; tenant_id: string; order_id: string; suborder_id: string; expires_at: Date | string;
         merchant_id: string; branch_id: string; status: string;
         integration_id: string; provider_key: string; provider_reservation_reference: string;
       }>(
         `SELECT r.id,r.tenant_id,r.order_id,r.suborder_id,r.merchant_id,r.branch_id,r.status,
-                e.integration_id,e.provider_key,e.provider_reservation_reference
+                e.integration_id,e.provider_key,e.provider_reservation_reference,e.expires_at
          FROM inventory_reservations r
          JOIN inventory_provider_reservation_evidence e
            ON e.tenant_id=r.tenant_id AND e.reservation_id=r.id
@@ -60,6 +60,7 @@ export class PostgresExternalInventoryReservationEvidenceStore implements Extern
           row.branch_id === request.branchId && row.integration_id === integrationId &&
           row.provider_key === input.providerKey &&
           row.provider_reservation_reference === input.providerReservationReference &&
+          new Date(row.expires_at).toISOString() === input.expiresAtUtc &&
           row.status === "reserved";
         if (!matches) throw new Error("external_inventory_reservation_idempotency_conflict");
         const lines = await client.query<{ catalog_variant_id: string; sku: string; quantity: number }>(
@@ -73,7 +74,7 @@ export class PostgresExternalInventoryReservationEvidenceStore implements Extern
           throw new Error("external_inventory_reservation_lines_conflict");
         }
         await client.query("COMMIT");
-        return { reservationId: row.id };
+        return { reservationId: row.id, expiresAtUtc: new Date(row.expires_at).toISOString() };
       }
 
       const eligible = await client.query<{ id: string }>(
@@ -172,7 +173,7 @@ export class PostgresExternalInventoryReservationEvidenceStore implements Extern
       }
 
       await client.query("COMMIT");
-      return { reservationId };
+      return { reservationId, expiresAtUtc: input.expiresAtUtc };
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
       throw error;
