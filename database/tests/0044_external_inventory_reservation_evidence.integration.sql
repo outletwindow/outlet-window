@@ -27,10 +27,16 @@ INSERT INTO verified_order_payment_captures
 VALUES ('provider-evidence-capture','provider-evidence-tenant','provider-evidence-order',
         'moyasar','provider-evidence-event','provider-evidence-payment',
         5000,'SAR',now(),'provider-evidence-capture-key');
+INSERT INTO commerce_catalog_products
+(id,tenant_id,integration_id,provider_key,external_product_id,canonical_url,title,
+ source_type,source_captured_at,source_content_sha256)
+VALUES ('provider-evidence-product','provider-evidence-tenant','provider-evidence-pos',
+        'pos-evidence','external-product-1','https://merchant.example/product/1',
+        'Provider Evidence Product','official_api',now(),repeat('a',64));
 INSERT INTO commerce_catalog_variants
-(id,tenant_id,product_id,sku,external_variant_id,status,created_at,updated_at)
+(id,tenant_id,product_id,sku,external_variant_id)
 VALUES ('provider-evidence-variant','provider-evidence-tenant','provider-evidence-product',
-        'SKU-EVIDENCE','external-evidence-variant','active',now(),now());
+        'SKU-EVIDENCE','external-evidence-variant');
 INSERT INTO customer_order_items
 (id,tenant_id,order_id,suborder_id,merchant_id,branch_id,product_variant_id,sku,quantity,unit_price_minor,currency)
 VALUES ('provider-evidence-item','provider-evidence-tenant','provider-evidence-order',
@@ -68,6 +74,15 @@ BEGIN
       AND l.product_variant_id='external-evidence-variant'
       AND r.status='reserved'
   ) THEN RAISE EXCEPTION 'external reservation evidence was not linked to local reservation ledger'; END IF;
+
+  BEGIN
+    UPDATE inventory_provider_reservation_evidence
+    SET provider_reservation_reference='tampered-reference'
+    WHERE tenant_id='provider-evidence-tenant'
+      AND reservation_id='provider-evidence-reservation';
+    RAISE EXCEPTION 'provider evidence unexpectedly mutable';
+  EXCEPTION WHEN SQLSTATE '55000' THEN NULL;
+  END;
 
   BEGIN
     INSERT INTO inventory_provider_reservation_evidence
