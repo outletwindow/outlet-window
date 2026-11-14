@@ -18,9 +18,9 @@ INSERT INTO merchant_inventory_provider_branch_scopes
 VALUES ('provider-evidence-tenant','provider-evidence-pos',
         'provider-evidence-merchant','provider-evidence-branch');
 INSERT INTO merchant_suborders
-(id,order_id,tenant_id,merchant_id,branch_id,status,version)
+(id,order_id,tenant_id,merchant_id,branch_id,status,version,subtotal_minor)
 VALUES ('provider-evidence-suborder','provider-evidence-order','provider-evidence-tenant',
-        'provider-evidence-merchant','provider-evidence-branch','awaiting_payment',1);
+        'provider-evidence-merchant','provider-evidence-branch','awaiting_payment',1,5000);
 INSERT INTO verified_order_payment_captures
 (id,tenant_id,order_id,provider_key,provider_event_id,provider_payment_reference,
  amount_minor,currency,captured_at,idempotency_key)
