@@ -82,7 +82,7 @@ BEGIN
             'platform','quote-snapshot-area','quote-snapshot-rule',1,
             jsonb_build_object('quoteId','quote-snapshot-mismatched-total','ruleId','quote-snapshot-rule',
               'ruleVersion',1,'currency','SAR','subtotalMinor',999,'discountMinor',0,
-              'totalMinor',999,'components',jsonb_build_array(),
+              'totalMinor',1000,'components',jsonb_build_array(),
               'createdAtUtc',now()::text,'expiresAtUtc',(now()+interval '5 minutes')::text),
             'SAR',1000,now(),now()+interval '5 minutes');
     RAISE EXCEPTION 'quote snapshot total mismatch unexpectedly accepted';
