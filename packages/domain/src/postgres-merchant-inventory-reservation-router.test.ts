@@ -29,7 +29,7 @@ describe("PostgresMerchantInventoryReservationRouter", () => {
     await expect(router.reserveExactVariants(request)).resolves.toEqual({
       outcome: "reserved", reservationReference: "external-hold-1"
     });
-    expect(reserveExactVariants).toHaveBeenCalledWith(request);
+    expect(reserveExactVariants).toHaveBeenCalledWith({ ...request, providerIntegrationId: "pos-1" });
     expect(db.query.mock.calls[0]?.[1]).toEqual(["merchant-tenant-1", "merchant-1", "branch-1"]);
     const sql = String(db.query.mock.calls[0]?.[0]);
     expect(sql).toContain("i.capabilities @> '[\"inventory.hard_reservation\"]'::jsonb");
@@ -37,6 +37,7 @@ describe("PostgresMerchantInventoryReservationRouter", () => {
     expect(sql).toContain("s.active = true");
     expect(sql).toContain("m.status = 'active'");
     expect(sql).toContain("b.status = 'active'");
+    expect(sql).toContain("i.family IN ('pos','erp')");
   });
 
   it("fails closed when no provider has an exact branch grant", async () => {
