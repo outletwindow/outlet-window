@@ -172,7 +172,8 @@ export function buildPostgresApp(options: PostgresApiOptions) {
         "0036_inventory_catalog_variant_identity",
         "0037_order_item_catalog_variant_scope",
         "0038_immutable_checkout_pricing_snapshot",
-        "0039_single_initial_capture_per_order"
+        "0039_single_initial_capture_per_order",
+        "0040_paid_checkout_inventory_reservation_jobs"
       ];
       const result = await options.pool.query<{ version: string }>(
         "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",
