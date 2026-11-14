@@ -1,6 +1,6 @@
 # Checkout implementation readiness
 
-Status: **not ready for a production checkout endpoint**
+Status: **authenticated single-branch checkout endpoint implemented; production payment activation remains blocked**
 
 This note records the verified repository state on branch `work/outlet-window-build`. It is an implementation gate, not a claim that checkout is complete.
 
@@ -116,6 +116,35 @@ Do not expose a production checkout endpoint until steps 1–7 have implementati
 constraints, integration tests, and passing CI. A route that simply copies cart display prices
 into `PostgresOrderStore` would be unsafe and is intentionally not an acceptable shortcut.
 
+
+## Current implementation state — authenticated checkout API
+
+This section supersedes the earlier statements above that no cart-to-order orchestrator or
+checkout API route exists.
+
+- Added authenticated `POST /api/v1/customer/checkout`. It accepts the expected cart version,
+  customer-selected delivery destination, and an `Idempotency-Key` header. Customer identity
+  and audit actor are derived from the verified session; no customer or merchant identity is
+  accepted from the request body.
+- Wired `PostgresCustomerCheckoutService` into the PostgreSQL API composition root. The
+  service performs live catalog repricing, exact branch stock revalidation, delivery quoting,
+  parent/suborder/item persistence, immutable pricing provenance, platform readiness, and
+  cart conversion within one transaction.
+- Customer IAM assignments with an explicit `customerId` scope now receive cart read/create/
+  delete grants. Checkout authorization is checked against that exact customer scope.
+- The readiness audit accepts a customer actor so the transition records the authenticated
+  customer who initiated checkout.
+- Checkout remains deliberately single-branch. Multi-branch carts fail closed; the route
+  returns a conflict rather than applying an invalid single-stop delivery fee.
+- The endpoint creates an `awaiting_payment` order only. Payment intent creation remains a
+  separate authenticated operation. Stock reservation remains gated on verified payment
+  capture, and payment uncertainty still requires the existing recovery/reconciliation flow.
+- Added API tests for customer scope isolation, required idempotency header, successful
+  checkout request mapping, and customer IAM cart grants. PostgreSQL integration coverage
+  verifies exact retry replay and rejects reuse of the same key for a different destination.
+- CI for these latest API and idempotency changes has not yet been confirmed. Do not enable
+  live payment capture until the new workflow passes and payment/recovery integration is
+  verified end to end.
 
 ## Latest verification — platform readiness repository
 
