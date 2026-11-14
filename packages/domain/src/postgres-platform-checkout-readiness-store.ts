@@ -158,6 +158,13 @@ export class PostgresPlatformCheckoutReadinessStore {
         return { outcome: "invalid_snapshot" };
       }
 
+      // The persisted parent snapshot currently contains exactly one delivery quote
+      // and one delivery branch. Until per-suborder quotes are persisted and reconciled,
+      // accepting multiple branches here would undercharge or misattribute delivery.
+      if (suborders.length !== 1 || suborders[0]?.branch_id !== parent.delivery_branch_id) {
+        return { outcome: "invalid_snapshot" };
+      }
+
       const totals = await client.query<ItemTotals>(
         `SELECT s.id AS suborder_id, COUNT(i.id)::int AS item_count,
                 COALESCE(SUM(i.quantity::bigint * i.unit_price_minor), 0)::text AS subtotal_minor
