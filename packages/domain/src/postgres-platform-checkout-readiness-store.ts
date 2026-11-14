@@ -1,6 +1,6 @@
 import type { AuditEvent } from "./audit.js";
 import { PostgresAuditEventStore } from "./postgres-audit-event-store.js";
-import type { PostgresPool } from "./postgres-iam-store.js";
+import type { PostgresClient, PostgresPool } from "./postgres-iam-store.js";
 
 type LockedOrder = {
   id: string; customer_id: string; status: string; version: number; currency: string;
@@ -83,22 +83,38 @@ export class PostgresPlatformCheckoutReadinessStore {
   constructor(private readonly pool: PostgresPool) {}
 
   async transitionToAwaitingPayment(input: {
-    orderId: string;
-    customerId: string;
-    expectedVersion: number;
-    actorId: string;
-    actorRole: "platform_user" | "system";
-    occurredAt: string;
-    auditEvents: readonly AuditEvent[];
+    orderId: string; customerId: string; expectedVersion: number; actorId: string;
+    actorRole: "platform_user" | "system"; occurredAt: string; auditEvents: readonly AuditEvent[];
   }): Promise<PlatformCheckoutReadinessResult> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await this.transitionToAwaitingPaymentInTransaction(input, client);
+      if (result.outcome === "ready") await client.query("COMMIT");
+      else await client.query("ROLLBACK");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Runs readiness validation and transition in a caller-owned transaction.
+   * Caller must roll back on any non-ready outcome; this method never controls
+   * transaction lifecycle or releases the supplied client.
+   */
+  async transitionToAwaitingPaymentInTransaction(input: {
+    orderId: string; customerId: string; expectedVersion: number; actorId: string;
+    actorRole: "platform_user" | "system"; occurredAt: string; auditEvents: readonly AuditEvent[];
+  }, client: PostgresClient): Promise<PlatformCheckoutReadinessResult> {
     const occurredAt = Date.parse(input.occurredAt);
     if (!input.orderId.trim() || !input.customerId.trim() || !input.actorId.trim() ||
         !Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 1 ||
         !Number.isFinite(occurredAt)) throw new Error("INVALID_PLATFORM_CHECKOUT_READINESS_INPUT");
 
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN");
       const parentResult = await client.query<LockedOrder>(
         `SELECT id, customer_id, status, version, currency, total_minor, metadata,
                 delivery_destination, delivery_quote, delivery_zone_id, delivery_branch_id
@@ -108,12 +124,10 @@ export class PostgresPlatformCheckoutReadinessStore {
         [input.orderId, input.customerId]
       );
       if (parentResult.rowCount !== 1 || !parentResult.rows[0]) {
-        await client.query("ROLLBACK");
         return { outcome: "not_found" };
       }
       const parent = parentResult.rows[0];
       if (parent.status !== "pending_validation" || parent.version !== input.expectedVersion) {
-        await client.query("ROLLBACK");
         return { outcome: "conflict" };
       }
 
@@ -127,7 +141,6 @@ export class PostgresPlatformCheckoutReadinessStore {
       );
       const suborders = subordersResult.rows;
       if (suborders.length === 0 || suborders.some(row => row.status !== "pending_validation")) {
-        await client.query("ROLLBACK");
         return { outcome: "conflict" };
       }
 
@@ -144,7 +157,6 @@ export class PostgresPlatformCheckoutReadinessStore {
           !Number.isFinite(Date.parse(quote.createdAtUtc)) ||
           !Number.isFinite(Date.parse(quote.expiresAtUtc)) ||
           Date.parse(quote.createdAtUtc) > occurredAt || Date.parse(quote.expiresAtUtc) <= occurredAt) {
-        await client.query("ROLLBACK");
         return { outcome: "invalid_snapshot" };
       }
 
@@ -165,7 +177,6 @@ export class PostgresPlatformCheckoutReadinessStore {
           !Number.isSafeInteger(Number(row.subtotal_minor)) ||
           Number(row.subtotal_minor) < 0;
       })) {
-        await client.query("ROLLBACK");
         return { outcome: "invalid_snapshot" };
       }
       // Compare each calculated line total with its persisted merchant subtotal.
@@ -176,7 +187,6 @@ export class PostgresPlatformCheckoutReadinessStore {
       if (subtotalRows.rows.length !== totals.rows.length ||
           totals.rows.some((row, index) =>
             String(row.subtotal_minor) !== String(subtotalRows.rows[index]?.subtotal_minor))) {
-        await client.query("ROLLBACK");
         return { outcome: "invalid_snapshot" };
       }
 
@@ -187,15 +197,13 @@ export class PostgresPlatformCheckoutReadinessStore {
         deliveryQuoteId: quote.quoteId as string, deliveryRuleId: quote.ruleId as string,
         deliveryRuleVersion: quote.ruleVersion as number
       })) {
-        await client.query("ROLLBACK");
         return { outcome: "invalid_snapshot" };
       }
 
       const eventsBySuborder = new Map<string, AuditEvent>();
       for (const event of input.auditEvents) {
         if (!event.resourceId || eventsBySuborder.has(event.resourceId)) {
-          await client.query("ROLLBACK");
-          return { outcome: "audit_mismatch" };
+            return { outcome: "audit_mismatch" };
         }
         eventsBySuborder.set(event.resourceId, event);
       }
@@ -211,7 +219,6 @@ export class PostgresPlatformCheckoutReadinessStore {
           event.metadata.previousStatus !== "pending_validation" ||
           event.metadata.nextStatus !== "awaiting_payment";
       })) {
-        await client.query("ROLLBACK");
         return { outcome: "audit_mismatch" };
       }
 
@@ -223,7 +230,6 @@ export class PostgresPlatformCheckoutReadinessStore {
         [input.orderId, input.occurredAt]
       );
       if (changedSuborders.rowCount !== suborders.length) {
-        await client.query("ROLLBACK");
         return { outcome: "conflict" };
       }
       const changedParent = await client.query(
@@ -234,7 +240,6 @@ export class PostgresPlatformCheckoutReadinessStore {
         [input.orderId, input.customerId, input.occurredAt, input.expectedVersion]
       );
       if (changedParent.rowCount !== 1) {
-        await client.query("ROLLBACK");
         return { outcome: "conflict" };
       }
 
@@ -243,21 +248,13 @@ export class PostgresPlatformCheckoutReadinessStore {
         const event = eventsBySuborder.get(suborder.id)!;
         const persisted = await auditStore.append(event);
         if (persisted !== "inserted") {
-          await client.query("ROLLBACK");
-          return { outcome: "audit_mismatch" };
+            return { outcome: "audit_mismatch" };
         }
       }
-      await client.query("COMMIT");
       return {
         outcome: "ready", orderId: input.orderId,
         suborderIds: suborders.map(row => row.id),
         parentVersion: input.expectedVersion + 1
       };
-    } catch (error) {
-      await client.query("ROLLBACK").catch(() => undefined);
-      throw error;
-    } finally {
-      client.release();
-    }
   }
 }

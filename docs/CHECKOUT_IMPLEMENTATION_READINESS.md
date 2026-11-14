@@ -277,3 +277,19 @@ into `PostgresOrderStore` would be unsafe and is intentionally not an acceptable
   change passed Push workflow #1713 on commit
   `1c93d819871a6b21ea59bbe565ce61e5a1c8cd29` (TypeScript, lint, tests, build, and
   PostgreSQL migration/integration checks).
+
+
+## Transaction-scoped platform readiness transition
+
+- Added `PostgresPlatformCheckoutReadinessStore.transitionToAwaitingPaymentInTransaction`.
+  It performs the same parent/suborder locks, quote expiry and scope checks, persisted
+  item/suborder total reconciliation, immutable pricing snapshot validation, state updates,
+  and per-suborder audit writes as the standalone wrapper, but uses a caller-owned client.
+- The transaction-scoped method never begins, commits, rolls back, or releases the connection.
+  The caller must roll back the enclosing checkout transaction for every non-`ready` result
+  and commit only after cart conversion and all other checkout writes succeed.
+- The existing `transitionToAwaitingPayment` method remains as a self-managed wrapper and
+  retains its commit/rollback/release behavior.
+- Added a unit test proving the transaction-scoped readiness method leaves transaction
+  lifecycle entirely to its caller. This is another composition primitive, not yet a complete
+  cart-to-order orchestrator or a production checkout endpoint.

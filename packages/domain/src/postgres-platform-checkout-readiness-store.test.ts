@@ -83,6 +83,17 @@ describe("PostgresPlatformCheckoutReadinessStore", () => {
   });
 
 
+  it("supports the readiness transition inside a caller-owned transaction", async () => {
+    const db = database();
+    const result = await new PostgresPlatformCheckoutReadinessStore(db.pool)
+      .transitionToAwaitingPaymentInTransaction(baseInput, db.client);
+    expect(result).toEqual({ outcome: "ready", orderId: "order-1", suborderIds: ["sub-1", "sub-2"], parentVersion: 5 });
+    expect(db.statements).not.toContain("BEGIN");
+    expect(db.statements).not.toContain("COMMIT");
+    expect(db.statements).not.toContain("ROLLBACK");
+    expect(db.client.release).not.toHaveBeenCalled();
+  });
+
   it("rejects a parent total that does not reconcile to the persisted pricing components", async () => {
     const db = database({ badOrderTotal: true });
     const result = await new PostgresPlatformCheckoutReadinessStore(db.pool).transitionToAwaitingPayment(baseInput);
