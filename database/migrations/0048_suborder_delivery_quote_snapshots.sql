@@ -87,6 +87,10 @@ BEGIN
       USING ERRCODE = '23514';
   END IF;
 
+  IF jsonb_typeof(NEW.quote_snapshot->'components') IS DISTINCT FROM 'array' THEN
+    RAISE EXCEPTION 'delivery_quote_snapshot_components_must_be_array'
+      USING ERRCODE = '23514';
+  END IF;
   IF jsonb_array_length(NEW.quote_snapshot->'components') = 0 THEN
     RAISE EXCEPTION 'delivery_quote_snapshot_components_required'
       USING ERRCODE = '23514';
