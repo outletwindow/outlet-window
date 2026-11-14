@@ -29,6 +29,7 @@ describe("merchant integration registry API", () => {
     const hub = new IntegrationHub(new InMemoryIntegrationRegistryStore(), verifiers, validator);
     const app = buildApp({
       resolveActor: async () => actor,
+      resolveMerchantTenantId: async (merchantId) => merchantId,
       integrationHub: hub
     });
     apps.push(app);
