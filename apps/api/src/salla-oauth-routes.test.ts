@@ -21,7 +21,8 @@ async function integrationHub() {
 
 describe("Salla OAuth API routes", () => {
   it("fails closed when OAuth flow is not configured", async () => {
-    const app = buildApp({ resolveActor: async () => owner, integrationHub: await integrationHub() });
+    const app = buildApp({ resolveActor: async () => owner,
+      resolveMerchantTenantId: async (merchantId) => merchantId, integrationHub: await integrationHub() });
     await app.ready();
     try {
       const response = await app.inject({
@@ -53,6 +54,7 @@ describe("Salla OAuth API routes", () => {
     let completed = 0;
     const app = buildApp({
       resolveActor: async () => owner,
+      resolveMerchantTenantId: async (merchantId) => merchantId,
       integrationHub: await integrationHub(),
       sallaOAuthFlow: {
         async begin(input) {
