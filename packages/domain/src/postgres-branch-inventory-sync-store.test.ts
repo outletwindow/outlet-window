@@ -50,6 +50,23 @@ describe("PostgreSQL complete branch inventory snapshots", () => {
     expect(pool.client.released).toBe(true);
   });
 
+  it("marks every existing variant unavailable when a complete snapshot contains no lines", async () => {
+    const pool = new SnapshotPool();
+    const store = new PostgresBranchInventorySyncStore(pool);
+    const result = await store.applySnapshot({
+      tenantId: "tenant-1", merchantId: "merchant-1", branchId: "branch-1",
+      source: "pos", capturedAtUtc: "2026-11-14T12:00:00.000Z", confidence: "high",
+      lines: []
+    });
+    expect(result).toEqual({ accepted: 1, stale: 0 });
+    const omitted = pool.client.statements.find(item => item.sql.includes("UPDATE branch_inventory"));
+    expect(omitted?.values).toEqual([
+      "merchant-1", "branch-1", [], "pos", "2026-11-14T12:00:00.000Z", "high"
+    ]);
+    expect(omitted?.sql).toContain("NOT (product_variant_id = ANY($3::text[]))");
+    expect(pool.client.statements.at(-1)?.sql).toBe("COMMIT");
+  });
+
   it("clamps sellable stock and records a reconciliation alert when source stock is below reservations", async () => {
     class ConflictClient extends SnapshotClient {
       override async query<Row>(sql: string, values: readonly unknown[] = []): Promise<PostgresQueryResult<Row>> {
