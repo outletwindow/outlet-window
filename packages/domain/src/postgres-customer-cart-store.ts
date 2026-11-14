@@ -51,9 +51,10 @@ export class PostgresCustomerCartStore {
     try {
       await client.query("BEGIN");
       await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", ["customer-cart:" + input.customerId]);
-      const eligible = await client.query<{ merchant_tenant_id: string; currency: string; price_minor: string | number }>(
+      const eligible = await client.query<{ merchant_tenant_id: string; currency: string; price_minor: string | number; external_variant_id: string; sku: string }>(
         `SELECT m.tenant_id AS merchant_tenant_id, COALESCE(v.currency,p.currency) AS currency,
-                COALESCE(v.price_minor,p.price_minor) AS price_minor
+                COALESCE(v.price_minor,p.price_minor) AS price_minor,
+                v.external_variant_id, v.sku
          FROM merchants m
          JOIN merchant_branches b ON b.merchant_id=m.id
          JOIN commerce_catalog_variants v ON v.id=$3 AND v.tenant_id=m.tenant_id
@@ -93,10 +94,14 @@ export class PostgresCustomerCartStore {
       if (totalQuantity > 99) throw new Error("customer_cart_quantity_limit");
       if (totalQuantity > input.quantity) {
         const stock = await client.query<{ available: boolean }>(
-          `SELECT (i.available_quantity-i.reserved_quantity >= $4) AS available
-           FROM branch_inventory i WHERE i.merchant_id=$1 AND i.branch_id=$2
-             AND i.product_variant_id=(SELECT external_variant_id FROM commerce_catalog_variants WHERE id=$3)`,
-          [input.merchantId,input.branchId,input.productVariantId,totalQuantity]
+          `SELECT (i.available_quantity-i.reserved_quantity >= $5
+                    AND i.last_synced_at >= clock_timestamp()-interval '30 minutes'
+                    AND i.availability_confidence IN ('high','medium')) AS available
+           FROM branch_inventory i
+           WHERE i.merchant_id=$1 AND i.branch_id=$2
+             AND i.product_variant_id=$3 AND i.sku=$4
+           FOR UPDATE`,
+          [input.merchantId,input.branchId,product.external_variant_id,product.sku,totalQuantity]
         );
         if (stock.rows[0]?.available !== true) throw new Error("customer_cart_variant_unavailable");
       }
