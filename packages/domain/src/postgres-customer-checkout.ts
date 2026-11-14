@@ -173,6 +173,8 @@ export class PostgresCustomerCheckoutService {
         { kind: "delivery", amountMinor: quoteResult.quote.totalMinor, label: "Delivery" }
       ] as const;
       const checkoutPricing = {
+        // Keep the request fingerprint inside the database-enforced immutable snapshot.
+        checkoutRequest,
         currency: priced.currency,
         deliveryQuoteId: quoteResult.quote.quoteId,
         deliveryRuleId: quoteResult.quote.ruleId,
@@ -189,7 +191,7 @@ export class PostgresCustomerCheckoutService {
         idempotencyKey: input.idempotencyKey,
         currency: priced.currency,
         totalMinor,
-        metadata: { source: "customer_checkout", checkoutRequest, checkoutPricing },
+        metadata: { source: "customer_checkout", checkoutPricing },
         deliveryDestination: {
           countryCode: input.destination.countryCode,
           cityCode: input.destination.cityCode,
