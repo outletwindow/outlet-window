@@ -126,64 +126,83 @@ export class PostgresCustomerCheckoutService {
         return { outcome: priced.outcome };
       }
 
-      // A zone-center quote is not a multi-stop route quote. Do not silently
-      // charge a single delivery fee for a cart spanning multiple branches.
-      if (priced.suborders.length !== 1) {
-        await client.query("ROLLBACK");
-        return { outcome: "unsupported_multi_branch" };
-      }
-      const suborder = priced.suborders[0];
-      if (!suborder) {
+      if (priced.suborders.length === 0) {
         await client.query("ROLLBACK");
         return { outcome: "invalid_snapshot" };
       }
 
+      // Each merchant branch receives its own immutable delivery quote. These are
+      // zone-center price estimates (not a multi-stop road-route optimization); the
+      // selected branch is validated independently against the service-area eligibility.
       const occurredAt = this.now().toISOString();
       const quoteService = new PostgresDeliveryQuoteService(client);
-      const quoteResult = await quoteService.quoteInTransaction({
-        tenantId: "platform",
-        countryCode: input.destination.countryCode,
-        cityCode: input.destination.cityCode,
-        serviceCode: input.destination.serviceCode,
-        destination: { latitude: input.destination.latitude, longitude: input.destination.longitude },
-        quoteId: this.createId(),
-        nowUtc: occurredAt
-      }, client);
-      if (quoteResult.status !== "quoted") {
-        await client.query("ROLLBACK");
-        if (quoteResult.status === "outside_service_area") return { outcome: "outside_service_area" };
-        if (quoteResult.status === "no_active_pricing_rule") return { outcome: "no_active_pricing_rule" };
-        if (quoteResult.status === "no_eligible_branch") return { outcome: "no_eligible_branch" };
-        return { outcome: "invalid_delivery_request" };
-      }
-      if (quoteResult.currency !== priced.currency ||
-          !quoteResult.eligibleBranches.some(branch =>
-            branch.merchantId === suborder.merchantId && branch.branchId === suborder.branchId)) {
-        await client.query("ROLLBACK");
-        return { outcome: "invalid_snapshot" };
+      const branchQuotes: Array<{
+        suborder: typeof priced.suborders[number];
+        result: Extract<Awaited<ReturnType<typeof quoteService.quoteInTransaction>>, { status: "quoted" }>;
+      }> = [];
+      for (const suborder of priced.suborders) {
+        const quoteResult = await quoteService.quoteInTransaction({
+          tenantId: "platform",
+          countryCode: input.destination.countryCode,
+          cityCode: input.destination.cityCode,
+          serviceCode: input.destination.serviceCode,
+          destination: { latitude: input.destination.latitude, longitude: input.destination.longitude },
+          quoteId: this.createId(),
+          nowUtc: occurredAt
+        }, client);
+        if (quoteResult.status !== "quoted") {
+          await client.query("ROLLBACK");
+          if (quoteResult.status === "outside_service_area") return { outcome: "outside_service_area" };
+          if (quoteResult.status === "no_active_pricing_rule") return { outcome: "no_active_pricing_rule" };
+          if (quoteResult.status === "no_eligible_branch") return { outcome: "no_eligible_branch" };
+          return { outcome: "invalid_delivery_request" };
+        }
+        if (quoteResult.currency !== priced.currency ||
+            !quoteResult.eligibleBranches.some(branch =>
+              branch.merchantId === suborder.merchantId && branch.branchId === suborder.branchId)) {
+          await client.query("ROLLBACK");
+          return { outcome: "invalid_snapshot" };
+        }
+        branchQuotes.push({ suborder, result: quoteResult });
       }
 
-      const totalMinor = priced.subtotalMinor + quoteResult.quote.totalMinor;
-      if (!Number.isSafeInteger(totalMinor) || totalMinor < 0) {
+      const deliveryTotalMinor = branchQuotes.reduce((sum, entry) => sum + entry.result.quote.totalMinor, 0);
+      const totalMinor = priced.subtotalMinor + deliveryTotalMinor;
+      if (!Number.isSafeInteger(deliveryTotalMinor) || deliveryTotalMinor < 0 ||
+          !Number.isSafeInteger(totalMinor) || totalMinor < 0) {
         await client.query("ROLLBACK");
         return { outcome: "invalid_snapshot" };
       }
+      const firstQuote = branchQuotes[0]!.result;
       const components = [
         { kind: "product_subtotal", amountMinor: priced.subtotalMinor, label: "Products" },
-        { kind: "delivery", amountMinor: quoteResult.quote.totalMinor, label: "Delivery" }
-      ] as const;
+        ...branchQuotes.map(({ suborder, result }) => ({
+          kind: "delivery", amountMinor: result.quote.totalMinor,
+          label: `Delivery - ${suborder.branchId}`,
+          suborderId: suborder.merchantId + ":" + suborder.branchId,
+          quoteId: result.quote.quoteId
+        }))
+      ];
       const checkoutPricing = {
         // Keep the request fingerprint inside the database-enforced immutable snapshot.
         checkoutRequest,
         currency: priced.currency,
-        deliveryQuoteId: quoteResult.quote.quoteId,
-        deliveryRuleId: quoteResult.quote.ruleId,
-        deliveryRuleVersion: quoteResult.quote.ruleVersion,
+        deliveryQuoteId: firstQuote.quote.quoteId,
+        deliveryRuleId: firstQuote.quote.ruleId,
+        deliveryRuleVersion: firstQuote.quote.ruleVersion,
+        deliveryQuotes: branchQuotes.map(({ suborder, result }) => ({
+          suborderKey: suborder.merchantId + ":" + suborder.branchId,
+          merchantId: suborder.merchantId,
+          branchId: suborder.branchId,
+          quoteId: result.quote.quoteId,
+          ruleId: result.quote.ruleId,
+          ruleVersion: result.quote.ruleVersion,
+          totalMinor: result.quote.totalMinor
+        })),
         discountMinor: 0,
         components
       };
       const orderId = this.createId();
-      const suborderId = this.createId();
       const orderInput = {
         id: orderId,
         tenantId: "platform",
@@ -200,11 +219,13 @@ export class PostgresCustomerCheckoutService {
           longitude: input.destination.longitude,
           ...(input.destination.addressSnapshot === undefined ? {} : { address: input.destination.addressSnapshot })
         },
-        deliveryQuote: { ...quoteResult.quote },
-        deliveryZoneId: quoteResult.serviceAreaId,
-        deliveryBranchId: suborder.branchId,
-        suborders: [{
-          id: suborderId,
+        // Legacy parent columns retain the first branch quote; the complete set is
+        // persisted per suborder below and is authoritative for multi-branch readiness.
+        deliveryQuote: { ...firstQuote.quote },
+        deliveryZoneId: firstQuote.serviceAreaId,
+        deliveryBranchId: priced.suborders[0]!.branchId,
+        suborders: priced.suborders.map(suborder => ({
+          id: this.createId(),
           merchantId: suborder.merchantId,
           branchId: suborder.branchId,
           status: "pending_validation" as const,
@@ -225,28 +246,32 @@ export class PostgresCustomerCheckoutService {
         return { outcome: "idempotency_conflict" };
       }
 
-      // Persist the branch-scoped immutable quote in the same transaction as its
-      // suborder. The parent quote remains a compatibility snapshot; readiness and
-      // downstream fulfillment can rely on this ledger as the authoritative scope.
-      const quoteSnapshot = {
-        ...quoteResult.quote,
-        subtotalMinor: quoteResult.quote.totalMinor,
-        discountMinor: 0
-      };
-      await client.query(
-        `INSERT INTO customer_order_suborder_delivery_quotes (
-           id, tenant_id, order_id, suborder_id, merchant_id, branch_id,
-           service_area_tenant_id, service_area_id, pricing_rule_id, pricing_rule_version,
-           quote_snapshot, currency, total_minor, created_at, expires_at
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13,$14,$15)`,
-        [
-          quoteResult.quote.quoteId, suborder.merchantTenantId, orderId, suborderId,
-          suborder.merchantId, suborder.branchId, "platform", quoteResult.serviceAreaId,
-          quoteResult.quote.ruleId, quoteResult.quote.ruleVersion,
-          JSON.stringify(quoteSnapshot), quoteResult.currency, quoteResult.quote.totalMinor,
-          quoteResult.quote.createdAtUtc, quoteResult.quote.expiresAtUtc
-        ]
-      );
+      // Persist every branch-scoped immutable quote in the same transaction as its
+      // matching suborder. The parent quote is only a legacy first-branch snapshot.
+      for (const { suborder, result } of branchQuotes) {
+        const matchingSuborder = orderInput.suborders.find(item =>
+          item.merchantId === suborder.merchantId && item.branchId === suborder.branchId);
+        if (!matchingSuborder) throw new Error("CHECKOUT_SUBORDER_QUOTE_MAPPING_MISSING");
+        const quoteSnapshot = {
+          ...result.quote,
+          subtotalMinor: result.quote.totalMinor,
+          discountMinor: 0
+        };
+        await client.query(
+          `INSERT INTO customer_order_suborder_delivery_quotes (
+             id, tenant_id, order_id, suborder_id, merchant_id, branch_id,
+             service_area_tenant_id, service_area_id, pricing_rule_id, pricing_rule_version,
+             quote_snapshot, currency, total_minor, created_at, expires_at
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13,$14,$15)`,
+          [
+            result.quote.quoteId, suborder.merchantTenantId, orderId, matchingSuborder.id,
+            suborder.merchantId, suborder.branchId, "platform", result.serviceAreaId,
+            result.quote.ruleId, result.quote.ruleVersion,
+            JSON.stringify(quoteSnapshot), result.currency, result.quote.totalMinor,
+            result.quote.createdAtUtc, result.quote.expiresAtUtc
+          ]
+        );
+      }
 
       const auditEvents = [createAuditEvent({
         id: this.createId(),
