@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AuditEvent } from "./audit.js";
-import type { PostgresPool, PostgresQueryResult } from "./postgres-iam-store.js";
+import type { PostgresClient, PostgresPool, PostgresQueryResult } from "./postgres-iam-store.js";
 import { PostgresPlatformCheckoutReadinessStore } from "./postgres-platform-checkout-readiness-store.js";
 
 const occurredAt = "2026-11-14T16:00:00.000Z";
@@ -86,7 +86,7 @@ describe("PostgresPlatformCheckoutReadinessStore", () => {
   it("supports the readiness transition inside a caller-owned transaction", async () => {
     const db = database();
     const result = await new PostgresPlatformCheckoutReadinessStore(db.pool)
-      .transitionToAwaitingPaymentInTransaction(baseInput, db.client);
+      .transitionToAwaitingPaymentInTransaction(baseInput, db.client as unknown as PostgresClient);
     expect(result).toEqual({ outcome: "ready", orderId: "order-1", suborderIds: ["sub-1", "sub-2"], parentVersion: 5 });
     expect(db.statements).not.toContain("BEGIN");
     expect(db.statements).not.toContain("COMMIT");
