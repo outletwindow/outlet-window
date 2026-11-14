@@ -12,7 +12,7 @@ export class PostgresCustomerPaymentIntentCheckout {
  constructor(private readonly pool:PostgresPool, private readonly provider:Pick<MoyasarPaymentIntentClient,"createIntent">&Partial<Pick<MoyasarPaymentIntentClient,"fetchIntent">>, private readonly callbackUrl:string, private readonly now:()=>Date = () => new Date()) {
   const callback=new URL(callbackUrl);
   if(callback.protocol!=="https:"||callback.username||callback.password) throw new Error("INVALID_PAYMENT_CALLBACK_URL");
-  this.attempts=new PostgresPaymentIntentCreationAttemptStore(pool);
+  this.attempts=new PostgresPaymentIntentCreationAttemptStore(pool,undefined,now);
  }
  async create(input:{customerId:string;orderId:string;idempotencyKey:string}):Promise<CustomerPaymentIntentCheckoutResult>{
   if(!input.customerId.trim()||!input.orderId.trim()||!/^[a-zA-Z0-9._:-]{8,240}$/.test(input.idempotencyKey)) throw new Error("INVALID_CUSTOMER_PAYMENT_CHECKOUT");
