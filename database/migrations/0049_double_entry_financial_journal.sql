@@ -113,6 +113,17 @@ DECLARE
   scoped_tenant text;
   scoped_journal text;
 BEGIN
+  IF TG_OP='UPDATE' AND (
+       OLD.id IS DISTINCT FROM NEW.id OR
+       OLD.tenant_id IS DISTINCT FROM NEW.tenant_id OR
+       OLD.journal_id IS DISTINCT FROM NEW.journal_id OR
+       OLD.account_id IS DISTINCT FROM NEW.account_id OR
+       OLD.currency IS DISTINCT FROM NEW.currency OR
+       OLD.line_number IS DISTINCT FROM NEW.line_number OR
+       OLD.created_at IS DISTINCT FROM NEW.created_at) THEN
+    RAISE EXCEPTION 'financial_journal_line_identity_is_immutable'
+      USING ERRCODE='55000';
+  END IF;
   scoped_tenant := CASE WHEN TG_OP='DELETE' THEN OLD.tenant_id ELSE NEW.tenant_id END;
   scoped_journal := CASE WHEN TG_OP='DELETE' THEN OLD.journal_id ELSE NEW.journal_id END;
   SELECT status INTO journal_status FROM financial_journals
@@ -141,6 +152,17 @@ FOR EACH STATEMENT EXECUTE FUNCTION prevent_financial_journal_lines_truncate();
 CREATE OR REPLACE FUNCTION protect_posted_financial_journals()
 RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
+  IF TG_OP='UPDATE' AND (
+       OLD.id IS DISTINCT FROM NEW.id OR
+       OLD.tenant_id IS DISTINCT FROM NEW.tenant_id OR
+       OLD.idempotency_key IS DISTINCT FROM NEW.idempotency_key OR
+       OLD.source_type IS DISTINCT FROM NEW.source_type OR
+       OLD.source_reference IS DISTINCT FROM NEW.source_reference OR
+       OLD.currency IS DISTINCT FROM NEW.currency OR
+       OLD.occurred_at IS DISTINCT FROM NEW.occurred_at OR
+       OLD.created_at IS DISTINCT FROM NEW.created_at) THEN
+    RAISE EXCEPTION 'financial_journal_identity_is_immutable' USING ERRCODE='55000';
+  END IF;
   IF OLD.status='posted' THEN
     RAISE EXCEPTION 'financial_journal_is_immutable_after_posting' USING ERRCODE='55000';
   END IF;
