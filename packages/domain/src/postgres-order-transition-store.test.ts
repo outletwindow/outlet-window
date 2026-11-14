@@ -107,6 +107,13 @@ describe("PostgresOrderTransitionStore", () => {
     });
     expect(result).toMatchObject({ outcome: "updated", transition: { ok: true, order: { status: "ready_for_pickup" } } });
     expect(db.statements.some(sql => sql.includes("COUNT(i.id)::int AS item_count"))).toBe(true);
+    const preparationQuery = db.statements.find(sql => sql.includes("COUNT(i.id)::int AS item_count")) ?? "";
+    expect(preparationQuery).toContain("c.merchant_id = i.merchant_id");
+    expect(preparationQuery).toContain("c.branch_id = i.branch_id");
+    expect(preparationQuery).toContain("c.expected_sku = i.sku");
+    expect(preparationQuery).toContain("c.scanned_sku = i.sku");
+    expect(preparationQuery).toContain("c.expected_quantity = i.quantity");
+    expect(preparationQuery).toContain("c.verified_quantity = i.quantity");
     expect(db.statements.at(-1)).toBe("COMMIT");
   });
 
