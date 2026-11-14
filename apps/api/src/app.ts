@@ -1362,7 +1362,7 @@ app.patch<{
     const body = request.body;
     if (!body || !["pos","erp","ecommerce","csv","merchant_portal","manual"].includes(body.source) ||
         typeof body.capturedAtUtc !== "string" || !Array.isArray(body.lines) ||
-        body.lines.length < 1 || body.lines.length > 5000) {
+        body.lines.length > 5000) {
       return reply.code(400).send({ error: "invalid_inventory_snapshot" });
     }
     try {
