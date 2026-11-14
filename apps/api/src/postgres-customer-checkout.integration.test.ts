@@ -228,6 +228,21 @@ integration("PostgreSQL customer checkout orchestration", () => {
     expect(suborders.rows).toHaveLength(1);
     expect(suborders.rows[0]).toMatchObject({ status: "awaiting_payment", merchant_id: merchantId, branch_id: branchId });
 
+    const deliveryQuoteLedger = await pool.query<{
+      suborder_id: string; merchant_id: string; branch_id: string; currency: string;
+      total_minor: string; quote_snapshot: { quoteId: string; totalMinor: number };
+    }>(
+      `SELECT suborder_id,merchant_id,branch_id,currency,total_minor,quote_snapshot
+       FROM customer_order_suborder_delivery_quotes WHERE order_id=$1`,
+      [result.orderId]
+    );
+    expect(deliveryQuoteLedger.rows).toHaveLength(1);
+    expect(deliveryQuoteLedger.rows[0]).toMatchObject({
+      suborder_id: suborders.rows[0]?.id, merchant_id: merchantId, branch_id: branchId,
+      currency: "SAR", total_minor: "1500",
+      quote_snapshot: { quoteId: expect.any(String), totalMinor: 1500 }
+    });
+
     const cart = await pool.query<{ status: string; version: number }>(
       "SELECT status,version FROM customer_carts WHERE id=$1", [cartId]
     );
