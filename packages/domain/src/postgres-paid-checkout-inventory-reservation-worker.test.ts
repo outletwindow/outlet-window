@@ -161,11 +161,13 @@ describe("PostgresPaidCheckoutInventoryReservationWorker", () => {
 
   it("routes unsupported multi-suborder paid orders to durable manual recovery", async () => {
     const db = createPool({ suborders: [suborder, { ...suborder, id: "sub-2" }] });
-    const { worker, inventory, recovery } = createWorker({ pool: db.pool });
+    const { worker, inventory, transition, recovery } = createWorker({ pool: db.pool });
     await expect(worker.runOnce()).resolves.toMatchObject({
       outcome: "needs_review", failureCode: "UNSUPPORTED_SUBORDER_COUNT"
     });
+    // A multi-branch capture must never partially reserve stock or confirm one branch.
     expect(inventory.reserveExactVariants).not.toHaveBeenCalled();
+    expect(transition).not.toHaveBeenCalled();
     expect(recovery).toHaveBeenCalledWith(expect.objectContaining({
       tenantId: "platform", orderId: "order-1", failureCode: "TASK_COMMIT_REJECTED"
     }));
