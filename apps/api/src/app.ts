@@ -902,7 +902,10 @@ app.patch<{
     }
     if (!options.sallaOAuthFlow) return reply.code(503).send({ error: "salla_oauth_not_configured" });
     if (!/^[a-zA-Z0-9_-]{2,80}$/.test(integrationId)) return reply.code(400).send({ error: "invalid_integration_id" });
-    const integration = await options.integrationHub?.get(merchantId, integrationId);
+    if (!options.integrationHub) return reply.code(503).send({ error: "service_unavailable" });
+    const tenantId = await options.resolveMerchantTenantId?.(merchantId);
+    if (!tenantId) return reply.code(404).send({ error: "merchant_not_found" });
+    const integration = await options.integrationHub.get(tenantId, integrationId);
     if (!integration) return reply.code(404).send({ error: "integration_not_found" });
     if (integration.providerKey !== "salla" || integration.family !== "commerce") {
       return reply.code(409).send({ error: "integration_provider_mismatch" });
@@ -910,7 +913,7 @@ app.patch<{
     if (integration.status !== "pending") {
       return reply.code(409).send({ error: "integration_must_be_pending_before_authorization" });
     }
-    const started = await options.sallaOAuthFlow.begin({ tenantId: merchantId, integrationId });
+    const started = await options.sallaOAuthFlow.begin({ tenantId, integrationId });
     let url: URL;
     try { url = new URL(started.authorizationUrl); } catch { return reply.code(502).send({ error: "invalid_provider_authorization_url" }); }
     if (url.protocol !== "https:" || url.hostname !== "accounts.salla.sa" || url.username || url.password) {
@@ -951,12 +954,14 @@ app.patch<{
       return reply.code(403).send({ error: "merchant_admin_only" });
     }
     if (!options.integrationHub) return reply.code(503).send({ error: "service_unavailable" });
+    const tenantId = await options.resolveMerchantTenantId?.(merchantId);
+    if (!tenantId) return reply.code(404).send({ error: "merchant_not_found" });
     const family = request.query.family;
     if (family !== undefined && !INTEGRATION_FAMILIES.includes(family as typeof INTEGRATION_FAMILIES[number])) {
       return reply.code(400).send({ error: "invalid_integration_family" });
     }
     const integrations = await options.integrationHub.list(
-      merchantId, family as typeof INTEGRATION_FAMILIES[number] | undefined
+      tenantId, family as typeof INTEGRATION_FAMILIES[number] | undefined
     );
     return reply.code(200).send({ integrations });
   });
@@ -974,12 +979,14 @@ app.patch<{
       return reply.code(403).send({ error: "merchant_admin_only" });
     }
     if (!options.integrationHub) return reply.code(503).send({ error: "service_unavailable" });
+    const tenantId = await options.resolveMerchantTenantId?.(merchantId);
+    if (!tenantId) return reply.code(404).send({ error: "merchant_not_found" });
     const body = request.body;
     if (!body || typeof body.secretReference !== "string") {
       return reply.code(400).send({ error: "invalid_secret_reference" });
     }
     const outcome = await options.integrationHub.rotateSecretReference(
-      merchantId, integrationId, body.secretReference, new Date().toISOString()
+      tenantId, integrationId, body.secretReference, new Date().toISOString()
     );
     if (outcome === "not_found") return reply.code(404).send({ error: "integration_not_found" });
     if (outcome === "validator_not_configured") return reply.code(503).send({ error: "secret_manager_not_configured" });
@@ -999,7 +1006,9 @@ app.patch<{
       return reply.code(403).send({ error: "merchant_admin_only" });
     }
     if (!options.integrationHub) return reply.code(503).send({ error: "service_unavailable" });
-    const outcome = await options.integrationHub.reconnect(merchantId, integrationId, new Date().toISOString());
+    const tenantId = await options.resolveMerchantTenantId?.(merchantId);
+    if (!tenantId) return reply.code(404).send({ error: "merchant_not_found" });
+    const outcome = await options.integrationHub.reconnect(tenantId, integrationId, new Date().toISOString());
     if (outcome === "not_found") return reply.code(404).send({ error: "integration_not_found" });
     if (outcome === "invalid_transition") return reply.code(409).send({ error: "integration_cannot_be_reconnected" });
     return reply.code(200).send({ outcome: "pending", integrationId, requiresVerification: true });
@@ -1017,8 +1026,10 @@ app.patch<{
       return reply.code(403).send({ error: "merchant_admin_only" });
     }
     if (!options.integrationHub) return reply.code(503).send({ error: "service_unavailable" });
+    const tenantId = await options.resolveMerchantTenantId?.(merchantId);
+    if (!tenantId) return reply.code(404).send({ error: "merchant_not_found" });
     const outcome = await options.integrationHub.verifyConnection(
-      merchantId, integrationId, new Date().toISOString()
+      tenantId, integrationId, new Date().toISOString()
     );
     if (outcome === "not_found") return reply.code(404).send({ error: "integration_not_found" });
     if (outcome === "provider_not_configured") return reply.code(503).send({ error: "provider_not_configured" });
@@ -1039,7 +1050,9 @@ app.patch<{
       return reply.code(403).send({ error: "merchant_admin_only" });
     }
     if (!options.integrationHub) return reply.code(503).send({ error: "service_unavailable" });
-    const outcome = await options.integrationHub.suspend(merchantId, integrationId, new Date().toISOString());
+    const tenantId = await options.resolveMerchantTenantId?.(merchantId);
+    if (!tenantId) return reply.code(404).send({ error: "merchant_not_found" });
+    const outcome = await options.integrationHub.suspend(tenantId, integrationId, new Date().toISOString());
     if (outcome === "not_found") return reply.code(404).send({ error: "integration_not_found" });
     if (outcome === "invalid_transition") return reply.code(409).send({ error: "integration_cannot_be_suspended" });
     return reply.code(200).send({ outcome: "suspended", integrationId });
@@ -1064,6 +1077,8 @@ app.patch<{
       return reply.code(403).send({ error: "merchant_admin_only" });
     }
     if (!options.integrationHub) return reply.code(503).send({ error: "service_unavailable" });
+    const tenantId = await options.resolveMerchantTenantId?.(merchantId);
+    if (!tenantId) return reply.code(404).send({ error: "merchant_not_found" });
     const body = request.body;
     if (!body || typeof body.id !== "string" || !/^[a-zA-Z0-9_-]{2,80}$/.test(body.id) ||
         typeof body.family !== "string" || !INTEGRATION_FAMILIES.includes(body.family as typeof INTEGRATION_FAMILIES[number]) ||
@@ -1083,7 +1098,7 @@ app.patch<{
     try {
       await options.integrationHub.register({
         id: body.id,
-        tenantId: merchantId,
+        tenantId,
         family: body.family as typeof INTEGRATION_FAMILIES[number],
         providerKey: body.providerKey.trim(),
         displayName: body.displayName.trim(),
@@ -1103,7 +1118,7 @@ app.patch<{
     }
     return reply.code(201).send({
       integration: {
-        id: body.id, tenantId: merchantId, family: body.family,
+        id: body.id, tenantId, family: body.family,
         providerKey: body.providerKey.trim(), displayName: body.displayName.trim(),
         status: "pending", capabilities: [...new Set(body.capabilities.map((item) => item.trim()))],
         createdAtUtc: now, updatedAtUtc: now
@@ -1135,8 +1150,10 @@ app.patch<{
       return reply.code(400).send({ error: "invalid_catalog_import_request" });
     }
     try {
+      const tenantId = await options.resolveMerchantTenantId?.(merchantId);
+      if (!tenantId) return reply.code(404).send({ error: "merchant_not_found" });
       const summary = await options.merchantCatalogImport.import({
-        tenantId: merchantId, integrationId, sourceUrl: body.sourceUrl,
+        tenantId, integrationId, sourceUrl: body.sourceUrl,
         ...(body.cursor === undefined ? {} : { cursor: body.cursor as string }),
         ...(body.updatedSinceUtc === undefined ? {} : { updatedSinceUtc: body.updatedSinceUtc as string })
       });
