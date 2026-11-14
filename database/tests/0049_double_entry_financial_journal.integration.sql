@@ -1,4 +1,4 @@
-\\set ON_ERROR_STOP on
+\set ON_ERROR_STOP on
 BEGIN;
 
 INSERT INTO financial_accounts
@@ -61,6 +61,14 @@ BEGIN
   BEGIN
     UPDATE financial_journals SET description='changed' WHERE id='ledger-balanced';
     RAISE EXCEPTION 'posted journal header unexpectedly updated';
+  EXCEPTION WHEN SQLSTATE '55000' THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO financial_journal_lines
+    (id,tenant_id,journal_id,account_id,currency,line_number,debit_minor,credit_minor)
+    VALUES ('ledger-late-line','ledger-tenant','ledger-balanced','ledger-cash','SAR',4,1,0);
+    RAISE EXCEPTION 'posted journal unexpectedly accepted a new line';
   EXCEPTION WHEN SQLSTATE '55000' THEN NULL;
   END;
 
