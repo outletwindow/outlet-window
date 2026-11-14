@@ -108,7 +108,7 @@ export class PostgresPlatformCheckoutReadinessStore {
    */
   async transitionToAwaitingPaymentInTransaction(input: {
     orderId: string; customerId: string; expectedVersion: number; actorId: string;
-    actorRole: "platform_user" | "system"; occurredAt: string; auditEvents: readonly AuditEvent[];
+    actorRole: "customer" | "platform_user" | "system"; occurredAt: string; auditEvents: readonly AuditEvent[];
   }, client: PostgresClient): Promise<PlatformCheckoutReadinessResult> {
     const occurredAt = Date.parse(input.occurredAt);
     if (!input.orderId.trim() || !input.customerId.trim() || !input.actorId.trim() ||
