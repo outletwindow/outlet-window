@@ -18,6 +18,23 @@ export type InventoryProviderBranchScopeRevokeResult = "revoked" | "not_found";
 export class PostgresInventoryProviderBranchScopeStore {
   constructor(private readonly database: PostgresQueryable) {}
 
+  async approveHardReservationCapability(input: { tenantId: string; integrationId: string }): Promise<"approved" | "not_eligible"> {
+    const result = await this.database.query<{ id: string }>(
+      `UPDATE tenant_integrations
+       SET capabilities = CASE
+             WHEN capabilities @> '[\"inventory.hard_reservation\"]'::jsonb THEN capabilities
+             ELSE capabilities || '[\"inventory.hard_reservation\"]'::jsonb
+           END,
+           updated_at = now()
+       WHERE tenant_id = $1 AND id = $2
+         AND family IN ('pos', 'erp')
+         AND status = 'connected'
+       RETURNING id`,
+      [input.tenantId, input.integrationId]
+    );
+    return result.rowCount === 1 ? "approved" : "not_eligible";
+  }
+
   async grant(input: InventoryProviderBranchScopeInput): Promise<InventoryProviderBranchScopeGrantResult> {
     const result = await this.database.query<{ integration_id: string }>(
       `INSERT INTO merchant_inventory_provider_branch_scopes
