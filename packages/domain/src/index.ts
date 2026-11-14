@@ -105,3 +105,4 @@ export * from "./postgres-customer-cart-repricing.js";
 export * from "./postgres-customer-checkout.js";
 
 export * from "./postgres-paid-checkout-inventory-reservation-worker.js";
+export * from "./postgres-merchant-inventory-reservation-router.js";
