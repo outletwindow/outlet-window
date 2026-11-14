@@ -21,7 +21,7 @@ export interface CreateCustomerCheckoutInput {
   idempotencyKey: string;
   destination: CustomerCheckoutDestination;
   actorId: string;
-  actorRole: "platform_user" | "system";
+  actorRole: "customer" | "platform_user" | "system";
   correlationId: string;
 }
 
