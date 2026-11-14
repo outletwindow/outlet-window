@@ -260,3 +260,19 @@ into `PostgresOrderStore` would be unsafe and is intentionally not an acceptable
   before SQL. This is a composition primitive only: there is still no public cart-to-order
   checkout route, and multi-branch carts remain blocked until a multi-stop delivery quote
   and per-stop pricing contract are implemented and tested.
+
+
+## Transaction-scoped delivery quote lookup
+
+- Added `PostgresDeliveryQuoteService.quoteInTransaction(request, transaction)` so checkout
+  orchestration can resolve the active service area, approved pricing rule, eligible branches,
+  and expiring zone-center quote through its caller-owned PostgreSQL transaction queryable.
+- The method does not begin, commit, roll back, or release the transaction. The caller must
+  persist the exact quote provenance and order pricing snapshot before committing.
+- This method deliberately preserves the existing zone-center distance estimate semantics;
+  it must not be represented as a road ETA or used as a multi-stop route quote. Multi-branch
+  carts remain unsupported for checkout until a verified multi-stop quote model is available.
+- Added a unit test exercising the transaction-queryable path. The preceding cart-conversion
+  change passed Push workflow #1713 on commit
+  `1c93d819871a6b21ea59bbe565ce61e5a1c8cd29` (TypeScript, lint, tests, build, and
+  PostgreSQL migration/integration checks).

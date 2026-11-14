@@ -48,6 +48,17 @@ describe("PostgresDeliveryQuoteService", () => {
     expect(result.quote.expiresAtUtc).toBe("2026-11-08T12:05:00.000Z");
   });
 
+
+  it("resolves a quote through the caller-owned transaction queryable", async () => {
+    const transaction = new FakeDatabase();
+    const result = await new PostgresDeliveryQuoteService(new FakeDatabase()).quoteInTransaction(request, transaction);
+    expect(result.status).toBe("quoted");
+    if (result.status === "quoted") {
+      expect(result.quote.ruleId).toBe("rule-1");
+      expect(result.quote.currency).toBe("SAR");
+    }
+  });
+
   it("caps quote validity at the approved pricing rule's effective end", async () => {
     const database = new FakeDatabase("valid", "2026-11-08T12:02:00.000Z");
     const result = await new PostgresDeliveryQuoteService(database).quote(request);

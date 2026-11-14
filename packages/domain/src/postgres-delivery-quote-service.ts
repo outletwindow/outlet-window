@@ -106,6 +106,16 @@ export class PostgresDeliveryQuoteService {
     };
   }
 
+
+  /**
+   * Resolves the zone-center delivery quote through a caller-owned transaction queryable.
+   * The caller is responsible for BEGIN/COMMIT/ROLLBACK and must persist the quote snapshot
+   * in that same transaction. This remains a zone-center estimate, not a road ETA.
+   */
+  async quoteInTransaction(request: DeliveryQuoteRequest, transaction: PostgresQueryable): Promise<DeliveryQuoteResult> {
+    return new PostgresDeliveryQuoteService(transaction).quote(request);
+  }
+
   async quote(request: DeliveryQuoteRequest): Promise<DeliveryQuoteResult> {
     const { latitude, longitude } = request.destination;
     const now = Date.parse(request.nowUtc);
