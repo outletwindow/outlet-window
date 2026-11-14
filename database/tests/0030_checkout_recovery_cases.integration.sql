@@ -54,7 +54,7 @@ DO $$ BEGIN
       'capture-ref-1',now(),
       '[{"suborderId":"suborder-2","reservationReference":" "}]'::jsonb);
     RAISE EXCEPTION 'expected empty reservation reference to be rejected';
-  EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+  EXCEPTION WHEN check_violation THEN NULL; END;
   BEGIN
     UPDATE checkout_recovery_cases
     SET reservation_references =
