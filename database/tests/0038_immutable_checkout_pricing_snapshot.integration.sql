@@ -18,7 +18,7 @@ DO $$
 BEGIN
   BEGIN
     UPDATE customer_orders
-    SET metadata = jsonb_set(metadata,'{checkoutPricing,deliveryQuoteId}','\"quote-2\"'::jsonb)
+    SET metadata = jsonb_set(metadata,'{checkoutPricing,deliveryQuoteId}','"quote-2"'::jsonb)
     WHERE id = 'ow-checkout-snapshot-order';
     RAISE EXCEPTION 'checkout pricing snapshot mutation unexpectedly succeeded';
   EXCEPTION WHEN check_violation THEN NULL;
