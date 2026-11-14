@@ -89,6 +89,18 @@ describe("PostgresPaidCheckoutInventoryReservationWorker", () => {
     expect(recovery).not.toHaveBeenCalled();
   });
 
+  it("completes a replay for an already confirmed suborder without re-reserving consumed stock", async () => {
+    const db = createPool({
+      payment: { ...payment, status: "confirmed" },
+      suborders: [{ ...suborder, status: "confirmed" }]
+    });
+    const { worker, inventory, transition } = createWorker({ pool: db.pool });
+    await expect(worker.runOnce()).resolves.toMatchObject({ outcome: "completed", jobId: "job-1" });
+    expect(inventory.reserveExactVariants).not.toHaveBeenCalled();
+    expect(transition).not.toHaveBeenCalled();
+    expect(db.calls.some(sql => sql.includes("FROM customer_order_items"))).toBe(false);
+  });
+
   it("does not reserve inventory when the verified capture row is missing", async () => {
     const db = createPool({ payment: null });
     const { worker, inventory } = createWorker({ pool: db.pool });
