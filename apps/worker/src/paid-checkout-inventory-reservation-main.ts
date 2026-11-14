@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import {
-  PostgresBranchInventoryReservationAdapter,
+  UnconfiguredMerchantInventoryReservationAdapter,
   PostgresCheckoutRecoveryCaseStore,
   PostgresOrderTransitionStore,
   PostgresPaidCheckoutInventoryReservationWorker
@@ -24,7 +24,7 @@ const pool = new Pool({
 const workerId = randomUUID();
 const worker = new PostgresPaidCheckoutInventoryReservationWorker(
   pool,
-  new PostgresBranchInventoryReservationAdapter(pool),
+  new UnconfiguredMerchantInventoryReservationAdapter(),
   new PostgresOrderTransitionStore(pool),
   new PostgresCheckoutRecoveryCaseStore(pool),
   { workerId, leaseSeconds }
