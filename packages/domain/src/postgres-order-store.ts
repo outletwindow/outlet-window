@@ -258,7 +258,7 @@ export class PostgresOrderStore {
           const catalogPrice = typeof catalogVariant.catalog_price_minor === "number"
             ? (Number.isSafeInteger(catalogVariant.catalog_price_minor) && catalogVariant.catalog_price_minor >= 0
               ? catalogVariant.catalog_price_minor : null)
-            : typeof catalogVariant.catalog_price_minor === "string" && /^\\d+$/.test(catalogVariant.catalog_price_minor)
+            : typeof catalogVariant.catalog_price_minor === "string" && /^\d+$/.test(catalogVariant.catalog_price_minor)
               ? Number(catalogVariant.catalog_price_minor) : null;
           if (catalogPrice === null || !Number.isSafeInteger(catalogPrice) ||
               catalogPrice !== item.unitPriceMinor || catalogVariant.catalog_currency !== item.currency) {
