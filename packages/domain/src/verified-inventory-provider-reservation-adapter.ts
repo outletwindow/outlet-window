@@ -60,6 +60,8 @@ function sameLines(
 ): boolean {
   if (!Array.isArray(actual) || actual.length !== expected.length) return false;
   const byVariant = new Map(actual.map(line => [line.productVariantId, line]));
+  if (byVariant.size !== actual.length) return false;
+  if (new Set(expected.map(line => line.productVariantId)).size !== expected.length) return false;
   return expected.every(line => {
     const returned = byVariant.get(line.productVariantId);
     return returned?.sku === line.sku && returned.quantity === line.quantity;
