@@ -23,7 +23,7 @@ describe("LedgerBackedInventoryProviderReservationAdapter", () => {
         expiresAtUtc:"2026-11-14T12:15:00.000Z",lines:request.lines
       })
     };
-    const record=vi.fn().mockResolvedValue({reservationId:"local-reservation-1"});
+    const record=vi.fn().mockResolvedValue({reservationId:"local-reservation-1",expiresAtUtc:"2026-11-14T12:15:00.000Z"});
     const ledger:ExternalInventoryReservationEvidenceStore={record};
     const adapter=new LedgerBackedInventoryProviderReservationAdapter(client,ledger,"pos-acme");
     await expect(adapter.reserveExactVariants(request)).resolves.toEqual({
