@@ -62,7 +62,7 @@ describe("PostgresInitialPaymentCaptureInbox", () => {
     expect(query).not.toHaveBeenCalled();
   });
 
-  it("marks ambiguous capture-ledger identities as a terminal conflict", async () => {
+  it("marks a second provider capture for the same order as a terminal conflict", async () => {
     const clientQuery = vi.fn()
       .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // BEGIN
       .mockResolvedValueOnce({ rows: [{
@@ -78,10 +78,13 @@ describe("PostgresInitialPaymentCaptureInbox", () => {
         expires_at: new Date("2026-11-09T13:00:00.000Z"), order_status: "awaiting_payment"
       }], rowCount: 1 })
       .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // capture insert conflict
-      .mockResolvedValueOnce({ rows: [
-        { id: "capture-event", tenant_id: "tenant-1", order_id: "order-1" },
-        { id: "capture-key", tenant_id: "tenant-1", order_id: "order-other" }
-      ], rowCount: 2 })
+      .mockResolvedValueOnce({ rows: [{
+        id: "capture-first", tenant_id: "tenant-1", order_id: "order-1",
+        provider_key: "other-psp", provider_event_id: "evt-first",
+        provider_payment_reference: "pay-first", amount_minor: "12500",
+        currency: "SAR", captured_at: new Date(base.capturedAtUtc),
+        idempotency_key: "other-payment-key"
+      }], rowCount: 1 })
       .mockResolvedValueOnce({ rows: [], rowCount: 1 }) // fail receipt
       .mockResolvedValueOnce({ rows: [], rowCount: 0 }); // COMMIT
     const client = { query: clientQuery, release: vi.fn() } as unknown as PostgresClient;
