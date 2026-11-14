@@ -13,7 +13,7 @@ const event = (id: string, suborderId: string, tenantId: string, merchantId: str
   metadata: { orderId: "order-1", previousStatus: "pending_validation", nextStatus: "awaiting_payment" }
 });
 
-function database(options: { parentStatus?: string; version?: number; expiredQuote?: boolean; mismatchAudit?: boolean } = {}) {
+function database(options: { parentStatus?: string; version?: number; expiredQuote?: boolean; badOrderTotal?: boolean } = {}) {
   const statements: string[] = [];
   const query = vi.fn(async <Row>(sql: string, values?: readonly unknown[]) => {
     statements.push(sql);
@@ -21,7 +21,11 @@ function database(options: { parentStatus?: string; version?: number; expiredQuo
     let rowCount: number | null = 1;
     if (sql.includes("FROM customer_orders") && sql.includes("FOR UPDATE")) {
       rows = [{ id: "order-1", customer_id: "customer-1", status: options.parentStatus ?? "pending_validation",
-        version: options.version ?? 4, currency: "SAR", delivery_destination: { city: "Jubail" },
+        version: options.version ?? 4, currency: "SAR", total_minor: options.badOrderTotal ? "13501" : "13500",
+        metadata: { checkoutPricing: { currency: "SAR", discountMinor: 0, components: [
+          { kind: "product_subtotal", amountMinor: 12000, label: "Products" },
+          { kind: "delivery", amountMinor: 1500, label: "Delivery" }
+        ] } }, delivery_destination: { city: "Jubail" },
         delivery_quote: { quoteId: "quote-1", ruleId: "rule-1", ruleVersion: 1, currency: "SAR",
           totalMinor: 1500, createdAtUtc: "2026-11-14T15:59:00.000Z",
           expiresAtUtc: options.expiredQuote ? "2026-11-14T15:59:30.000Z" : "2026-11-14T16:05:00.000Z" },
@@ -75,6 +79,15 @@ describe("PostgresPlatformCheckoutReadinessStore", () => {
     expect(db.statements.filter(sql => sql.includes("INSERT INTO audit_events"))).toHaveLength(2);
     expect(db.statements.at(-1)).toBe("COMMIT");
     expect(db.client.release).toHaveBeenCalledOnce();
+  });
+
+
+  it("rejects a parent total that does not reconcile to the persisted pricing components", async () => {
+    const db = database({ badOrderTotal: true });
+    const result = await new PostgresPlatformCheckoutReadinessStore(db.pool).transitionToAwaitingPayment(baseInput);
+    expect(result).toEqual({ outcome: "invalid_snapshot" });
+    expect(db.statements).toContain("ROLLBACK");
+    expect(db.statements.some(sql => sql.startsWith("UPDATE"))).toBe(false);
   });
 
   it("refuses an expired delivery quote before writing any state", async () => {

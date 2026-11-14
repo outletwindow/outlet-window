@@ -4,6 +4,7 @@ import type { PostgresPool } from "./postgres-iam-store.js";
 
 type LockedOrder = {
   id: string; customer_id: string; status: string; version: number; currency: string;
+  total_minor: string | number; metadata: unknown;
   delivery_destination: unknown; delivery_quote: unknown; delivery_zone_id: string | null;
   delivery_branch_id: string | null;
 };
@@ -19,6 +20,50 @@ export type PlatformCheckoutReadinessResult =
 
 function validObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function pricingSnapshotMatches(input: {
+  metadata: unknown; currency: string; totalMinor: string | number;
+  itemSubtotal: number; deliveryMinor: number;
+}): boolean {
+  if (!validObject(input.metadata) || !validObject(input.metadata.checkoutPricing)) return false;
+  const pricing = input.metadata.checkoutPricing;
+  if (pricing.currency !== input.currency || !Array.isArray(pricing.components)) return false;
+  let subtotal = 0;
+  let productSubtotalCount = 0;
+  let deliveryCount = 0;
+  let discountComponents = 0;
+  for (const component of pricing.components) {
+    if (!validObject(component) || typeof component.kind !== "string" ||
+        typeof component.label !== "string" || !component.label.trim() ||
+        !Number.isSafeInteger(component.amountMinor) || (component.amountMinor as number) < 0 ||
+        !["product_subtotal", "delivery", "collection", "platform_fee", "packaging", "tax", "discount"].includes(component.kind)) {
+      return false;
+    }
+    const amount = component.amountMinor as number;
+    if (component.kind === "discount") {
+      discountComponents += amount;
+      if (!Number.isSafeInteger(discountComponents)) return false;
+    } else {
+      subtotal += amount;
+      if (!Number.isSafeInteger(subtotal)) return false;
+    }
+    if (component.kind === "product_subtotal") {
+      productSubtotalCount += 1;
+      if (amount !== input.itemSubtotal) return false;
+    }
+    if (component.kind === "delivery") {
+      deliveryCount += 1;
+      if (amount !== input.deliveryMinor) return false;
+    }
+  }
+  const discount = pricing.discountMinor ?? 0;
+  const storedTotal = Number(input.totalMinor);
+  return productSubtotalCount === 1 && deliveryCount === 1 &&
+    Number.isSafeInteger(discount) && discount >= 0 && discount <= subtotal &&
+    (discountComponents === 0 || discountComponents === discount) &&
+    Number.isSafeInteger(storedTotal) && storedTotal >= 0 &&
+    subtotal - discount === storedTotal;
 }
 
 /**
@@ -123,6 +168,15 @@ export class PostgresPlatformCheckoutReadinessStore {
       if (subtotalRows.rows.length !== totals.rows.length ||
           totals.rows.some((row, index) =>
             String(row.subtotal_minor) !== String(subtotalRows.rows[index]?.subtotal_minor))) {
+        await client.query("ROLLBACK");
+        return { outcome: "invalid_snapshot" };
+      }
+
+      const itemSubtotal = totals.rows.reduce((sum, row) => sum + Number(row.subtotal_minor), 0);
+      if (!Number.isSafeInteger(itemSubtotal) || !pricingSnapshotMatches({
+        metadata: parent.metadata, currency: parent.currency, totalMinor: parent.total_minor,
+        itemSubtotal, deliveryMinor: quote.totalMinor as number
+      })) {
         await client.query("ROLLBACK");
         return { outcome: "invalid_snapshot" };
       }
