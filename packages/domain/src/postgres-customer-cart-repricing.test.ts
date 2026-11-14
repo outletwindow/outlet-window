@@ -66,7 +66,7 @@ describe("PostgresCustomerCartRepricingService", () => {
   });
 
   it("fails closed when inventory is stale, insufficient, or the merchant is inactive", async () => {
-    const db = setup({ rows: [
+    const db = setup({ itemCount: 1, rows: [
       { item_id: "item-1", merchant_id: "merchant-1", branch_id: "branch-1", merchant_tenant_id: "tenant-1",
         product_variant_id: "variant-1", quantity: 2, title: "Shirt", sku: "SKU-1", currency: "SAR",
         price_minor: "12900", merchant_active: true, branch_active: true, product_published: true, stock_eligible: false }
@@ -101,7 +101,9 @@ describe("PostgresCustomerCartRepricingService", () => {
     db.query.mockImplementation(async (sql: string, values?: readonly unknown[]) => {
       db.calls.push({ sql, ...(values === undefined ? {} : { values }) });
       if (sql.includes("FROM customer_cart_items ci")) throw new Error("catalog_read_failed");
-      return { rows: [{ id: "cart-1", customer_id: "customer-1", currency: "SAR", version: 7 }], rowCount: 1 };
+      if (sql.includes("COUNT(*)::int AS item_count")) return { rows: [{ item_count: 2 }], rowCount: 1 };
+      if (sql.includes("FROM customer_carts")) return { rows: [{ id: "cart-1", customer_id: "customer-1", currency: "SAR", version: 7 }], rowCount: 1 };
+      return { rows: [], rowCount: 1 };
     });
     await expect(db.service.reprice({ customerId: "customer-1", expectedCartVersion: 7 })).rejects.toThrow("catalog_read_failed");
     expect(db.calls.at(-1)?.sql).toBe("ROLLBACK");
