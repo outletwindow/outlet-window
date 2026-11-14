@@ -21,8 +21,46 @@ CREATE TABLE IF NOT EXISTS inventory_provider_reservation_evidence (
 CREATE INDEX IF NOT EXISTS inventory_provider_reservation_evidence_expiry_idx
   ON inventory_provider_reservation_evidence (expires_at, tenant_id, reservation_id);
 
+CREATE OR REPLACE FUNCTION validate_inventory_provider_reservation_evidence()
+RETURNS trigger LANGUAGE plpgsql AS $
+DECLARE
+  reservation_expiry timestamptz;
+  integration_provider_key text;
+BEGIN
+  SELECT r.expires_at INTO reservation_expiry
+  FROM inventory_reservations r
+  WHERE r.tenant_id=NEW.tenant_id AND r.id=NEW.reservation_id;
+  IF NOT FOUND OR reservation_expiry IS DISTINCT FROM NEW.expires_at THEN
+    RAISE EXCEPTION 'inventory_provider_reservation_expiry_mismatch'
+      USING ERRCODE='55000';
+  END IF;
+
+  SELECT i.provider_key INTO integration_provider_key
+  FROM tenant_integrations i
+  JOIN merchant_inventory_provider_branch_scopes s
+    ON s.tenant_id=i.tenant_id AND s.integration_id=i.id
+  JOIN inventory_reservations r
+    ON r.tenant_id=s.tenant_id AND r.id=NEW.reservation_id
+   AND r.merchant_id=s.merchant_id AND r.branch_id=s.branch_id
+  JOIN merchants m ON m.tenant_id=i.tenant_id AND m.id=s.merchant_id
+  JOIN merchant_branches b ON b.merchant_id=s.merchant_id AND b.id=s.branch_id
+  WHERE i.tenant_id=NEW.tenant_id AND i.id=NEW.integration_id
+    AND i.family IN ('pos','erp') AND i.status='connected'
+    AND i.capabilities @> '["inventory.hard_reservation"]'::jsonb
+    AND s.active=true AND m.status='active' AND b.status='active';
+  IF NOT FOUND OR integration_provider_key IS DISTINCT FROM NEW.provider_key THEN
+    RAISE EXCEPTION 'inventory_provider_reservation_integration_scope_mismatch'
+      USING ERRCODE='55000';
+  END IF;
+  RETURN NEW;
+END $;
+
+CREATE TRIGGER inventory_provider_reservation_evidence_validate
+BEFORE INSERT ON inventory_provider_reservation_evidence
+FOR EACH ROW EXECUTE FUNCTION validate_inventory_provider_reservation_evidence();
+
 CREATE OR REPLACE FUNCTION protect_inventory_provider_reservation_evidence()
-RETURNS trigger LANGUAGE plpgsql AS $$
+RETURNS trigger LANGUAGE plpgsql AS $
 BEGIN
   RAISE EXCEPTION 'inventory_provider_reservation_evidence_is_immutable'
     USING ERRCODE='55000';
