@@ -3,14 +3,16 @@
 Status: **not ready for a production checkout endpoint**
 
 This note records the verified repository state on branch `work/outlet-window-build` at commit
-`132fb1389fcafd96481e7fe1713ae5c7e8056855`. It is an implementation gate, not a claim that
+`73ed482406dded256e463710627e07729d91e84c`. It is an implementation gate, not a claim that
 checkout is complete.
 
 ## Verified building blocks
 
 - `PostgresCustomerCartStore` persists customer-owned carts and validates that variants are
   published, belong to an active merchant/branch, have a usable price, and have sufficiently
-  fresh branch inventory. Cart prices are explicitly display snapshots, not checkout prices.
+  fresh branch inventory. When increasing an existing line, it rechecks the exact external
+  variant/SKU and aggregate requested quantity against fresh, confidence-qualified stock while
+  holding the inventory row lock. Cart prices remain display snapshots, not checkout prices.
 - `PostgresOrderStore` creates a parent order and merchant suborders/items transactionally,
   validates item arithmetic and currency, and protects retries with a customer-scoped
   idempotency key.
@@ -24,6 +26,13 @@ checkout is complete.
   outcome when provider creation may have succeeded but persistence is uncertain.
 - `PostgresOrderTransitionStore` persists merchant suborder transitions and derived parent
   status with an audit event in one transaction.
+
+## Latest verification
+
+- CI run `43608887805` on commit `73ed482406dded256e463710627e07729d91e84c` passed all
+  database migration/constraint checks, TypeScript, lint, tests, and build steps.
+- The cart quantity-increase regression test covers exact-SKU, fresh-inventory, and confidence
+  revalidation. This improves cart safety but does not close the checkout orchestration gaps below.
 
 ## Blocking gaps before a real cart-to-order checkout
 
