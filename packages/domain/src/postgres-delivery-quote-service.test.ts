@@ -5,12 +5,13 @@ import type { PostgresQueryable, PostgresQueryResult } from "./postgres-iam-stor
 class FakeDatabase implements PostgresQueryable {
   constructor(
     private readonly mode: "valid" | "no_rule" | "no_branch" = "valid",
-    private readonly ruleExpiresAt: string | null = null
+    private readonly ruleExpiresAt: string | null = null,
+    private readonly areaExpiresAt: string | null = null
   ) {}
   async query<Row = Record<string, unknown>>(sql: string): Promise<PostgresQueryResult<Row>> {
     if (sql.includes("FROM delivery_service_areas")) return { rows: [{
       id: "area-1", center_latitude: 27.0046, center_longitude: 49.646,
-      radius_meters: 10_000, currency: "SAR"
+      radius_meters: 10_000, currency: "SAR", effective_until: this.areaExpiresAt
     } as Row], rowCount: 1 };
     if (sql.includes("FROM delivery_pricing_rules")) return this.mode === "no_rule"
       ? { rows: [], rowCount: 0 }
@@ -53,6 +54,15 @@ describe("PostgresDeliveryQuoteService", () => {
     expect(result.status).toBe("quoted");
     if (result.status === "quoted") {
       expect(result.quote.expiresAtUtc).toBe("2026-11-08T12:02:00.000Z");
+    }
+  });
+
+  it("caps quote validity at the service area's effective end", async () => {
+    const database = new FakeDatabase("valid", null, "2026-11-08T12:03:00.000Z");
+    const result = await new PostgresDeliveryQuoteService(database).quote(request);
+    expect(result.status).toBe("quoted");
+    if (result.status === "quoted") {
+      expect(result.quote.expiresAtUtc).toBe("2026-11-08T12:03:00.000Z");
     }
   });
 
