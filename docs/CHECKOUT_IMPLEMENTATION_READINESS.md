@@ -393,3 +393,11 @@ checkout API route exists.
 - This change prevents a second initial capture from being accepted. It does not itself
   mark the order paid, reserve inventory, refund an excess provider charge, or dispatch
   fulfillment. Those remain separate idempotent workflows and production release gates.
+
+
+## Latest verification — transactional paid-checkout reservation handoff
+
+- Added migration `0040_paid_checkout_inventory_reservation_jobs` with a durable, single-job-per-order queue, immutable capture/order identity, lease fields, bounded attempts, and a claim index.
+- The verified initial-capture inbox now inserts or verifies the reservation job in the **same PostgreSQL transaction** that writes the immutable capture evidence and marks the webhook receipt applied. A duplicate delivery reuses the original capture and cannot create a second job for the same order.
+- Registered migration 0040 in the migration runner and API/initial-capture-worker readiness gates; added a PostgreSQL integration script to CI for uniqueness and lease-state constraints.
+- **Important remaining gap:** this commit creates the durable handoff only. A reservation-job consumer that claims leases, reads exact order lines, invokes the branch inventory adapter, records recovery cases, and confirms suborders has not yet been wired. Until that worker is implemented and its integration tests pass, payment capture does not automatically reserve stock or confirm an order. Do not enable live production checkout on the strength of the outbox alone.
