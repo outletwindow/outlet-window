@@ -90,6 +90,24 @@ BEGIN
   END;
 
   BEGIN
+    INSERT INTO customer_order_suborder_delivery_quotes
+    (id,tenant_id,order_id,suborder_id,merchant_id,branch_id,service_area_tenant_id,
+     service_area_id,pricing_rule_id,pricing_rule_version,quote_snapshot,currency,total_minor,
+     created_at,expires_at)
+    VALUES ('quote-snapshot-component-mismatch','quote-snapshot-tenant','quote-snapshot-order',
+            'quote-snapshot-suborder','quote-snapshot-merchant','quote-snapshot-branch',
+            'platform','quote-snapshot-area','quote-snapshot-rule',1,
+            jsonb_build_object('quoteId','quote-snapshot-component-mismatch','ruleId','quote-snapshot-rule',
+              'ruleVersion',1,'currency','SAR','subtotalMinor',1000,'discountMinor',0,
+              'totalMinor',1000,'components',jsonb_build_array(
+                jsonb_build_object('kind','delivery','amountMinor',999,'label','Delivery')),
+              'createdAtUtc',now()::text,'expiresAtUtc',(now()+interval '5 minutes')::text),
+            'SAR',1000,now(),now()+interval '5 minutes');
+    RAISE EXCEPTION 'quote component ledger mismatch unexpectedly accepted';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
     UPDATE customer_order_suborder_delivery_quotes
     SET total_minor=2000 WHERE id='quote-snapshot-valid';
     RAISE EXCEPTION 'immutable quote snapshot unexpectedly updated';
