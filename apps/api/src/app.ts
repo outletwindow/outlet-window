@@ -137,6 +137,11 @@ export interface AppOptions {
   customerCart?: CustomerCartRepository;
   customerCheckout?: CustomerCheckoutService;
   integrationHub?: IntegrationHub;
+  /** Platform-only authority for explicit POS/ERP hard-reservation branch grants. */
+  inventoryProviderBranchScopes?: {
+    grant(input: { tenantId: string; integrationId: string; merchantId: string; branchId: string }): Promise<"granted" | "not_eligible">;
+    revoke(input: { tenantId: string; integrationId: string; merchantId: string; branchId: string }): Promise<"revoked" | "not_found">;
+  };
   merchantCatalog?: MerchantCatalogRepository;
   /** Resolve merchant tenant ownership from trusted persistence after authorization. */
   resolveMerchantTenantId?: (merchantId: string) => Promise<string | null>;
@@ -276,6 +281,99 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     version: "v1",
     status: "foundation"
   }));
+  // Only platform administrators can authorize external inventory providers for a branch.
+  app.post<{ Body: unknown }>(
+    "/api/v1/platform/inventory-provider-branch-scopes/grant",
+    async (request, reply) => {
+      const authorization = await authorizeRequest(request, options, {
+        resource: "platform.inventory_provider_branch_scope", action: "manage_access", scope: { platform: true }
+      });
+      if (!authorization.actor) return sendAuthorizationFailure(reply, authorization.statusCode, authorization.decision.reason);
+      const roles = new Set([authorization.actor.role, ...(authorization.actor.roles ?? [])]);
+      if (![...roles].some(role => role === "platform_owner" || role === "platform_admin")) {
+        return reply.code(403).send({ error: "platform_admin_only" });
+      }
+      if (!options.inventoryProviderBranchScopes || !options.auditEvents) {
+        return reply.code(503).send({ error: "inventory_provider_scope_management_unavailable" });
+      }
+      const body = request.body as Record<string, unknown> | null;
+      const keys = ["tenantId", "integrationId", "merchantId", "branchId"] as const;
+      if (!body || keys.some(key => typeof body[key] !== "string" ||
+          !(body[key] as string).trim() || (body[key] as string).length > 160 ||
+          !/^[a-zA-Z0-9._:-]+$/.test(body[key] as string))) {
+        return reply.code(400).send({ error: "invalid_inventory_provider_scope" });
+      }
+      const input = { tenantId: body.tenantId as string, integrationId: body.integrationId as string,
+        merchantId: body.merchantId as string, branchId: body.branchId as string };
+      const auditBase = {
+        id: randomUUID(), category: "integration_governance", occurredAt: new Date().toISOString(),
+        actor: { id: authorization.actor.id, type: "platform_user" as const, role: authorization.actor.role },
+        action: "platform.inventory_provider_branch_scope.grant",
+        resourceType: "merchant_inventory_provider_branch_scope", resourceId: input.integrationId,
+        tenantId: input.tenantId, merchantId: input.merchantId, branchId: input.branchId,
+        correlationId: request.id, source: "api", severity: "high" as const,
+        metadata: { integrationId: input.integrationId }
+      };
+      await options.auditEvents.append(createAuditEvent({
+        ...auditBase, type: "inventory_provider_branch_scope.grant.requested", outcome: "pending"
+      }));
+      const outcome = await options.inventoryProviderBranchScopes.grant(input);
+      await options.auditEvents.append(createAuditEvent({
+        ...auditBase, id: randomUUID(),
+        type: outcome === "granted" ? "inventory_provider_branch_scope.granted" : "inventory_provider_branch_scope.grant_rejected",
+        outcome: outcome === "granted" ? "success" : "failure"
+      }));
+      if (outcome === "not_eligible") return reply.code(409).send({ error: "provider_or_branch_not_eligible" });
+      return reply.code(201).send({ outcome, scope: input });
+    }
+  );
+
+  app.post<{ Body: unknown }>(
+    "/api/v1/platform/inventory-provider-branch-scopes/revoke",
+    async (request, reply) => {
+      const authorization = await authorizeRequest(request, options, {
+        resource: "platform.inventory_provider_branch_scope", action: "manage_access", scope: { platform: true }
+      });
+      if (!authorization.actor) return sendAuthorizationFailure(reply, authorization.statusCode, authorization.decision.reason);
+      const roles = new Set([authorization.actor.role, ...(authorization.actor.roles ?? [])]);
+      if (![...roles].some(role => role === "platform_owner" || role === "platform_admin")) {
+        return reply.code(403).send({ error: "platform_admin_only" });
+      }
+      if (!options.inventoryProviderBranchScopes || !options.auditEvents) {
+        return reply.code(503).send({ error: "inventory_provider_scope_management_unavailable" });
+      }
+      const body = request.body as Record<string, unknown> | null;
+      const keys = ["tenantId", "integrationId", "merchantId", "branchId"] as const;
+      if (!body || keys.some(key => typeof body[key] !== "string" ||
+          !(body[key] as string).trim() || (body[key] as string).length > 160 ||
+          !/^[a-zA-Z0-9._:-]+$/.test(body[key] as string))) {
+        return reply.code(400).send({ error: "invalid_inventory_provider_scope" });
+      }
+      const input = { tenantId: body.tenantId as string, integrationId: body.integrationId as string,
+        merchantId: body.merchantId as string, branchId: body.branchId as string };
+      const auditBase = {
+        id: randomUUID(), category: "integration_governance", occurredAt: new Date().toISOString(),
+        actor: { id: authorization.actor.id, type: "platform_user" as const, role: authorization.actor.role },
+        action: "platform.inventory_provider_branch_scope.revoke",
+        resourceType: "merchant_inventory_provider_branch_scope", resourceId: input.integrationId,
+        tenantId: input.tenantId, merchantId: input.merchantId, branchId: input.branchId,
+        correlationId: request.id, source: "api", severity: "high" as const,
+        metadata: { integrationId: input.integrationId }
+      };
+      await options.auditEvents.append(createAuditEvent({
+        ...auditBase, type: "inventory_provider_branch_scope.revoke.requested", outcome: "pending"
+      }));
+      const outcome = await options.inventoryProviderBranchScopes.revoke(input);
+      await options.auditEvents.append(createAuditEvent({
+        ...auditBase, id: randomUUID(),
+        type: outcome === "revoked" ? "inventory_provider_branch_scope.revoked" : "inventory_provider_branch_scope.revoke_not_found",
+        outcome: outcome === "revoked" ? "success" : "failure"
+      }));
+      if (outcome === "not_found") return reply.code(404).send({ error: "inventory_provider_scope_not_found" });
+      return reply.code(200).send({ outcome, scope: input });
+    }
+  );
+
 
   app.get<{
     Params: { merchantId: string; branchId: string };
