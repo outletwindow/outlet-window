@@ -19,11 +19,6 @@ type LockedSuborderDeliveryQuote = {
   currency: string; total_minor: string | number;
   created_at: Date | string; expires_at: Date | string; quote_snapshot: unknown;
 };
-type LockedSuborderDeliveryQuote = {
-  id: string; tenant_id: string; order_id: string; suborder_id: string;
-  merchant_id: string; branch_id: string; currency: string; total_minor: string | number;
-  created_at: Date | string; expires_at: Date | string; quote_snapshot: unknown;
-};
 
 export type PlatformCheckoutReadinessResult =
   | { outcome: "ready"; orderId: string; suborderIds: readonly string[]; parentVersion: number }
@@ -36,7 +31,7 @@ function validObject(value: unknown): value is Record<string, unknown> {
 function pricingSnapshotMatches(input: {
   metadata: unknown; currency: string; totalMinor: string | number;
   itemSubtotal: number; deliveryMinor: number; deliveryQuoteId: string;
-  deliveryRuleId: string; deliveryRuleVersion: number;
+  deliveryRuleId: string; deliveryRuleVersion: number; deliveryQuoteCount: number;
 }): boolean {
   if (!validObject(input.metadata) || !validObject(input.metadata.checkoutPricing)) return false;
   const pricing = input.metadata.checkoutPricing;
@@ -74,6 +69,23 @@ function pricingSnapshotMatches(input: {
       deliverySubtotal += amount;
       if (!Number.isSafeInteger(deliverySubtotal)) return false;
     }
+  }
+  const deliveryQuotes = pricing.deliveryQuotes;
+  if (!Array.isArray(deliveryQuotes) || deliveryQuotes.length !== input.deliveryQuoteCount) return false;
+  const deliveryComponents = pricing.components.filter(component =>
+    validObject(component) && component.kind === "delivery");
+  const seenQuoteKeys = new Set<string>();
+  for (const entry of deliveryQuotes) {
+    if (!validObject(entry) || typeof entry.merchantId !== "string" ||
+        typeof entry.branchId !== "string" || typeof entry.quoteId !== "string" ||
+        !Number.isSafeInteger(entry.totalMinor)) return false;
+    const key = entry.merchantId + ":" + entry.branchId;
+    if (seenQuoteKeys.has(key)) return false;
+    seenQuoteKeys.add(key);
+    const component = deliveryComponents.find(candidate =>
+      validObject(candidate) && candidate.quoteId === entry.quoteId &&
+      candidate.suborderKey === key && candidate.amountMinor === entry.totalMinor);
+    if (!component) return false;
   }
   const discount = pricing.discountMinor === undefined ? 0 : pricing.discountMinor;
   const storedTotal = Number(input.totalMinor);
