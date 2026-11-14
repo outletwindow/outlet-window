@@ -31,10 +31,12 @@ checkout is complete.
 
 ## Latest verification
 
-- Push workflow #1669 (run `43612317321`) and pull-request workflow #1670 (run `43612322324`) both passed on branch head `2c77d0bda1d7003385b314055583b41c8516d44c`.
-- Both workflows completed successfully, including the API build, tests, and typecheck job.
-- The cart snapshot regression test was corrected after the preceding run exposed a test-double query matcher that did not recognize the updated header query. The production read path remains a single repeatable-read snapshot.
-- These runs verify the current branch head; they do not close the checkout orchestration gaps below. The cart remains separate from order creation and payment execution.
+- Push workflow #1676 (run `43612901214`) passed on branch head `e2a0d247b78c0b5c44dc58252bfab49ef42b3e91`.
+- The workflow completed successfully, including the API typecheck, lint, tests, build, and PostgreSQL migration/constraint verification steps.
+- The deterministic order-transition timestamp change now persists `context.occurredAt` as the transition update time, and its unit test asserts the SQL update parameter.
+- The first CI attempt for that test exposed a TypeScript `exactOptionalPropertyTypes` issue in the test double. The test now omits the optional `values` property when undefined; the follow-up push workflow passed.
+- Pull-request workflow #1677 (run `43612905777`) was still running at the time of this update.
+- Passing CI verifies the branch code at this commit; it does not close the checkout orchestration gaps below. The cart remains separate from order creation and payment execution.
 
 ## Blocking gaps before a real cart-to-order checkout
 
