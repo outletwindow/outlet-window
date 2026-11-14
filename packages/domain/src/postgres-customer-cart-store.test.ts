@@ -19,6 +19,29 @@ function setup() {
  return {store:new PostgresCustomerCartStore(pool,()=>"generated-id"),calls,query,client};
 }
 describe("PostgresCustomerCartStore",()=>{
+ it("reads the cart header and lines from one repeatable-read snapshot",async()=>{
+  const s=setup();
+  const cart=await s.store.get({customerId:"customer-1"});
+  expect(cart).toMatchObject({id:"cart-1",customerId:"customer-1",version:2,items:[{id:"item-1",quantity:2}]});
+  expect(s.calls[0]?.sql).toBe("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+  expect(s.calls.findIndex(x=>x.sql.includes("FROM customer_carts"))).toBeLessThan(
+   s.calls.findIndex(x=>x.sql.includes("FROM customer_cart_items ci"))
+  );
+  expect(s.calls.at(-1)?.sql).toBe("COMMIT");
+  expect(s.client.release).toHaveBeenCalledOnce();
+ });
+ it("rolls back and releases the connection when a consistent cart read fails",async()=>{
+  const s=setup();
+  s.query.mockImplementation(async(sql:string,values?:readonly unknown[])=>{
+   s.calls.push({sql,...(values===undefined?{}:{values})});
+   if(sql.includes("FROM customer_cart_items ci")) throw new Error("cart_projection_failed");
+   if(sql.includes("FROM customer_carts")) return {rows:[{id:"cart-1",customer_id:"customer-1",currency:"SAR",version:2}],rowCount:1};
+   return {rows:[],rowCount:1};
+  });
+  await expect(s.store.get({customerId:"customer-1"})).rejects.toThrow("cart_projection_failed");
+  expect(s.calls.at(-1)?.sql).toBe("ROLLBACK");
+  expect(s.client.release).toHaveBeenCalledOnce();
+ });
  it("persists a customer-owned branch-scoped item in one transaction and returns its current projection",async()=>{
   const s=setup();
   const cart=await s.store.addItem({customerId:"customer-1",merchantId:"merchant-1",branchId:"branch-1",productVariantId:"variant-1",quantity:2});
