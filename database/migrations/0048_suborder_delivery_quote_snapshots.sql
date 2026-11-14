@@ -61,6 +61,41 @@ CREATE TABLE customer_order_suborder_delivery_quotes (
 CREATE INDEX customer_order_suborder_delivery_quotes_order_idx
   ON customer_order_suborder_delivery_quotes (tenant_id, order_id, suborder_id);
 
+CREATE OR REPLACE FUNCTION validate_customer_order_suborder_delivery_quote_snapshot()
+RETURNS trigger LANGUAGE plpgsql AS $function$
+DECLARE
+  snapshot_subtotal numeric;
+  snapshot_discount numeric;
+BEGIN
+  IF jsonb_typeof(NEW.quote_snapshot->'subtotalMinor') IS DISTINCT FROM 'number'
+     OR jsonb_typeof(NEW.quote_snapshot->'discountMinor') IS DISTINCT FROM 'number' THEN
+    RAISE EXCEPTION 'delivery_quote_snapshot_totals_must_be_numeric'
+      USING ERRCODE = '23514';
+  END IF;
+
+  snapshot_subtotal := (NEW.quote_snapshot->>'subtotalMinor')::numeric;
+  snapshot_discount := (NEW.quote_snapshot->>'discountMinor')::numeric;
+  IF snapshot_subtotal < 0 OR snapshot_discount < 0
+     OR snapshot_subtotal <> trunc(snapshot_subtotal)
+     OR snapshot_discount <> trunc(snapshot_discount)
+     OR snapshot_subtotal - snapshot_discount <> NEW.total_minor THEN
+    RAISE EXCEPTION 'delivery_quote_snapshot_totals_mismatch'
+      USING ERRCODE = '23514';
+  END IF;
+
+  IF (NEW.quote_snapshot->>'createdAtUtc')::timestamptz IS DISTINCT FROM NEW.created_at
+     OR (NEW.quote_snapshot->>'expiresAtUtc')::timestamptz IS DISTINCT FROM NEW.expires_at THEN
+    RAISE EXCEPTION 'delivery_quote_snapshot_window_mismatch'
+      USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$function$;
+
+CREATE TRIGGER customer_order_suborder_delivery_quotes_validate_snapshot
+BEFORE INSERT ON customer_order_suborder_delivery_quotes
+FOR EACH ROW EXECUTE FUNCTION validate_customer_order_suborder_delivery_quote_snapshot();
+
 CREATE OR REPLACE FUNCTION prevent_customer_order_suborder_delivery_quote_mutation()
 RETURNS trigger LANGUAGE plpgsql AS $function$
 BEGIN
