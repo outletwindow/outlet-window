@@ -141,7 +141,8 @@ export class PostgresInitialPaymentCaptureInbox {
             amount_minor,currency,captured_at,idempotency_key FROM verified_order_payment_captures
            WHERE (provider_key=$1 AND provider_event_id=$2)
               OR (provider_key=$1 AND provider_payment_reference=$3)
-              OR (tenant_id=$4 AND order_id=$5 AND idempotency_key=$6)`,
+              OR (tenant_id=$4 AND order_id=$5 AND idempotency_key=$6)
+              OR (tenant_id=$4 AND order_id=$5)`,
           [event.provider_key,event.provider_event_id,event.provider_payment_reference,
             payment.tenant_id,payment.order_id,`payment-capture:${event.provider_key}:${event.provider_event_id}`]
         );
