@@ -144,8 +144,10 @@ export class PostgresPaidCheckoutInventoryReservationWorker {
 
     const suborders = await this.pool.query<SuborderRow>(
       `SELECT id,tenant_id,merchant_id,branch_id,status,version
-       FROM merchant_suborders WHERE order_id=$1 ORDER BY id`,
-      [job.order_id]
+       FROM merchant_suborders s
+       JOIN customer_orders o ON o.id=s.order_id AND o.tenant_id=$2
+       WHERE s.order_id=$1 ORDER BY s.id`,
+      [job.order_id, job.tenant_id]
     );
     if (suborders.rows.length !== 1) {
       await this.recordRecovery(job, payment, "TASK_COMMIT_REJECTED", undefined, []);
