@@ -38,6 +38,13 @@ describe("PostgreSQL complete branch inventory snapshots", () => {
     });
 
     expect(result).toEqual({ accepted: 2, stale: 0 });
+    const resolvedAlerts = pool.client.statements.find(item =>
+      item.sql.includes("UPDATE branch_inventory_reconciliation_alerts")
+    );
+    expect(resolvedAlerts?.sql).toContain("status = 'resolved'");
+    expect(resolvedAlerts?.values).toEqual([
+      "tenant-1", "merchant-1", "branch-1", "variant-present", "2026-11-14T12:00:00.000Z"
+    ]);
     const omitted = pool.client.statements.find(item => item.sql.includes("UPDATE branch_inventory"));
     expect(omitted?.sql).toContain("SET available_quantity = reserved_quantity");
     expect(omitted?.sql).toContain("NOT (product_variant_id = ANY($3::text[]))");
@@ -105,6 +112,9 @@ describe("PostgreSQL complete branch inventory snapshots", () => {
     });
 
     expect(result).toEqual({ accepted: 1, stale: 0 });
+    expect(client.statements.some(item =>
+      item.sql.includes("UPDATE branch_inventory_reconciliation_alerts")
+    )).toBe(false);
     const clamp = client.statements.find(item =>
       item.sql.includes("SET available_quantity = reserved_quantity") &&
       item.sql.includes("product_variant_id = $3")
