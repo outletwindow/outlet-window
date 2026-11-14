@@ -1,4 +1,4 @@
-\\set ON_ERROR_STOP on
+\set ON_ERROR_STOP on
 BEGIN;
 INSERT INTO identities (id,principal_type,status,primary_email,created_at,updated_at)
 VALUES ('ow-checkout-snapshot-customer','human','active','checkout-snapshot@example.test',now(),now());
@@ -18,7 +18,7 @@ DO $$
 BEGIN
   BEGIN
     UPDATE customer_orders
-    SET metadata = jsonb_set(metadata,'{checkoutPricing,totalMinor}','13501'::jsonb)
+    SET metadata = jsonb_set(metadata,'{checkoutPricing,deliveryQuoteId}','\"quote-2\"'::jsonb)
     WHERE id = 'ow-checkout-snapshot-order';
     RAISE EXCEPTION 'checkout pricing snapshot mutation unexpectedly succeeded';
   EXCEPTION WHEN check_violation THEN NULL;
