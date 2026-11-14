@@ -30,6 +30,28 @@ describe("PostgresCustomerCartStore",()=>{
   expect(s.calls.at(-1)?.sql).toBe("COMMIT");
   expect(s.client.release).toHaveBeenCalledOnce();
  });
+ it("revalidates the exact SKU and fresh inventory confidence when increasing an existing line",async()=>{
+  const s=setup();
+  s.query.mockImplementation(async(sql:string,values?:readonly unknown[])=>{
+   s.calls.push({sql,...(values===undefined?{}:{values})});
+   if(sql.includes("FOR UPDATE OF m,b,i")) return {rows:[{
+    merchant_tenant_id:"merchant-tenant-1",currency:"SAR",price_minor:"12900",
+    external_variant_id:"external-variant-1",sku:"SKU-1"
+   }],rowCount:1};
+   if(sql.includes("SELECT quantity FROM customer_cart_items")) return {rows:[{quantity:2}],rowCount:1};
+   if(sql.includes("FROM branch_inventory i") && sql.includes("FOR UPDATE")) return {rows:[{available:true}],rowCount:1};
+   if(sql.includes("INSERT INTO customer_carts")) return {rows:[{id:"cart-1",customer_id:"customer-1",currency:"SAR",version:1}],rowCount:1};
+   if(sql.includes("FROM customer_cart_items ci")) return {rows:[{id:"item-1",merchant_id:"merchant-1",branch_id:"branch-1",product_variant_id:"variant-1",quantity:3,title:"Shirt",sku:"SKU-1",currency:"SAR",price_minor:"12900",in_stock:true}],rowCount:1};
+   return {rows:[],rowCount:1};
+  });
+  const cart=await s.store.addItem({customerId:"customer-1",merchantId:"merchant-1",branchId:"branch-1",productVariantId:"variant-1",quantity:1});
+  const stockCheck=s.calls.find(x=>x.sql.includes("FROM branch_inventory i") && x.sql.includes("FOR UPDATE"));
+  expect(stockCheck?.sql).toContain("i.sku=$4");
+  expect(stockCheck?.sql).toContain("i.last_synced_at >= clock_timestamp()-interval '30 minutes'");
+  expect(stockCheck?.sql).toContain("i.availability_confidence IN ('high','medium')");
+  expect(stockCheck?.values).toEqual(["merchant-1","branch-1","external-variant-1","SKU-1",3]);
+  expect(cart.items[0]?.quantity).toBe(3);
+ });
  it("rejects invalid quantities before acquiring a connection",async()=>{
   const s=setup();
   await expect(s.store.addItem({customerId:"customer-1",merchantId:"merchant-1",branchId:"branch-1",productVariantId:"variant-1",quantity:100})).rejects.toThrow("invalid_customer_cart_item");
