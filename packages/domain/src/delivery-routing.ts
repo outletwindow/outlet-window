@@ -62,12 +62,19 @@ export async function rankEligibleBranchesByRoadEta(input: {
     }
     unique.add(key);
   }
-  const estimates = await Promise.all(input.candidates.map(async candidate => ({
-    candidate,
-    route: await input.provider.estimateRoute({
-      origin: candidate.location, destination: input.destination
-    })
-  })));
+  const estimates = await Promise.all(input.candidates.map(async candidate => {
+    try {
+      return {
+        candidate,
+        route: await input.provider.estimateRoute({
+          origin: candidate.location, destination: input.destination
+        })
+      };
+    } catch {
+      // A single provider timeout must not discard valid routes for other branches.
+      return { candidate, route: null };
+    }
+  }));
   const ranked: RankedBranchRoute[] = [];
   for (const item of estimates) {
     if (item.route === null) continue;
