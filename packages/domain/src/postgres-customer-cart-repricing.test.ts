@@ -57,6 +57,24 @@ describe("PostgresCustomerCartRepricingService", () => {
     expect(db.client.release).toHaveBeenCalledOnce();
   });
 
+  it("reprices inside a caller-owned transaction without committing or releasing it", async () => {
+    const db = setup();
+    const result = await db.service.repriceInTransaction({ customerId: "customer-1", expectedCartVersion: 7 }, db.client);
+    expect(result).toMatchObject({ outcome: "priced", subtotalMinor: 50300 });
+    expect(db.calls.some(call => call.sql === "BEGIN")).toBe(false);
+    expect(db.calls.some(call => call.sql === "COMMIT" || call.sql === "ROLLBACK")).toBe(false);
+    expect(db.client.release).not.toHaveBeenCalled();
+    expect(db.calls.some(call => call.sql.includes("FOR UPDATE OF ci,v,p,m,b,i"))).toBe(true);
+  });
+
+  it("returns caller-owned transaction conflicts without rolling back the caller connection", async () => {
+    const db = setup({ version: 8 });
+    const result = await db.service.repriceInTransaction({ customerId: "customer-1", expectedCartVersion: 7 }, db.client);
+    expect(result).toEqual({ outcome: "version_conflict" });
+    expect(db.calls.some(call => call.sql === "ROLLBACK" || call.sql === "COMMIT")).toBe(false);
+    expect(db.client.release).not.toHaveBeenCalled();
+  });
+
   it("rejects a stale cart version before reading any line or catalog price", async () => {
     const db = setup({ version: 8 });
     const result = await db.service.reprice({ customerId: "customer-1", expectedCartVersion: 7 });
