@@ -40,7 +40,7 @@ function minor(value: string | number | null): number | null {
  * Produces an authoritative, locked price snapshot from the live catalog and branch stock.
  * Cart display prices are intentionally never read. The shared customer-cart advisory lock
  * serializes this operation with add/remove; row locks protect catalog and stock through the
- * this method's transaction. The returned snapshot is a preflight result only: it must not
+ * this transaction. The returned snapshot is a preflight result only: it must not
  * be used to create an order after these locks are released. Final checkout must revalidate
  * and persist pricing in the same transaction that creates the order. This is not a public
  * checkout endpoint.
