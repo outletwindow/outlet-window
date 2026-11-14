@@ -71,6 +71,21 @@ describe("merchant integration registry API", () => {
     expect(duplicate.json()).toEqual({ error: "integration_already_exists" });
   });
 
+  it("does not allow a merchant to self-grant external hard inventory reservation", async () => {
+    const { app, hub } = createApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/merchants/merchant-1/integrations",
+      payload: {
+        id: "pos-main", family: "pos", providerKey: "generic-pos",
+        displayName: "Main POS", capabilities: ["inventory.read", "inventory.hard_reservation"]
+      }
+    });
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual({ error: "capability_requires_platform_approval" });
+    expect(await hub.list("merchant-1")).toEqual([]);
+  });
+
   it("denies cross-merchant registration before writing", async () => {
     const { app, hub } = createApp();
     const response = await app.inject({
