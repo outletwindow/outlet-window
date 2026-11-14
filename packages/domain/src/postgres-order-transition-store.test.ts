@@ -132,7 +132,8 @@ describe("PostgresOrderTransitionStore", () => {
     const db = fakePool();
     const result = await new PostgresOrderTransitionStore(db.pool).transitionSuborder({
       tenantId: "tenant-1", orderId: "order-1", suborderId: "sub-1",
-      nextStatus: "delivered", context, auditEvent
+      nextStatus: "delivered", context,
+      auditEvent: { ...auditEvent, metadata: { orderId: "order-1", nextStatus: "delivered" } }
     });
     expect(result).toEqual({ outcome: "rejected", reason: "invalid_transition" });
     expect(db.statements).toContain("ROLLBACK");
