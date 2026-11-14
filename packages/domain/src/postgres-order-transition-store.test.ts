@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { PostgresOrderTransitionStore } from "./postgres-order-transition-store.js";
 import type { PostgresPool, PostgresQueryResult } from "./postgres-iam-store.js";
 
-function fakePool(options: { version?: number; missing?: boolean; statuses?: string[]; status?: string; itemCount?: number; verifiedCount?: number; paymentAuthorized?: boolean; inventoryReserved?: boolean } = {}) {
+function fakePool(options: { version?: number; missing?: boolean; statuses?: string[]; status?: string; itemCount?: number; verifiedCount?: number; paymentAuthorized?: boolean; inventoryReserved?: boolean; tenantId?: string } = {}) {
   const statements: string[] = [];
   const calls: Array<{ sql: string; values?: readonly unknown[] }> = [];
   const query = vi.fn(async <Row>(sql: string, values?: readonly unknown[]) => {
@@ -12,7 +12,7 @@ function fakePool(options: { version?: number; missing?: boolean; statuses?: str
     let rowCount: number | null = 1;
     if (sql.includes("FROM merchant_suborders s") && sql.includes("FOR UPDATE")) {
       rows = options.missing ? [] : [{
-        id: "sub-1", order_id: "order-1", tenant_id: "tenant-1",
+        id: "sub-1", order_id: "order-1", tenant_id: options.tenantId ?? "tenant-1",
         status: (options.status ?? "pending_validation") as "pending_validation", version: options.version ?? 1,
         merchant_id: "merchant-1", branch_id: "branch-1"
       }];
@@ -77,13 +77,13 @@ describe("PostgresOrderTransitionStore", () => {
   it("confirms only from database-verified capture and live branch reservation evidence", async () => {
     const db = fakePool({
       status: "awaiting_payment", statuses: ["confirmed"],
-      paymentAuthorized: true, inventoryReserved: true
+      paymentAuthorized: true, inventoryReserved: true, tenantId: "merchant-tenant"
     });
     const result = await new PostgresOrderTransitionStore(db.pool).transitionSuborder({
-      tenantId: "tenant-1", orderId: "order-1", suborderId: "sub-1",
+      tenantId: "merchant-tenant", orderId: "order-1", suborderId: "sub-1",
       nextStatus: "confirmed",
       context: { ...context, paymentAuthorized: false, inventoryReserved: false },
-      auditEvent: { ...auditEvent, metadata: {
+      auditEvent: { ...auditEvent, tenantId: "merchant-tenant", metadata: {
         orderId: "order-1", previousStatus: "awaiting_payment", nextStatus: "confirmed"
       } }
     });
@@ -92,7 +92,7 @@ describe("PostgresOrderTransitionStore", () => {
     });
     expect(db.statements.some(sql => sql.includes("verified_order_payment_captures"))).toBe(true);
     const captureCheck = db.calls.find(call => call.sql.includes("verified_order_payment_captures"));
-    expect(captureCheck?.values).toEqual(["order-1", "tenant-1", "sub-1"]);
+    expect(captureCheck?.values).toEqual(["order-1", "merchant-tenant", "sub-1"]);
     expect(captureCheck?.sql).toContain("scoped.tenant_id = $2");
     expect(captureCheck?.sql).not.toContain("o.tenant_id = $1");
     expect(db.statements.some(sql => sql.includes("FROM inventory_reservations") && sql.includes("FOR UPDATE"))).toBe(true);
