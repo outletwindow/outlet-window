@@ -23,7 +23,7 @@ export class PostgresExternalInventoryReservationEvidenceStore implements Extern
     private readonly createId: () => string = randomUUID
   ) {}
 
-  async record(input: ExternalInventoryReservationEvidenceInput): Promise<{ reservationId: string }> {
+  async record(input: ExternalInventoryReservationEvidenceInput): Promise<{ reservationId: string; expiresAtUtc: string }> {
     const request = input.request;
     const integrationId = request.providerIntegrationId;
     const expiresAt = Date.parse(input.expiresAtUtc);
