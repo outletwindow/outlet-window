@@ -107,6 +107,17 @@ describe("PostgresOrderStore", () => {
     expect(db.pool.connect).not.toHaveBeenCalled();
   });
 
+  it("rejects a new suborder that attempts to skip pending validation", async () => {
+    const db = database();
+    const invalid = {
+      ...order,
+      suborders: [{ ...order.suborders[0]!, status: "awaiting_payment" as const }]
+    };
+    await expect(new PostgresOrderStore(db.pool).create(invalid))
+      .rejects.toThrow("New merchant suborders must start in pending_validation");
+    expect(db.pool.connect).not.toHaveBeenCalled();
+  });
+
   it("rejects a suborder whose line totals do not equal its persisted subtotal", async () => {
     const db = database();
     const invalid = {
