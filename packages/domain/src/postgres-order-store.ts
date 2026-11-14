@@ -1,4 +1,4 @@
-import type { PostgresPool } from "./postgres-iam-store.js";
+import type { PostgresClient, PostgresPool } from "./postgres-iam-store.js";
 import type { OrderStatus } from "./order-lifecycle.js";
 
 export interface CreateOrderItemInput {
@@ -82,6 +82,27 @@ export class PostgresOrderStore {
   constructor(private readonly pool: PostgresPool) {}
 
   async create(input: CreateCustomerOrderInput): Promise<CreateCustomerOrderResult> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await this.createInTransaction(input, client);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Creates or idempotently resolves an order using a caller-owned transaction.
+   * The caller must have already issued BEGIN and owns COMMIT/ROLLBACK/release.
+   * This lets cart conversion, order persistence, pricing snapshots, and cart closure
+   * share one database transaction without nesting transactions or releasing its client.
+   */
+  async createInTransaction(input: CreateCustomerOrderInput, client: PostgresClient): Promise<CreateCustomerOrderResult> {
     requireIdentifier(input.id, "Order ID");
     requireIdentifier(input.tenantId, "Tenant ID");
     requireIdentifier(input.customerId, "Customer ID");
@@ -142,10 +163,10 @@ export class PostgresOrderStore {
         throw new Error("Order item totals must equal the merchant suborder subtotal");
       }
     }
-
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN");
+    await client.query(
+      "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+      [input.tenantId + ":" + input.customerId + ":" + input.idempotencyKey]
+    );
       await client.query(
         "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
         [input.tenantId + ":" + input.customerId + ":" + input.idempotencyKey]
@@ -207,7 +228,6 @@ export class PostgresOrderStore {
           String(row.total_minor) === String(input.totalMinor) &&
           canonicalJson(row.metadata ?? {}) === canonicalOrderMetadata &&
           sameSuborders && sameItems;
-        await client.query("COMMIT");
         return same
           ? { outcome: "already_exists", orderId: row.id }
           : { outcome: "idempotency_conflict", orderId: row.id };
@@ -296,13 +316,7 @@ export class PostgresOrderStore {
           );
         }
       }
-      await client.query("COMMIT");
       return { outcome: "created", orderId: input.id };
-    } catch (error) {
-      await client.query("ROLLBACK").catch(() => undefined);
-      throw error;
-    } finally {
-      client.release();
-    }
   }
+
 }
