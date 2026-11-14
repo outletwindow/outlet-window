@@ -13,7 +13,7 @@ const event = (id: string, suborderId: string, tenantId: string, merchantId: str
   metadata: { orderId: "order-1", previousStatus: "pending_validation", nextStatus: "awaiting_payment" }
 });
 
-function database(options: { parentStatus?: string; version?: number; expiredQuote?: boolean; badOrderTotal?: boolean; hiddenDiscount?: boolean } = {}) {
+function database(options: { parentStatus?: string; version?: number; expiredQuote?: boolean; badOrderTotal?: boolean; hiddenDiscount?: boolean; multiBranch?: boolean } = {}) {
   const statements: string[] = [];
   const query = vi.fn(async <Row>(sql: string, values?: readonly unknown[]) => {
     statements.push(sql);
@@ -34,18 +34,22 @@ function database(options: { parentStatus?: string; version?: number; expiredQuo
     } else if (sql.includes("FROM merchant_suborders") && sql.includes("ORDER BY id FOR UPDATE")) {
       rows = [
         { id: "sub-1", tenant_id: "merchant-tenant-1", merchant_id: "merchant-1", branch_id: "branch-1", status: "pending_validation", version: 1 },
-        { id: "sub-2", tenant_id: "merchant-tenant-2", merchant_id: "merchant-2", branch_id: "branch-2", status: "pending_validation", version: 1 }
+        ...(options.multiBranch ? [
+          { id: "sub-2", tenant_id: "merchant-tenant-2", merchant_id: "merchant-2", branch_id: "branch-2", status: "pending_validation", version: 1 }
+        ] : [])
       ];
     } else if (sql.includes("COUNT(i.id)::int AS item_count")) {
       rows = [
-        { suborder_id: "sub-1", item_count: 1, subtotal_minor: "5000" },
-        { suborder_id: "sub-2", item_count: 2, subtotal_minor: "7000" }
+        { suborder_id: "sub-1", item_count: 1, subtotal_minor: options.multiBranch ? "5000" : "12000" },
+        ...(options.multiBranch ? [{ suborder_id: "sub-2", item_count: 2, subtotal_minor: "7000" }] : [])
       ];
     } else if (sql.includes("SELECT id, subtotal_minor FROM merchant_suborders")) {
-      rows = [{ id: "sub-1", subtotal_minor: "5000" }, { id: "sub-2", subtotal_minor: "7000" }];
+      rows = options.multiBranch
+        ? [{ id: "sub-1", subtotal_minor: "5000" }, { id: "sub-2", subtotal_minor: "7000" }]
+        : [{ id: "sub-1", subtotal_minor: "12000" }];
     } else if (sql.includes("UPDATE merchant_suborders") && sql.includes("RETURNING id")) {
-      rows = [{ id: "sub-1" }, { id: "sub-2" }];
-      rowCount = 2;
+      rows = options.multiBranch ? [{ id: "sub-1" }, { id: "sub-2" }] : [{ id: "sub-1" }];
+      rowCount = rows.length;
     } else if (sql.includes("INSERT INTO audit_events")) {
       rows = [{ id: "audit" }];
       rowCount = 1;
@@ -63,8 +67,7 @@ const baseInput = {
   orderId: "order-1", customerId: "customer-1", expectedVersion: 4,
   actorId: "platform-actor", actorRole: "platform_user" as const, occurredAt,
   auditEvents: [
-    event("audit-1", "sub-1", "merchant-tenant-1", "merchant-1", "branch-1"),
-    event("audit-2", "sub-2", "merchant-tenant-2", "merchant-2", "branch-2")
+    event("audit-1", "sub-1", "merchant-tenant-1", "merchant-1", "branch-1")
   ]
 };
 
@@ -72,12 +75,12 @@ describe("PostgresPlatformCheckoutReadinessStore", () => {
   it("moves every merchant suborder and the platform parent atomically", async () => {
     const db = database();
     const result = await new PostgresPlatformCheckoutReadinessStore(db.pool).transitionToAwaitingPayment(baseInput);
-    expect(result).toEqual({ outcome: "ready", orderId: "order-1", suborderIds: ["sub-1", "sub-2"], parentVersion: 5 });
+    expect(result).toEqual({ outcome: "ready", orderId: "order-1", suborderIds: ["sub-1"], parentVersion: 5 });
     expect(db.statements[0]).toBe("BEGIN");
     expect(db.statements.some(sql => sql.includes("tenant_id = 'platform'"))).toBe(true);
     expect(db.statements.some(sql => sql.includes("UPDATE merchant_suborders"))).toBe(true);
     expect(db.statements.some(sql => sql.includes("UPDATE customer_orders"))).toBe(true);
-    expect(db.statements.filter(sql => sql.includes("INSERT INTO audit_events"))).toHaveLength(2);
+    expect(db.statements.filter(sql => sql.includes("INSERT INTO audit_events"))).toHaveLength(1);
     expect(db.statements.at(-1)).toBe("COMMIT");
     expect(db.client.release).toHaveBeenCalledOnce();
   });
@@ -87,11 +90,23 @@ describe("PostgresPlatformCheckoutReadinessStore", () => {
     const db = database();
     const result = await new PostgresPlatformCheckoutReadinessStore(db.pool)
       .transitionToAwaitingPaymentInTransaction(baseInput, db.client as unknown as PostgresClient);
-    expect(result).toEqual({ outcome: "ready", orderId: "order-1", suborderIds: ["sub-1", "sub-2"], parentVersion: 5 });
+    expect(result).toEqual({ outcome: "ready", orderId: "order-1", suborderIds: ["sub-1"], parentVersion: 5 });
     expect(db.statements).not.toContain("BEGIN");
     expect(db.statements).not.toContain("COMMIT");
     expect(db.statements).not.toContain("ROLLBACK");
     expect(db.client.release).not.toHaveBeenCalled();
+  });
+
+  it("rejects multiple delivery branches when the parent stores only one branch quote", async () => {
+    const db = database({ multiBranch: true });
+    const input = { ...baseInput, auditEvents: [
+      event("audit-1", "sub-1", "merchant-tenant-1", "merchant-1", "branch-1"),
+      event("audit-2", "sub-2", "merchant-tenant-2", "merchant-2", "branch-2")
+    ] };
+    const result = await new PostgresPlatformCheckoutReadinessStore(db.pool).transitionToAwaitingPayment(input);
+    expect(result).toEqual({ outcome: "invalid_snapshot" });
+    expect(db.statements).toContain("ROLLBACK");
+    expect(db.statements.some(sql => sql.startsWith("UPDATE"))).toBe(false);
   });
 
   it("rejects a parent total that does not reconcile to the persisted pricing components", async () => {
