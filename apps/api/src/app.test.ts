@@ -967,6 +967,69 @@ describe("signed payment provider webhook intake", () => {
     }
   });
 
+  it("creates checkout only from the authenticated customer's cart scope and idempotency key", async () => {
+    const customer: Actor = {
+      id: "checkout-customer-1", role: "customer", active: true,
+      grants: [{ resource: "customer.cart", actions: ["create"], scope: { customerId: "checkout-customer-1" } }]
+    };
+    const create = vi.fn(async () => ({
+      outcome: "created" as const, orderId: "order-checkout-1", suborderIds: ["suborder-1"],
+      totalMinor: 3500, currency: "SAR"
+    }));
+    const checkoutApp = buildApp({ resolveActor: async () => customer, customerCheckout: { create } });
+    await checkoutApp.ready();
+    try {
+      const payload = {
+        expectedCartVersion: 2,
+        destination: { countryCode: "SA", cityCode: "JUBAIL", serviceCode: "standard_delivery",
+          latitude: 27.01, longitude: 49.65, addressSnapshot: { label: "Home" } }
+      };
+      const missingKey = await checkoutApp.inject({
+        method: "POST", url: "/api/v1/customer/checkout", payload
+      });
+      expect(missingKey.statusCode).toBe(400);
+      expect(create).not.toHaveBeenCalled();
+
+      const response = await checkoutApp.inject({
+        method: "POST", url: "/api/v1/customer/checkout",
+        headers: { "idempotency-key": "checkout-api-key-0001" }, payload
+      });
+      expect(response.statusCode).toBe(201);
+      expect(response.json()).toMatchObject({ outcome: "created", orderId: "order-checkout-1" });
+      expect(create).toHaveBeenCalledWith(expect.objectContaining({
+        customerId: "checkout-customer-1", expectedCartVersion: 2,
+        idempotencyKey: "checkout-api-key-0001", actorId: "checkout-customer-1",
+        actorRole: "customer"
+      }));
+    } finally {
+      await checkoutApp.close();
+    }
+  });
+
+  it("rejects checkout when the customer cart grant belongs to another customer", async () => {
+    const customer: Actor = {
+      id: "checkout-customer-1", role: "customer", active: true,
+      grants: [{ resource: "customer.cart", actions: ["create"], scope: { customerId: "checkout-customer-other" } }]
+    };
+    const create = vi.fn();
+    const checkoutApp = buildApp({ resolveActor: async () => customer, customerCheckout: { create } });
+    await checkoutApp.ready();
+    try {
+      const response = await checkoutApp.inject({
+        method: "POST", url: "/api/v1/customer/checkout",
+        headers: { "idempotency-key": "checkout-api-key-0001" },
+        payload: { expectedCartVersion: 1, destination: {
+          countryCode: "SA", cityCode: "JUBAIL", serviceCode: "standard_delivery",
+          latitude: 27.01, longitude: 49.65
+        } }
+      });
+      expect(response.statusCode).toBe(403);
+      expect(create).not.toHaveBeenCalled();
+    } finally {
+      await checkoutApp.close();
+    }
+  });
+
   it("rejects customer cart access when the grant belongs to a different customer", async () => {
     const customer: Actor = {
       id: "cart-customer-1", role: "customer", active: true,
