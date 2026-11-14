@@ -371,3 +371,25 @@ checkout API route exists.
   is suspended before checkout, the service returns `no_active_pricing_rule`, leaves the cart
   active at its original version, and creates no parent order. This verifies rollback after
   the cart has been repriced and locked but before order persistence.
+
+
+## Initial payment capture uniqueness — migration 0039
+
+- A full-order initial payment is a single-use financial event. Different provider intents,
+  event IDs, or idempotency keys must not create multiple successful initial captures for
+  the same (tenant_id, order_id).
+- Migration 0039_single_initial_capture_per_order adds a database unique index on that
+  pair. This is the final concurrency guard; application-level checks alone are insufficient.
+- Both direct verified-capture persistence and the initial-capture inbox worker now include
+  the order identity in their conflict lookup. A second provider capture for an already
+  captured order is classified as identity_collision / terminal CAPTURE_IDENTITY_COLLISION,
+  not retried as a transient database error.
+- The migration runner, API readiness check, initial-capture worker startup check, and CI SQL
+  integration suite all require migration 0039.
+- Before applying this migration to an existing production database, run:
+  SELECT tenant_id, order_id, COUNT(*) FROM verified_order_payment_captures GROUP BY tenant_id, order_id HAVING COUNT(*) > 1;
+  If rows are returned, stop deployment and reconcile the provider ledger manually. Do not
+  delete or merge financial evidence automatically to make the index pass.
+- This change prevents a second initial capture from being accepted. It does not itself
+  mark the order paid, reserve inventory, refund an excess provider charge, or dispatch
+  fulfillment. Those remain separate idempotent workflows and production release gates.
