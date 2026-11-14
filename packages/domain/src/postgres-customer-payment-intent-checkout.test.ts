@@ -203,4 +203,24 @@ describe("authenticated customer payment-intent checkout",()=>{
   expect(provider.createIntent).not.toHaveBeenCalled();
  });
 
+ it("does not recover an expired intent even when the provider mapping matches",async()=>{
+  const expiredAt="2026-11-14T17:00:00.000Z";
+  const db=transactionalPool({beginAttempt:false});
+  db.poolQuery.mockImplementation(async(sql:string)=>{
+   if(sql.includes("FROM customer_orders"))return {rows:[payableOrder],rowCount:1};
+   if(sql.includes("INSERT INTO payment_intent_creation_attempts"))return {rows:[],rowCount:0};
+   if(sql.includes("FROM payment_intent_creation_attempts"))return {rows:[{
+    id:"attempt-1",tenant_id:"tenant-1",order_id:"order-1",provider_key:"moyasar",
+    idempotency_key:"checkout-key-0001",amount_minor:12500,currency:"SAR",status:"created",
+    provider_payment_reference:intent.id,expires_at:new Date(expiredAt)
+   }],rowCount:1};
+   throw new Error("UNEXPECTED_POOL_QUERY");
+  });
+  const provider={createIntent:vi.fn(),fetchIntent:vi.fn(async()=>({...intent,status:"created" as const,expiresAtUtc:expiredAt}))};
+  const checkout=new PostgresCustomerPaymentIntentCheckout(db.pool,provider,callbackUrl,()=>new Date("2026-11-14T18:00:00.000Z"));
+  await expect(checkout.create({customerId:"customer-1",orderId:"order-1",idempotencyKey:"checkout-key-0001"}))
+   .resolves.toEqual({outcome:"attempt_exists"});
+  expect(provider.createIntent).not.toHaveBeenCalled();
+ });
+
 });
