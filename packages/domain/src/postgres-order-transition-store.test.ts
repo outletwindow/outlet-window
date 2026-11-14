@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { PostgresOrderTransitionStore } from "./postgres-order-transition-store.js";
 import type { PostgresPool, PostgresQueryResult } from "./postgres-iam-store.js";
 
-function fakePool(options: { version?: number; missing?: boolean; statuses?: string[]; status?: string; itemCount?: number; verifiedCount?: number } = {}) {
+function fakePool(options: { version?: number; missing?: boolean; statuses?: string[]; status?: string; itemCount?: number; verifiedCount?: number; paymentAuthorized?: boolean; inventoryReserved?: boolean } = {}) {
   const statements: string[] = [];
   const calls: Array<{ sql: string; values?: readonly unknown[] }> = [];
   const query = vi.fn(async <Row>(sql: string, values?: readonly unknown[]) => {
@@ -16,6 +16,12 @@ function fakePool(options: { version?: number; missing?: boolean; statuses?: str
         status: (options.status ?? "pending_validation") as "pending_validation", version: options.version ?? 1,
         merchant_id: "merchant-1", branch_id: "branch-1"
       }];
+      rowCount = rows.length;
+    } else if (sql.includes("AS authorized")) {
+      rows = [{ authorized: options.paymentAuthorized ?? false }];
+      rowCount = 1;
+    } else if (sql.includes("FROM inventory_reservations") && sql.includes("FOR UPDATE")) {
+      rows = options.inventoryReserved ? [{ id: "reservation-1" }] : [];
       rowCount = rows.length;
     } else if (sql.includes("COUNT(i.id)::int AS item_count")) {
       rows = [{ item_count: options.itemCount ?? 0, verified_count: options.verifiedCount ?? 0 }];
@@ -66,6 +72,55 @@ describe("PostgresOrderTransitionStore", () => {
     const suborderUpdate = db.calls.find(call => call.sql.includes("UPDATE merchant_suborders"));
     expect(suborderUpdate?.values?.[4]).toBe(context.occurredAt);
     expect(db.client.release).toHaveBeenCalledOnce();
+  });
+
+  it("confirms only from database-verified capture and live branch reservation evidence", async () => {
+    const db = fakePool({
+      status: "awaiting_payment", statuses: ["confirmed"],
+      paymentAuthorized: true, inventoryReserved: true
+    });
+    const result = await new PostgresOrderTransitionStore(db.pool).transitionSuborder({
+      tenantId: "tenant-1", orderId: "order-1", suborderId: "sub-1",
+      nextStatus: "confirmed",
+      context: { ...context, paymentAuthorized: false, inventoryReserved: false },
+      auditEvent: { ...auditEvent, metadata: {
+        orderId: "order-1", previousStatus: "awaiting_payment", nextStatus: "confirmed"
+      } }
+    });
+    expect(result).toMatchObject({
+      outcome: "updated", transition: { ok: true, order: { status: "confirmed" } }
+    });
+    expect(db.statements.some(sql => sql.includes("verified_order_payment_captures"))).toBe(true);
+    expect(db.statements.some(sql => sql.includes("FROM inventory_reservations") && sql.includes("FOR UPDATE"))).toBe(true);
+    expect(db.statements.at(-1)).toBe("COMMIT");
+  });
+
+  it("does not trust caller-asserted payment or inventory confirmation flags", async () => {
+    const db = fakePool({ status: "awaiting_payment", paymentAuthorized: false, inventoryReserved: false });
+    const result = await new PostgresOrderTransitionStore(db.pool).transitionSuborder({
+      tenantId: "tenant-1", orderId: "order-1", suborderId: "sub-1",
+      nextStatus: "confirmed",
+      context: { ...context, paymentAuthorized: true, inventoryReserved: true },
+      auditEvent: { ...auditEvent, metadata: {
+        orderId: "order-1", previousStatus: "awaiting_payment", nextStatus: "confirmed"
+      } }
+    });
+    expect(result).toEqual({ outcome: "rejected", reason: "payment_not_authorized" });
+    expect(db.statements).toContain("ROLLBACK");
+    expect(db.statements.some(sql => sql.startsWith("UPDATE"))).toBe(false);
+  });
+
+  it("rejects confirmation when payment is captured but the exact branch reservation is absent", async () => {
+    const db = fakePool({ status: "awaiting_payment", paymentAuthorized: true, inventoryReserved: false });
+    const result = await new PostgresOrderTransitionStore(db.pool).transitionSuborder({
+      tenantId: "tenant-1", orderId: "order-1", suborderId: "sub-1",
+      nextStatus: "confirmed", context,
+      auditEvent: { ...auditEvent, metadata: {
+        orderId: "order-1", previousStatus: "awaiting_payment", nextStatus: "confirmed"
+      } }
+    });
+    expect(result).toEqual({ outcome: "rejected", reason: "inventory_not_reserved" });
+    expect(db.statements).toContain("ROLLBACK");
   });
 
   it("rejects stale versions without writing", async () => {
