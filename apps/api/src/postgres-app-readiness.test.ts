@@ -40,7 +40,8 @@ describe("PostgreSQL API readiness migration gate", () => {
     "0043_merchant_inventory_provider_branch_scopes",
     "0044_external_inventory_reservation_evidence",
     "0045_checkout_recovery_suborder_scope",
-    "0046_checkout_recovery_reservation_scope"
+    "0046_checkout_recovery_reservation_scope",
+    "0047_checkout_recovery_reservation_error_codes"
   ])("keeps the API unready when migration %s is missing", async missing => {
     const app = buildPostgresApp({
       pool: poolMissingMigration(missing),
