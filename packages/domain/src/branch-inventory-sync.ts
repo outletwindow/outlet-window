@@ -123,6 +123,25 @@ export class PostgresBranchInventorySyncStore implements BranchInventorySyncStor
           stale++;
         }
       }
+
+      // This API accepts complete branch snapshots, not incremental deltas. A variant
+      // omitted from a newer complete snapshot must stop being sellable immediately.
+      // Keep reserved_quantity intact and set on-hand equal to reserved so free stock is 0.
+      // The timestamp guard prevents an older snapshot from clearing newer inventory.
+      const omitted = await client.query(
+        `UPDATE branch_inventory
+         SET available_quantity = reserved_quantity, source = $4,
+             last_synced_at = $5, availability_confidence = $6, updated_at = now()
+         WHERE merchant_id = $1 AND branch_id = $2
+           AND NOT (product_variant_id = ANY($3::text[]))
+           AND last_synced_at <= $5
+         RETURNING product_variant_id`,
+        [input.merchantId, input.branchId,
+          input.lines.map(line => line.productVariantId),
+          input.source, input.capturedAtUtc, input.confidence]
+      );
+      accepted += omitted.rowCount ?? omitted.rows.length;
+
       await client.query("COMMIT");
       return { accepted, stale };
     } catch (error) {
