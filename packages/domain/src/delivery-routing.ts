@@ -25,14 +25,16 @@ export interface RankedBranchRoute extends BranchRouteCandidate {
 }
 
 /** Validates untrusted routing-provider output before it influences branch selection. */
-export function isValidRouteEstimate(value: RouteEstimate, nowUtc: string): boolean {
+export function isValidRouteEstimate(value: unknown, nowUtc: string): value is RouteEstimate {
+  if (value === null || typeof value !== "object") return false;
+  const route = value as Partial<RouteEstimate>;
+  if (!Number.isSafeInteger(route.distanceMeters) || (route.distanceMeters as number) < 0 ||
+      !Number.isSafeInteger(route.durationSeconds) || (route.durationSeconds as number) < 0 ||
+      typeof route.providerReference !== "string" || route.providerReference.trim().length === 0 ||
+      route.providerReference.length > 240 || typeof route.estimatedAtUtc !== "string") return false;
   const now = Date.parse(nowUtc);
-  const estimated = Date.parse(value.estimatedAtUtc);
-  return Number.isSafeInteger(value.distanceMeters) && value.distanceMeters >= 0 &&
-    Number.isSafeInteger(value.durationSeconds) && value.durationSeconds >= 0 &&
-    typeof value.providerReference === "string" && value.providerReference.trim().length > 0 &&
-    value.providerReference.length <= 240 &&
-    Number.isFinite(now) && Number.isFinite(estimated) &&
+  const estimated = Date.parse(route.estimatedAtUtc);
+  return Number.isFinite(now) && Number.isFinite(estimated) &&
     estimated <= now && now - estimated <= 5 * 60_000;
 }
 
