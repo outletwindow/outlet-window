@@ -83,6 +83,28 @@ integration("PostgreSQL branch inventory reservations", () => {
        VALUES ($1,$2,'Inventory Branch','JUB','active')`,
       [branchId, merchantId]
     );
+    const integrationId = "inventory-integration-" + suffix;
+    const productId = "inventory-product-" + suffix;
+    await pool.query(
+      `INSERT INTO tenant_integrations
+       (id,tenant_id,family,provider_key,display_name,status,capabilities,created_at,updated_at)
+       VALUES ($1,$2,'commerce',$3,'Inventory Test Catalog','connected','["catalog.read"]',now(),now())`,
+      [integrationId, merchantId, "inventory-" + suffix]
+    );
+    await pool.query(
+      `INSERT INTO commerce_catalog_products
+       (id,tenant_id,integration_id,provider_key,external_product_id,canonical_url,title,
+        currency,price_minor,source_type,source_captured_at,source_content_sha256,published_at,publication_updated_at)
+       VALUES ($1,$2,$3,$4,$5,'https://inventory.example.test/product','Inventory Test Product',
+        'SAR',5000,'manual',now(),repeat('d',64),now(),now())`,
+      [productId, merchantId, integrationId, "inventory-" + suffix, "inventory-product-" + suffix]
+    );
+    await pool.query(
+      `INSERT INTO commerce_catalog_variants
+       (id,tenant_id,product_id,external_variant_id,sku,currency,price_minor,availability)
+       VALUES ($1,$2,$3,$4,$5,'SAR',5000,'in_stock')`,
+      [variantId, merchantId, productId, variantId, sku]
+    );
     await pool.query(
       `INSERT INTO branch_inventory
        (merchant_id,branch_id,product_variant_id,sku,available_quantity,reserved_quantity,
@@ -102,6 +124,8 @@ integration("PostgreSQL branch inventory reservations", () => {
     // Keep their parent customer_orders as well; each test uses fresh UUID-backed order IDs.
     await pool.query("DELETE FROM merchant_suborders WHERE merchant_id = $1", [merchantId]);
     await pool.query("DELETE FROM branch_inventory WHERE merchant_id = $1", [merchantId]);
+    await pool.query("DELETE FROM commerce_catalog_products WHERE tenant_id = $1", [merchantId]);
+    await pool.query("DELETE FROM tenant_integrations WHERE tenant_id = $1", [merchantId]);
     await pool.query("DELETE FROM merchant_branches WHERE merchant_id = $1", [merchantId]);
     await pool.query("DELETE FROM merchants WHERE id = $1", [merchantId]);
   }
