@@ -41,6 +41,8 @@ function createPool(options: {
       rows=options.stockMatches===false ? [] : [{
         catalog_variant_id:"catalog-variant-1",external_variant_id:"external-variant-1",sku:"SKU-1"
       }];
+    } else if(sql.includes("UPDATE branch_inventory")) {
+      return {rows:[],rowCount:1};
     }
     return {rows:rows as Row[],rowCount:rows.length};
   });
