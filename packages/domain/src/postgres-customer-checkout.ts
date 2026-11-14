@@ -37,7 +37,7 @@ function safeIdentifier(value: string): boolean {
 }
 
 /**
- * Creates a single-branch customer checkout atomically. This service deliberately
+ * Creates a multi-branch customer checkout atomically. This service deliberately
  * does not create payment intents or reserve stock: payment capture verification
  * and the existing reservation workflow remain separate release gates.
  */
@@ -137,7 +137,7 @@ export class PostgresCustomerCheckoutService {
       const occurredAt = this.now().toISOString();
       const quoteService = new PostgresDeliveryQuoteService(client);
       const branchQuotes: Array<{
-        suborder: typeof priced.suborders[number];
+        suborder: (typeof priced.suborders)[number];
         result: Extract<Awaited<ReturnType<typeof quoteService.quoteInTransaction>>, { status: "quoted" }>;
       }> = [];
       for (const suborder of priced.suborders) {
@@ -203,6 +203,21 @@ export class PostgresCustomerCheckoutService {
         components
       };
       const orderId = this.createId();
+      const orderSuborders = priced.suborders.map(suborder => ({
+        id: this.createId(),
+        merchantId: suborder.merchantId,
+        branchId: suborder.branchId,
+        status: "pending_validation" as const,
+        subtotalMinor: suborder.subtotalMinor,
+        items: suborder.items.map(item => ({
+          id: this.createId(),
+          productVariantId: item.productVariantId,
+          sku: item.sku,
+          quantity: item.quantity,
+          unitPriceMinor: item.unitPriceMinor,
+          currency: item.currency
+        }))
+      }));
       const orderInput = {
         id: orderId,
         tenantId: "platform",
@@ -224,21 +239,7 @@ export class PostgresCustomerCheckoutService {
         deliveryQuote: { ...firstQuote.quote },
         deliveryZoneId: firstQuote.serviceAreaId,
         deliveryBranchId: priced.suborders[0]!.branchId,
-        suborders: priced.suborders.map(suborder => ({
-          id: this.createId(),
-          merchantId: suborder.merchantId,
-          branchId: suborder.branchId,
-          status: "pending_validation" as const,
-          subtotalMinor: suborder.subtotalMinor,
-          items: suborder.items.map(item => ({
-            id: this.createId(),
-            productVariantId: item.productVariantId,
-            sku: item.sku,
-            quantity: item.quantity,
-            unitPriceMinor: item.unitPriceMinor,
-            currency: item.currency
-          }))
-        }]
+        suborders: orderSuborders
       };
       const created = await this.orderStore.createInTransaction(orderInput, client);
       if (created.outcome !== "created") {
@@ -273,28 +274,33 @@ export class PostgresCustomerCheckoutService {
         );
       }
 
-      const auditEvents = [createAuditEvent({
-        id: this.createId(),
-        type: "order.suborder.transitioned",
-        category: "order_lifecycle",
-        occurredAt,
-        actor: { id: input.actorId, type: input.actorRole, role: "platform_checkout" },
-        action: "order.suborder.transition",
-        outcome: "success",
-        resourceType: "merchant_suborder",
-        resourceId: suborderId,
-        tenantId: suborder.merchantTenantId,
-        merchantId: suborder.merchantId,
-        branchId: suborder.branchId,
-        correlationId: input.correlationId,
-        source: "customer_checkout",
-        severity: "info",
-        metadata: {
-          orderId,
-          previousStatus: "pending_validation",
-          nextStatus: "awaiting_payment"
-        }
-      })];
+      const auditEvents = priced.suborders.map((suborder, index) => {
+        const createdSuborder = orderSuborders[index];
+        if (!createdSuborder) throw new Error("CHECKOUT_AUDIT_SUBORDER_MAPPING_MISSING");
+        return createAuditEvent({
+          id: this.createId(),
+          type: "order.suborder.transitioned",
+          category: "order_lifecycle",
+          occurredAt,
+          actor: { id: input.actorId, type: input.actorRole, role: "platform_checkout" },
+          action: "order.suborder.transition",
+          outcome: "success",
+          resourceType: "merchant_suborder",
+          resourceId: createdSuborder.id,
+          tenantId: suborder.merchantTenantId,
+          merchantId: suborder.merchantId,
+          branchId: suborder.branchId,
+          correlationId: input.correlationId,
+          source: "customer_checkout",
+          severity: "info",
+          metadata: {
+            orderId,
+            previousStatus: "pending_validation",
+            nextStatus: "awaiting_payment"
+          }
+        });
+      });
+
       const readiness = await this.readinessStore.transitionToAwaitingPaymentInTransaction({
         orderId,
         customerId: input.customerId,
