@@ -16,7 +16,7 @@ INSERT INTO checkout_recovery_cases
 VALUES
 ('recovery-test-1','tenant-test','order-test','checkout-recovery:order-test:1',
  'INVENTORY_UNAVAILABLE','suborder-2','capture-ref-1',now(),
- '[{"suborderId":"suborder-1","reservationReference":"reservation-1"}]'::jsonb);
+ '[{"suborderId":"suborder-2","reservationReference":"reservation-1"}]'::jsonb);
 DO $$ BEGIN
   BEGIN
     INSERT INTO checkout_recovery_cases
@@ -34,6 +34,16 @@ DO $$ BEGIN
       'checkout-recovery:order-test:wrong-suborder','TASK_COMMIT_REJECTED',
       'suborder-from-another-order','capture-ref-1',now(),'[]'::jsonb);
     RAISE EXCEPTION 'expected same-order suborder foreign key rejection';
+  EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+  BEGIN
+    INSERT INTO checkout_recovery_cases
+    (id,tenant_id,order_id,idempotency_key,failure_code,payment_reference,
+     payment_captured_at,reservation_references)
+    VALUES ('recovery-test-wrong-reservation','tenant-test','order-test',
+      'checkout-recovery:order-test:wrong-reservation','TASK_COMMIT_REJECTED',
+      'capture-ref-1',now(),
+      '[{"suborderId":"suborder-from-another-order","reservationReference":"reservation-wrong"}]'::jsonb);
+    RAISE EXCEPTION 'expected reservation evidence from another order to be rejected';
   EXCEPTION WHEN foreign_key_violation THEN NULL; END;
   BEGIN
     INSERT INTO checkout_recovery_cases
