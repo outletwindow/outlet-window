@@ -38,7 +38,6 @@ function pricingSnapshotMatches(input: {
   let productSubtotalCount = 0;
   let deliveryCount = 0;
   let discountComponents = 0;
-  let hasDiscountComponent = false;
   for (const component of pricing.components) {
     if (!validObject(component) || typeof component.kind !== "string" ||
         typeof component.label !== "string" || !component.label.trim() ||
@@ -48,7 +47,6 @@ function pricingSnapshotMatches(input: {
     }
     const amount = component.amountMinor as number;
     if (component.kind === "discount") {
-      hasDiscountComponent = true;
       discountComponents += amount;
       if (!Number.isSafeInteger(discountComponents)) return false;
     } else {
@@ -69,7 +67,7 @@ function pricingSnapshotMatches(input: {
   return productSubtotalCount === 1 && deliveryCount === 1 &&
     typeof discount === "number" && Number.isSafeInteger(discount) &&
     discount >= 0 && discount <= subtotal &&
-    (!hasDiscountComponent || discountComponents === discount) &&
+    discountComponents === discount &&
     Number.isSafeInteger(storedTotal) && storedTotal >= 0 &&
     subtotal - discount === storedTotal;
 }
