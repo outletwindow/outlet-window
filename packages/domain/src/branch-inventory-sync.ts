@@ -51,7 +51,7 @@ export class BranchInventorySyncService {
         !input.merchantId.trim() || input.merchantId.length > 160 ||
         !input.branchId.trim() || input.branchId.length > 160 ||
         !SOURCES.includes(input.source) || !validUtc(input.capturedAtUtc) ||
-        !Array.isArray(input.lines) || input.lines.length < 1 || input.lines.length > 5000) {
+        !Array.isArray(input.lines) || input.lines.length > 5000) {
       throw new Error("INVALID_BRANCH_INVENTORY_SNAPSHOT");
     }
     if (Date.parse(input.capturedAtUtc) > this.now().getTime()) {
