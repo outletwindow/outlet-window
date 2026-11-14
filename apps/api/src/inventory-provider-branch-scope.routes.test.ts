@@ -33,12 +33,27 @@ describe("platform inventory provider branch scope routes", () => {
     const append = vi.fn(async () => "inserted" as const);
     const app = buildApp({
       resolveActor: async () => actor,
-      inventoryProviderBranchScopes: { grant: grantScope, revoke: revokeScope },
+      inventoryProviderBranchScopes: {
+        approveHardReservationCapability: async () => "approved",
+        grant: grantScope, revoke: revokeScope
+      },
       auditEvents: { append }
     });
     apps.push(app);
     return { app, grantScope, revokeScope, append };
   }
+
+  it("allows a platform admin to approve hard reservation only through the capability approval route", async () => {
+    const { app, append } = createApp(platformAdmin);
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/platform/inventory-provider-capabilities/hard-reservation/approve",
+      payload: { tenantId: "tenant-1", integrationId: "pos-1" }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().capability).toBe("inventory.hard_reservation");
+    expect(append).toHaveBeenCalledTimes(3);
+  });
 
   it("allows a platform admin to grant an eligible exact branch scope and audits the operation", async () => {
     const { app, grantScope, append } = createApp(platformAdmin);
@@ -103,7 +118,10 @@ describe("platform inventory provider branch scope routes", () => {
   it("fails closed when audit persistence is unavailable", async () => {
     const app = buildApp({
       resolveActor: async () => platformAdmin,
-      inventoryProviderBranchScopes: { grant: async () => "granted", revoke: async () => "revoked" }
+      inventoryProviderBranchScopes: {
+        approveHardReservationCapability: async () => "approved",
+        grant: async () => "granted", revoke: async () => "revoked"
+      }
     });
     apps.push(app);
     const response = await app.inject({
