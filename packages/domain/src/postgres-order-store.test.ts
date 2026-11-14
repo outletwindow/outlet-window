@@ -16,7 +16,8 @@ const order: CreateCustomerOrderInput = {
   }]
 };
 
-function database(options: { existing?: boolean; existingTotal?: string; existingSuborderStatus?: string; unavailableBranch?: boolean; unavailableVariant?: boolean } = {}) {
+function database(options: { existing?: boolean; existingTotal?: string; existingSuborderStatus?: string;
+  unavailableBranch?: boolean; unavailableVariant?: boolean; catalogPrice?: string; catalogCurrency?: string } = {}) {
   const statements: string[] = [];
   const query = vi.fn(async <Row>(sql: string, _args?: readonly unknown[]) => {
     statements.push(sql);
@@ -44,7 +45,10 @@ function database(options: { existing?: boolean; existingTotal?: string; existin
       rows = [];
       rowCount = 1;
     } else if (sql.includes("FROM commerce_catalog_variants v") && sql.includes("FOR SHARE OF v, p")) {
-      rows = options.unavailableVariant ? [] : [{ id: "variant-1" }];
+      rows = options.unavailableVariant ? [] : [{
+        id: "variant-1", catalog_price_minor: options.catalogPrice ?? "6450",
+        catalog_currency: options.catalogCurrency ?? "SAR"
+      }];
       rowCount = rows.length;
     } else if (sql.includes("INSERT INTO customer_order_items")) {
       rows = [];
@@ -88,6 +92,23 @@ describe("PostgresOrderStore", () => {
     expect(validation).toContain("p.published_at IS NOT NULL");
     expect(db.statements.at(-1)).toBe("ROLLBACK");
     expect(db.statements.some(sql => sql.includes("INSERT INTO customer_order_items"))).toBe(false);
+  });
+
+
+  it("rejects a caller-supplied unit price that differs from the locked live catalog price", async () => {
+    const db = database({ catalogPrice: "1" });
+    await expect(new PostgresOrderStore(db.pool).create(order))
+      .rejects.toThrow("Order item price does not match the current published catalog price");
+    expect(db.statements.some(sql => sql.includes("INSERT INTO customer_order_items"))).toBe(false);
+    expect(db.statements.at(-1)).toBe("ROLLBACK");
+  });
+
+  it("rejects a caller-supplied currency that differs from the live catalog currency", async () => {
+    const db = database({ catalogCurrency: "USD" });
+    await expect(new PostgresOrderStore(db.pool).create(order))
+      .rejects.toThrow("Order item price does not match the current published catalog price");
+    expect(db.statements.some(sql => sql.includes("INSERT INTO customer_order_items"))).toBe(false);
+    expect(db.statements.at(-1)).toBe("ROLLBACK");
   });
 
   it("returns already_exists only when the persisted order lines also match", async () => {

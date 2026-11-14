@@ -237,8 +237,11 @@ export class PostgresOrderStore {
           throw new Error("Merchant branch is unavailable for order creation");
         }
         for (const item of suborder.items) {
-          const variant = await client.query<{ id: string }>(
-            `SELECT v.id
+          const variant = await client.query<{
+            id: string; catalog_price_minor: string | number | null; catalog_currency: string | null;
+          }>(
+            `SELECT v.id, COALESCE(v.price_minor,p.price_minor) AS catalog_price_minor,
+                    COALESCE(v.currency,p.currency) AS catalog_currency
              FROM commerce_catalog_variants v
              JOIN commerce_catalog_products p
                ON p.tenant_id = v.tenant_id AND p.id = v.product_id
@@ -248,8 +251,18 @@ export class PostgresOrderStore {
              FOR SHARE OF v, p`,
             [persistedSuborder.tenant_id, item.productVariantId, item.sku, item.currency]
           );
-          if (variant.rowCount !== 1 || !variant.rows[0]) {
+          const catalogVariant = variant.rows[0];
+          if (variant.rowCount !== 1 || !catalogVariant) {
             throw new Error("Order item variant is not published for this merchant or its SKU/currency does not match");
+          }
+          const catalogPrice = typeof catalogVariant.catalog_price_minor === "number"
+            ? (Number.isSafeInteger(catalogVariant.catalog_price_minor) && catalogVariant.catalog_price_minor >= 0
+              ? catalogVariant.catalog_price_minor : null)
+            : typeof catalogVariant.catalog_price_minor === "string" && /^\\d+$/.test(catalogVariant.catalog_price_minor)
+              ? Number(catalogVariant.catalog_price_minor) : null;
+          if (catalogPrice === null || !Number.isSafeInteger(catalogPrice) ||
+              catalogPrice !== item.unitPriceMinor || catalogVariant.catalog_currency !== item.currency) {
+            throw new Error("Order item price does not match the current published catalog price");
           }
           await client.query(
             `INSERT INTO customer_order_items
