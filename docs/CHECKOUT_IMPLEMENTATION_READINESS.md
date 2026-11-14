@@ -321,7 +321,9 @@ into `PostgresOrderStore` would be unsafe and is intentionally not an acceptable
   query behavior, malformed checkout input, and multi-branch fail-closed rollback.
 - Hardened checkout idempotency recovery: the service now persists a canonical
   `checkoutRequest` snapshot containing the expected cart version and customer-selected
-  destination, resolves a previously committed order before repricing, and checks again
+  destination. The request snapshot is nested inside the database-enforced immutable
+  `checkoutPricing` envelope, so later operational metadata updates cannot rewrite it.
+  The service resolves a previously committed order before repricing and checks again
   after acquiring the customer-cart advisory lock. This covers the concurrent-retry case
   where the first request commits and converts the cart while a second request is waiting.
   A matching retry returns the original order; reusing the key with a different request
