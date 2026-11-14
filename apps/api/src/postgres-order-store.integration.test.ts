@@ -14,6 +14,9 @@ integration("PostgreSQL customer order persistence", () => {
   const suffix = randomUUID();
   const merchantId = "order-store-merchant-" + suffix;
   const branchId = "order-store-branch-" + suffix;
+  const integrationId = "order-store-integration-" + suffix;
+  const productId = "order-store-product-" + suffix;
+  const variantId = "order-store-variant-" + suffix;
   const orderIds: string[] = [];
 
   beforeEach(async () => {
@@ -27,12 +30,34 @@ integration("PostgreSQL customer order persistence", () => {
        VALUES ($1,$2,'Order Store Branch','DMM','active')`,
       [branchId,merchantId]
     );
+    await pool.query(
+      `INSERT INTO tenant_integrations
+       (id,tenant_id,family,provider_key,display_name,status,created_at,updated_at)
+       VALUES ($1,$2,'commerce','manual','Order Store Test Catalog','connected',now(),now())`,
+      [integrationId,merchantId]
+    );
+    await pool.query(
+      `INSERT INTO commerce_catalog_products
+       (id,tenant_id,integration_id,provider_key,external_product_id,canonical_url,title,
+        currency,price_minor,source_type,source_captured_at,source_content_sha256,published_at)
+       VALUES ($1,$2,$3,'manual',$4,'https://catalog.example.test/product','Order Store Test Product',
+        'SAR',6450,'manual',now(),repeat('a',64),now())`,
+      [productId,merchantId,integrationId,"external-product-"+suffix]
+    );
+    await pool.query(
+      `INSERT INTO commerce_catalog_variants
+       (id,tenant_id,product_id,external_variant_id,sku,currency,price_minor)
+       VALUES ($1,$2,$3,$4,$5,'SAR',6450)`,
+      [variantId,merchantId,productId,"external-variant-"+suffix,"ORDER-STORE-SKU-"+suffix]
+    );
   });
 
   async function cleanup() {
     await pool.query("DELETE FROM customer_order_items WHERE merchant_id=$1",[merchantId]);
     await pool.query("DELETE FROM merchant_suborders WHERE merchant_id=$1",[merchantId]);
     await pool.query("DELETE FROM customer_orders WHERE id = ANY($1::text[])",[orderIds]);
+    await pool.query("DELETE FROM commerce_catalog_products WHERE tenant_id=$1",[merchantId]);
+    await pool.query("DELETE FROM tenant_integrations WHERE tenant_id=$1",[merchantId]);
     await pool.query("DELETE FROM merchant_branches WHERE merchant_id=$1",[merchantId]);
     await pool.query("DELETE FROM merchants WHERE id=$1",[merchantId]);
   }
@@ -51,7 +76,7 @@ integration("PostgreSQL customer order persistence", () => {
         id: "order-store-suborder-" + randomUUID(), merchantId, branchId,
         status: "pending_validation", subtotalMinor: 12900,
         items: [{
-          id: "order-store-item-" + randomUUID(), productVariantId: "external-variant-" + suffix,
+          id: "order-store-item-" + randomUUID(), productVariantId: variantId,
           sku: "ORDER-STORE-SKU-" + suffix, quantity: 2, unitPriceMinor: 6450, currency: "SAR"
         }]
       }]
