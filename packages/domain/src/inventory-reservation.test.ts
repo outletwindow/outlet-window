@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { canReleasePreparation, reserveInventoryForPaidOrder } from "./inventory-reservation.js";
+import { canReleasePreparation, reserveInventoryForPaidOrder, UnconfiguredMerchantInventoryReservationAdapter } from "./inventory-reservation.js";
 
 const request = {
   tenantId: "merchant-tenant-1",
@@ -54,6 +54,12 @@ describe("inventory reservation boundary", () => {
     expect(unsupported).toEqual({
       state: "unguaranteed", reason: "hard_reservation_not_supported"
     });
+  });
+
+  it("fails closed when no verified merchant reservation integration is configured", async () => {
+    const port = new UnconfiguredMerchantInventoryReservationAdapter();
+    const result = await reserveInventoryForPaidOrder({ paymentCaptured: true, request, port });
+    expect(result).toEqual({ state: "unguaranteed", reason: "merchant_integration_missing" });
   });
 
   it("rejects duplicate variants and invalid quantities before adapter access", async () => {
