@@ -126,16 +126,35 @@ integration("PostgreSQL customer checkout orchestration", () => {
 
   it("creates order, persists delivery and pricing snapshots, transitions readiness, and converts cart atomically", async () => {
     const service = new PostgresCustomerCheckoutService(pool, randomUUID);
-    const result = await service.create({
+    const checkoutInput = {
       customerId, expectedCartVersion: 2, idempotencyKey: "checkout-integration-" + suffix,
       destination: { countryCode: "SA", cityCode: "JUBAIL", serviceCode: "standard_delivery",
         latitude: 27.010000, longitude: 49.650000,
         addressSnapshot: { label: "Home", buildingNumber: "12" } },
-      actorId: "checkout-system", actorRole: "system", correlationId
-    });
+      actorId: "checkout-system", actorRole: "system" as const, correlationId
+    };
+    const result = await service.create(checkoutInput);
     expect(result.outcome).toBe("created");
     if (result.outcome !== "created") return;
     orderIds.push(result.orderId);
+
+    // A retry after a successful commit must resolve the same order even though
+    // the original cart has already been converted and is no longer active.
+    const replay = await service.create(checkoutInput);
+    expect(replay).toMatchObject({ outcome: "created", orderId: result.orderId,
+      totalMinor: result.totalMinor, currency: result.currency });
+
+    // Reusing the key for a different delivery destination must fail closed.
+    const conflictingReplay = await service.create({
+      ...checkoutInput,
+      destination: { ...checkoutInput.destination, latitude: 27.020000 }
+    });
+    expect(conflictingReplay).toEqual({ outcome: "idempotency_conflict" });
+
+    const persistedOrderCount = await pool.query<{ count: string }>(
+      "SELECT COUNT(*)::text AS count FROM customer_orders WHERE id=$1", [result.orderId]
+    );
+    expect(persistedOrderCount.rows[0]?.count).toBe("1");
 
     const parent = await pool.query<{
       status: string; currency: string; total_minor: string; delivery_zone_id: string;
