@@ -104,7 +104,7 @@ export class PostgresOrderTransitionStore {
         orderId: current.id,
         status: current.status,
         version: current.version,
-        updatedAt: new Date().toISOString(),
+        updatedAt: input.context.occurredAt,
         merchantId: current.merchant_id,
         branchId: current.branch_id,
         parentOrderId: current.order_id
