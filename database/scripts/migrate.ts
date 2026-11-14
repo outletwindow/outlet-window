@@ -58,7 +58,8 @@ async function main(): Promise<void> {
       { version: "0039_single_initial_capture_per_order", file: "0039_single_initial_capture_per_order.sql" },
       { version: "0040_paid_checkout_inventory_reservation_jobs", file: "0040_paid_checkout_inventory_reservation_jobs.sql" },
       { version: "0041_branch_inventory_snapshot_watermark", file: "0041_branch_inventory_snapshot_watermark.sql" },
-      { version: "0042_branch_inventory_reconciliation_alerts", file: "0042_branch_inventory_reconciliation_alerts.sql" }
+      { version: "0042_branch_inventory_reconciliation_alerts", file: "0042_branch_inventory_reconciliation_alerts.sql" },
+      { version: "0043_merchant_inventory_provider_branch_scopes", file: "0043_merchant_inventory_provider_branch_scopes.sql" }
     ].map(async migration => ({
       version: migration.version,
       sql: await readFile(resolve(process.cwd(), `../../database/migrations/${migration.file}`), "utf8")
