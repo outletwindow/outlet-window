@@ -59,7 +59,7 @@ export class PostgresPaymentIntentStore implements PaymentCaptureOrderResolver {
    * Resolve a provider-confirmed capture even when webhook delivery is delayed
    * beyond the payment-intent fulfillment deadline. Expiry prevents starting
    * a new payment; it must not discard evidence that the provider already
-   * collected the exact amount for this still-payable order.
+   * collected the exact amount even if fulfillment has already advanced the parent status.
    */
   async findExpectedOrder(input: {
     providerKey:string; providerPaymentReference:string; amountMinor:number; currency:string;
@@ -69,8 +69,7 @@ export class PostgresPaymentIntentStore implements PaymentCaptureOrderResolver {
        FROM provider_payment_intents i
        JOIN customer_orders o ON o.tenant_id=i.tenant_id AND o.id=i.order_id
        WHERE i.provider_key=$1 AND i.provider_payment_reference=$2
-         AND i.amount_minor=$3 AND i.currency=$4
-         AND o.status='awaiting_payment'`,
+         AND i.amount_minor=$3 AND i.currency=$4`,
       [input.providerKey,input.providerPaymentReference,input.amountMinor,input.currency]
     );
     return result.rowCount===1 ? {tenantId:result.rows[0]!.tenant_id,orderId:result.rows[0]!.order_id,paymentIntentId:result.rows[0]!.id} : null;
