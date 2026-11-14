@@ -28,7 +28,7 @@ function createPool(rows: {
   const query = vi.fn(async <Row>(sql: string) => {
     calls.push(sql);
     if (sql.includes("WITH due AS")) return { rows: [job] as Row[], rowCount: 1 };
-    if (sql.includes("FROM verified_order_payment_captures")) {
+    if (sql.includes("verified_order_payment_captures")) {
       return { rows: rows.payment === null ? [] : [rows.payment ?? payment] as Row[], rowCount: rows.payment === null ? 0 : 1 };
     }
     if (sql.includes("FROM merchant_suborders")) {
