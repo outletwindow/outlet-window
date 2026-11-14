@@ -166,7 +166,8 @@ export function buildPostgresApp(options: PostgresApiOptions) {
         "0033_payment_intent_creation_attempt_expiry",
         "0034_catalog_product_publication",
         "0035_customer_durable_carts",
-        "0036_inventory_catalog_variant_identity"
+        "0036_inventory_catalog_variant_identity",
+        "0037_order_item_catalog_variant_scope"
       ];
       const result = await options.pool.query<{ version: string }>(
         "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",
