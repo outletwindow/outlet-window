@@ -85,4 +85,13 @@ describe("customer order permissions", () => {
     const customer = { ...assignment("customer"), scope: {} };
     expect(grantsForAssignments([customer])).toEqual([]);
   });
+
+  it("grants cart and checkout access only to the customer ID in the IAM assignment", () => {
+    const customer = { ...assignment("customer"), scope: { customerId: "principal-1" } };
+    expect(grantsForAssignments([customer])).toEqual([{
+      resource: "customer.cart",
+      actions: ["read", "create", "delete"],
+      scope: { customerId: "principal-1" }
+    }]);
+  });
 });
