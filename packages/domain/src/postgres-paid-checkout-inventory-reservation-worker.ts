@@ -149,78 +149,94 @@ export class PostgresPaidCheckoutInventoryReservationWorker {
        WHERE s.order_id=$1 ORDER BY s.id`,
       [job.order_id, job.tenant_id]
     );
-    if (suborders.rows.length !== 1) {
+    if (suborders.rows.length === 0) {
       await this.recordRecovery(job, payment, "TASK_COMMIT_REJECTED", undefined, []);
-      return { needsReview: true, failureCode: "UNSUPPORTED_SUBORDER_COUNT" };
+      return { needsReview: true, failureCode: "ORDER_SUBORDERS_MISSING" };
     }
-    const suborder = suborders.rows[0]!;
-    if (!["pending_validation", "awaiting_payment", "on_hold", "confirmed"].includes(suborder.status)) {
-      await this.recordRecovery(job, payment, "TASK_COMMIT_REJECTED", suborder.id, []);
+    const orderedSuborders = suborders.rows;
+    if (orderedSuborders.some(row => !["pending_validation", "awaiting_payment", "confirmed"].includes(row.status))) {
+      const failed = orderedSuborders.find(row => !["pending_validation", "awaiting_payment", "confirmed"].includes(row.status));
+      await this.recordRecovery(job, payment, "TASK_COMMIT_REJECTED", failed?.id, []);
       return { needsReview: true, failureCode: "SUBORDER_STATUS_NOT_RESERVABLE" };
     }
-    if (payment.status !== "awaiting_payment" && suborder.status !== "confirmed") {
-      await this.recordRecovery(job, payment, "TASK_COMMIT_REJECTED", suborder.id, []);
+    // Once one suborder is confirmed, the aggregate parent status becomes "preparing"
+    // even while sibling suborders remain payable. The verified capture remains the
+    // authority; accept that aggregate state for the remaining suborders.
+    if (!["awaiting_payment", "preparing"].includes(payment.status) &&
+        !orderedSuborders.every(row => row.status === "confirmed")) {
+      await this.recordRecovery(job, payment, "TASK_COMMIT_REJECTED", undefined, []);
       return { needsReview: true, failureCode: "ORDER_STATUS_NOT_PAYABLE" };
     }
+    if (orderedSuborders.every(row => row.status === "confirmed")) return { needsReview: false };
 
-    // A confirmed suborder has already passed the transition store's capture and
-    // reservation evidence gates. Short-circuit retries before touching a reservation
-    // that may since have been consumed by a verified handover.
-    if (suborder.status === "confirmed") return { needsReview: false };
-
-    const itemResult = await this.pool.query<OrderLineRow>(
-      `SELECT product_variant_id,sku,quantity FROM customer_order_items
-       WHERE tenant_id=$1 AND order_id=$2 AND suborder_id=$3
-         AND merchant_id=$4 AND branch_id=$5
-       ORDER BY product_variant_id`,
-      [suborder.tenant_id, job.order_id, suborder.id, suborder.merchant_id, suborder.branch_id]
-    );
-    if (itemResult.rows.length < 1) {
-      await this.recordRecovery(job, payment, "TASK_COMMIT_REJECTED", suborder.id, []);
-      return { needsReview: true, failureCode: "ORDER_LINES_MISSING" };
-    }
-
-    const requestedAtUtc = this.now().toISOString();
-    const reservation = await reserveInventoryForPaidOrder({
-      paymentCaptured: true,
-      port: this.inventory,
-      request: {
-        tenantId: suborder.tenant_id,
-        orderId: job.order_id,
-        suborderId: suborder.id,
-        merchantId: suborder.merchant_id,
-        branchId: suborder.branch_id,
-        idempotencyKey: `paid-checkout:${job.tenant_id}:${job.order_id}:${suborder.id}`,
-        requestedAtUtc,
-        lines: itemResult.rows.map(line => ({
-          productVariantId: line.product_variant_id, sku: line.sku, quantity: Number(line.quantity)
-        }))
-      }
-    });
-
-    if (reservation.state === "unavailable" || reservation.state === "unguaranteed") {
-      const code: CheckoutRecoveryFailureCode = reservation.state === "unavailable"
-        ? "INVENTORY_UNAVAILABLE" : "INVENTORY_UNGUARANTEED";
-      await this.recordRecovery(job, payment, code, suborder.id, []);
-      await this.moveToHoldIfSafe(job, suborder, reservation.state);
-      return { needsReview: true, failureCode: code };
-    }
-
-    let current = suborder;
-    if (current.status === "pending_validation") {
-      const awaiting = await this.transition(current, job.order_id, "awaiting_payment");
-      if (awaiting.outcome !== "updated") {
+    // Reserve every branch first. No suborder is confirmed until all branch holds
+    // have succeeded, so an unavailable later branch cannot leave a partially
+    // fulfilled paid order without a durable recovery record for earlier holds.
+    const reservations: Array<{ suborder: SuborderRow; reservationReference: string }> = [];
+    for (const suborder of orderedSuborders) {
+      if (suborder.status === "confirmed") continue;
+      const itemResult = await this.pool.query<OrderLineRow>(
+        `SELECT product_variant_id,sku,quantity FROM customer_order_items
+         WHERE tenant_id=$1 AND order_id=$2 AND suborder_id=$3
+           AND merchant_id=$4 AND branch_id=$5
+         ORDER BY product_variant_id`,
+        [suborder.tenant_id, job.order_id, suborder.id, suborder.merchant_id, suborder.branch_id]
+      );
+      if (itemResult.rows.length < 1) {
         await this.recordRecovery(job, payment, "TASK_COMMIT_REJECTED", suborder.id,
-          [{ suborderId: suborder.id, reservationReference: reservation.reservationReference }]);
-        return { needsReview: true, failureCode: "SUBORDER_PAYMENT_STAGE_REJECTED" };
+          reservations.map(item => ({ suborderId: item.suborder.id, reservationReference: item.reservationReference })));
+        return { needsReview: true, failureCode: "ORDER_LINES_MISSING" };
       }
-      current = { ...current, status: "awaiting_payment", version: current.version + 1 };
+      const reservation = await reserveInventoryForPaidOrder({
+        paymentCaptured: true,
+        port: this.inventory,
+        request: {
+          tenantId: suborder.tenant_id,
+          orderId: job.order_id,
+          suborderId: suborder.id,
+          merchantId: suborder.merchant_id,
+          branchId: suborder.branch_id,
+          idempotencyKey: `paid-checkout:${job.tenant_id}:${job.order_id}:${suborder.id}`,
+          requestedAtUtc: this.now().toISOString(),
+          lines: itemResult.rows.map(line => ({
+            productVariantId: line.product_variant_id, sku: line.sku, quantity: Number(line.quantity)
+          }))
+        }
+      });
+      if (reservation.state === "unavailable" || reservation.state === "unguaranteed") {
+        const code: CheckoutRecoveryFailureCode = reservation.state === "unavailable"
+          ? "INVENTORY_UNAVAILABLE" : "INVENTORY_UNGUARANTEED";
+        const references = reservations.map(item => ({
+          suborderId: item.suborder.id, reservationReference: item.reservationReference
+        }));
+        await this.recordRecovery(job, payment, code, suborder.id, references);
+        for (const candidate of orderedSuborders) {
+          await this.moveToHoldIfSafe(job, candidate, reservation.state);
+        }
+        return { needsReview: true, failureCode: code };
+      }
+      reservations.push({ suborder, reservationReference: reservation.reservationReference });
     }
-    const confirmed = await this.transition(current, job.order_id, "confirmed");
-    if (confirmed.outcome !== "updated") {
-      await this.recordRecovery(job, payment, "TASK_COMMIT_REJECTED", suborder.id,
-        [{ suborderId: suborder.id, reservationReference: reservation.reservationReference }]);
-      return { needsReview: true, failureCode: "SUBORDER_CONFIRMATION_REJECTED" };
+
+    // All exact branch reservations now exist. Advance each suborder independently;
+    // any transition failure is captured with every reservation reference for review.
+    for (const item of reservations) {
+      let current = item.suborder;
+      if (current.status === "pending_validation") {
+        const awaiting = await this.transition(current, job.order_id, "awaiting_payment");
+        if (awaiting.outcome !== "updated") {
+          await this.recordRecovery(job, payment, "TASK_COMMIT_REJECTED", current.id,
+            reservations.map(entry => ({ suborderId: entry.suborder.id, reservationReference: entry.reservationReference })));
+          return { needsReview: true, failureCode: "SUBORDER_PAYMENT_STAGE_REJECTED" };
+        }
+        current = { ...current, status: "awaiting_payment", version: current.version + 1 };
+      }
+      const confirmed = await this.transition(current, job.order_id, "confirmed");
+      if (confirmed.outcome !== "updated") {
+        await this.recordRecovery(job, payment, "TASK_COMMIT_REJECTED", current.id,
+          reservations.map(entry => ({ suborderId: entry.suborder.id, reservationReference: entry.reservationReference })));
+        return { needsReview: true, failureCode: "SUBORDER_CONFIRMATION_REJECTED" };
+      }
     }
     return { needsReview: false };
   }
