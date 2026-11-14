@@ -99,6 +99,9 @@ export class PostgresOrderStore {
       requireIdentifier(suborder.id, "Suborder ID");
       requireIdentifier(suborder.merchantId, "Merchant ID");
       requireIdentifier(suborder.branchId, "Branch ID");
+      if (suborder.status !== "pending_validation") {
+        throw new Error("New merchant suborders must start in pending_validation");
+      }
       validateMetadata(suborder.metadata, "Suborder metadata");
       if (suborderIds.has(suborder.id)) throw new Error("Duplicate suborder ID");
       suborderIds.add(suborder.id);
