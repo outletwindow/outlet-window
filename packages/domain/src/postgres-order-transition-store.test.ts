@@ -117,6 +117,17 @@ describe("PostgresOrderTransitionStore", () => {
     expect(db.statements.at(-1)).toBe("COMMIT");
   });
 
+  it("rejects audit evidence scoped to a different merchant branch", async () => {
+    const db = fakePool();
+    await expect(new PostgresOrderTransitionStore(db.pool).transitionSuborder({
+      tenantId: "tenant-1", orderId: "order-1", suborderId: "sub-1",
+      nextStatus: "awaiting_payment", context,
+      auditEvent: { ...auditEvent, branchId: "branch-other" }
+    })).rejects.toThrow("Order transition audit scope does not match the locked suborder");
+    expect(db.statements).toContain("ROLLBACK");
+    expect(db.statements.some(sql => sql.startsWith("UPDATE"))).toBe(false);
+  });
+
   it("rejects invalid lifecycle transitions and rolls back", async () => {
     const db = fakePool();
     const result = await new PostgresOrderTransitionStore(db.pool).transitionSuborder({
