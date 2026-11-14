@@ -2,9 +2,7 @@
 
 Status: **not ready for a production checkout endpoint**
 
-This note records the verified repository state on branch `work/outlet-window-build` at branch head commit
-`2c77d0bda1d7003385b314055583b41c8516d44c`. It is an implementation gate, not a claim that
-checkout is complete.
+This note records the verified repository state on branch `work/outlet-window-build`. It is an implementation gate, not a claim that checkout is complete.
 
 ## Verified building blocks
 
@@ -186,3 +184,20 @@ into `PostgresOrderStore` would be unsafe and is intentionally not an acceptable
   delivery quoting, immutable order creation, cart conversion, platform readiness transition,
   and payment recovery. Multi-branch/multi-stop delivery pricing must also be defined and
   verified before enabling multi-store checkout.
+
+
+## Latest verification — immutable checkout pricing
+
+- Added migration `0038_immutable_checkout_pricing_snapshot`. A pricing snapshot supplied
+  on the initial customer-order insert can no longer be added later, removed, or changed by
+  updating the order metadata. Other operational metadata remains editable.
+- Added a PostgreSQL integration test that proves unrelated metadata updates still work while
+  snapshot mutation and deletion fail with a check-violation.
+- Registered migration 0038 in the application migration runner and API database readiness
+  gate, and added the integration test to CI.
+- Exported the durable cart store and authoritative cart repricing service from the domain
+  package public index.
+- This protects a snapshot once an eventual checkout writer stores it. It does not itself
+  create that writer or make cart-to-order checkout atomic. Checkout remains blocked until
+  transactional quote/order creation, cart conversion, reservation after verified capture,
+  and recovery orchestration are implemented and tested.
