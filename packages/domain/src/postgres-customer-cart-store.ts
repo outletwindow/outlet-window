@@ -181,6 +181,9 @@ export class PostgresCustomerCartStore {
         !Number.isSafeInteger(input.expectedCartVersion) || input.expectedCartVersion < 1) {
       throw new Error("invalid_customer_cart_conversion_request");
     }
+    // Serialize conversion with add/remove/reprice operations on this customer's cart.
+    // The lock is transaction-scoped and is shared by all customer-cart writers.
+    await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", ["customer-cart:" + input.customerId]);
     const result = await client.query<{ id: string }>(
       `UPDATE customer_carts
        SET status='converted', version=version+1, updated_at=clock_timestamp()

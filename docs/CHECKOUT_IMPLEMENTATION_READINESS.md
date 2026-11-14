@@ -252,9 +252,10 @@ into `PostgresOrderStore` would be unsafe and is intentionally not an acceptable
   version still matches. The update is tenant-scoped and uses a conditional
   `UPDATE ... RETURNING`, so stale versions, already-converted carts, and ownership
   mismatches return a conflict without changing data.
-- The method accepts a caller-owned PostgreSQL client and never begins, commits, rolls back,
-  or releases it. Checkout orchestration must call it on the same transaction/client used
-  for cart repricing and order creation, after a matching order has been durably inserted;
+- The method accepts a caller-owned PostgreSQL client, acquires the same customer-scoped
+  transaction advisory lock used by cart add/remove/repricing, and never begins, commits,
+  rolls back, or releases the connection. Checkout orchestration must call it on the same
+  transaction/client used for cart repricing and order creation, after a matching order has been durably inserted;
   any conversion conflict must roll back the whole checkout transaction.
 - Unit tests cover successful conversion, stale/ownership conflict behavior, and validation
   before SQL. This is a composition primitive only: there is still no public cart-to-order

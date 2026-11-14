@@ -122,6 +122,11 @@ describe("PostgresCustomerCartStore",()=>{
    customerId:"customer-1",cartId:"cart-1",expectedCartVersion:7
   },s.client);
   expect(result).toBe("converted");
+  const cartLock=s.calls.findIndex(x=>x.sql.includes("pg_advisory_xact_lock"));
+  const updateIndex=s.calls.findIndex(x=>x.sql.includes("SET status='converted'"));
+  expect(cartLock).toBeGreaterThanOrEqual(0);
+  expect(cartLock).toBeLessThan(updateIndex);
+  expect(s.calls[cartLock]?.values).toEqual(["customer-cart:customer-1"]);
   const update=s.calls.find(x=>x.sql.includes("SET status='converted'"));
   expect(update?.sql).toContain("tenant_id=$1 AND id=$2 AND customer_id=$3");
   expect(update?.sql).toContain("status='active' AND version=$4");
