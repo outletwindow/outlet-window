@@ -45,7 +45,7 @@ describe("PostgreSQL complete branch inventory snapshots", () => {
     expect(resolvedAlerts?.values).toEqual([
       "tenant-1", "merchant-1", "branch-1", "variant-present", "2026-11-14T12:00:00.000Z"
     ]);
-    const omitted = pool.client.statements.find(item => item.sql.includes("UPDATE branch_inventory"));
+    const omitted = pool.client.statements.find(item => item.sql.includes("UPDATE branch_inventory SET"));
     expect(omitted?.sql).toContain("SET available_quantity = reserved_quantity");
     expect(omitted?.sql).toContain("NOT (product_variant_id = ANY($3::text[]))");
     expect(omitted?.sql).toContain("last_synced_at <= $5");
