@@ -75,6 +75,14 @@ describe("VerifiedInventoryProviderReservationAdapter", () => {
     await expect(adapter.reserveExactVariants(request)).rejects.toThrow("INVENTORY_PROVIDER_ACKNOWLEDGEMENT_INVALID");
   });
 
+  it("rejects duplicate or substituted variant lines in a provider acknowledgement", async () => {
+    const { adapter } = adapterFor({
+      ...reserved,
+      lines: [request.lines[0]!, request.lines[0]!]
+    });
+    await expect(adapter.reserveExactVariants(request)).rejects.toThrow("INVENTORY_PROVIDER_ACKNOWLEDGEMENT_INVALID");
+  });
+
   it("rejects expired, malformed, or unsafe reservation references", async () => {
     for (const patch of [
       { expiresAtUtc: "2026-11-14T11:59:00.000Z" },
