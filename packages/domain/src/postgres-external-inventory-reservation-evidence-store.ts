@@ -111,10 +111,11 @@ export class PostgresExternalInventoryReservationEvidenceStore implements Extern
       if (order.rowCount !== 1) throw new Error("external_inventory_reservation_paid_order_not_found");
 
       const stock = await client.query<{
-        catalog_variant_id: string; external_variant_id: string; sku: string;
+        catalog_variant_id: string; external_variant_id: string; sku: string; order_quantity: number;
       }>(
         `SELECT oi.product_variant_id AS catalog_variant_id,
-                i.product_variant_id AS external_variant_id, i.sku
+                i.product_variant_id AS external_variant_id, i.sku,
+                oi.quantity AS order_quantity
          FROM customer_order_items oi
          JOIN commerce_catalog_variants v
            ON v.tenant_id=oi.tenant_id AND v.id=oi.product_variant_id
@@ -131,7 +132,7 @@ export class PostgresExternalInventoryReservationEvidenceStore implements Extern
       const expected = [...request.lines].sort((a,b) => a.productVariantId.localeCompare(b.productVariantId));
       if (stock.rows.length !== expected.length || stock.rows.some((line,index) =>
         line.catalog_variant_id !== expected[index]?.productVariantId ||
-        line.sku !== expected[index]?.sku)) {
+        line.sku !== expected[index]?.sku || line.order_quantity !== expected[index]?.quantity)) {
         throw new Error("external_inventory_reservation_catalog_mapping_mismatch");
       }
 
