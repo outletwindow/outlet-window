@@ -5,6 +5,19 @@ INSERT INTO merchants (id,legal_name,display_name,country_code,status)
 VALUES ('ci-inventory-merchant','Inventory Merchant LLC','Inventory Merchant','SA','active');
 INSERT INTO merchant_branches (id,merchant_id,display_name,city_code,status)
 VALUES ('ci-inventory-branch','ci-inventory-merchant','Inventory Branch','JUB','active');
+INSERT INTO tenant_integrations
+  (id,tenant_id,family,provider_key,display_name,status,capabilities,created_at,updated_at)
+VALUES ('ci-inventory-integration','ci-inventory-merchant','commerce','ci-inventory','Inventory Test Catalog','connected','["catalog.read"]',now(),now());
+INSERT INTO commerce_catalog_products
+  (id,tenant_id,integration_id,provider_key,external_product_id,canonical_url,title,
+   currency,price_minor,source_type,source_captured_at,source_content_sha256,published_at,publication_updated_at)
+VALUES ('ci-inventory-product','ci-inventory-merchant','ci-inventory-integration','ci-inventory',
+   'inventory-product','https://inventory.example.test/product','Inventory Test Product',
+   'SAR',10000,'manual',now(),repeat('c',64),now(),now());
+INSERT INTO commerce_catalog_variants
+  (id,tenant_id,product_id,external_variant_id,sku,currency,price_minor,availability)
+VALUES ('ci-inventory-variant','ci-inventory-merchant','ci-inventory-product',
+   'ci-inventory-variant','CI-SKU-001','SAR',10000,'in_stock');
 INSERT INTO customer_orders
   (id,tenant_id,customer_id,idempotency_key,status,currency,total_minor)
 VALUES ('ci-inventory-order','platform','ci-inventory-customer',
