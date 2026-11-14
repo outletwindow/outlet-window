@@ -74,10 +74,52 @@ export class PostgresCustomerCheckoutService {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
+      const checkoutRequest = {
+        expectedCartVersion: input.expectedCartVersion,
+        destination: {
+          countryCode: input.destination.countryCode,
+          cityCode: input.destination.cityCode,
+          serviceCode: input.destination.serviceCode,
+          latitude: input.destination.latitude,
+          longitude: input.destination.longitude,
+          ...(input.destination.addressSnapshot === undefined ? {} : { addressSnapshot: input.destination.addressSnapshot })
+        }
+      };
+      const replay = await this.orderStore.resolveCustomerCheckoutIdempotencyInTransaction({
+        tenantId: "platform", customerId: input.customerId,
+        idempotencyKey: input.idempotencyKey, request: checkoutRequest
+      }, client);
+      if (replay.outcome === "match") {
+        await client.query("COMMIT");
+        return { outcome: "created", orderId: replay.orderId, suborderIds: replay.suborderIds,
+          totalMinor: replay.totalMinor, currency: replay.currency };
+      }
+      if (replay.outcome === "conflict") {
+        await client.query("ROLLBACK");
+        return { outcome: "idempotency_conflict" };
+      }
+
       const priced = await this.repricing.repriceInTransaction({
         customerId: input.customerId, expectedCartVersion: input.expectedCartVersion
       }, client);
       if (priced.outcome !== "priced") {
+        // A concurrent request may have committed while this request waited for the
+        // customer-cart advisory lock. Resolve its idempotency key before returning
+        // the now-converted cart as missing.
+        const replayAfterLock = await this.orderStore.resolveCustomerCheckoutIdempotencyInTransaction({
+          tenantId: "platform", customerId: input.customerId,
+          idempotencyKey: input.idempotencyKey, request: checkoutRequest
+        }, client);
+        if (replayAfterLock.outcome === "match") {
+          await client.query("COMMIT");
+          return { outcome: "created", orderId: replayAfterLock.orderId,
+            suborderIds: replayAfterLock.suborderIds, totalMinor: replayAfterLock.totalMinor,
+            currency: replayAfterLock.currency };
+        }
+        if (replayAfterLock.outcome === "conflict") {
+          await client.query("ROLLBACK");
+          return { outcome: "idempotency_conflict" };
+        }
         await client.query("ROLLBACK");
         if (priced.outcome === "unavailable") return { outcome: "unavailable" };
         if (priced.outcome === "invalid_snapshot") return { outcome: "invalid_snapshot" };
@@ -147,7 +189,7 @@ export class PostgresCustomerCheckoutService {
         idempotencyKey: input.idempotencyKey,
         currency: priced.currency,
         totalMinor,
-        metadata: { source: "customer_checkout", checkoutPricing },
+        metadata: { source: "customer_checkout", checkoutRequest, checkoutPricing },
         deliveryDestination: {
           countryCode: input.destination.countryCode,
           cityCode: input.destination.cityCode,
