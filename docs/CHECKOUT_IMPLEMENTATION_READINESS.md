@@ -244,3 +244,19 @@ into `PostgresOrderStore` would be unsafe and is intentionally not an acceptable
 - This is a transaction composition primitive, not yet the end-to-end cart checkout flow;
   delivery quote orchestration, immutable snapshot construction, cart closure, and the
   platform readiness transition still need to be composed and integration-tested together.
+
+## Transaction-scoped cart conversion primitive
+
+- Added `PostgresCustomerCartStore.closeAsConvertedInTransaction`. It marks only the
+  authenticated customer's exact active cart as converted, and only when the expected cart
+  version still matches. The update is tenant-scoped and uses a conditional
+  `UPDATE ... RETURNING`, so stale versions, already-converted carts, and ownership
+  mismatches return a conflict without changing data.
+- The method accepts a caller-owned PostgreSQL client and never begins, commits, rolls back,
+  or releases it. Checkout orchestration must call it on the same transaction/client used
+  for cart repricing and order creation, after a matching order has been durably inserted;
+  any conversion conflict must roll back the whole checkout transaction.
+- Unit tests cover successful conversion, stale/ownership conflict behavior, and validation
+  before SQL. This is a composition primitive only: there is still no public cart-to-order
+  checkout route, and multi-branch carts remain blocked until a multi-stop delivery quote
+  and per-stop pricing contract are implemented and tested.

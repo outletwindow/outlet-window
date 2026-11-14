@@ -167,6 +167,31 @@ export class PostgresCustomerCartStore {
     }
   }
 
+
+  /**
+   * Marks the exact active cart as converted inside a caller-owned checkout transaction.
+   * The caller must already hold (or acquire) the customer-cart advisory lock and must
+   * commit this together with the corresponding order. A stale version or ownership
+   * mismatch fails closed; this method never commits or releases the connection.
+   */
+  async closeAsConvertedInTransaction(input: {
+    customerId: string; cartId: string; expectedCartVersion: number;
+  }, client: PostgresClient): Promise<"converted" | "conflict"> {
+    if (!input.customerId.trim() || !input.cartId.trim() ||
+        !Number.isSafeInteger(input.expectedCartVersion) || input.expectedCartVersion < 1) {
+      throw new Error("invalid_customer_cart_conversion_request");
+    }
+    const result = await client.query<{ id: string }>(
+      `UPDATE customer_carts
+       SET status='converted', version=version+1, updated_at=clock_timestamp()
+       WHERE tenant_id=$1 AND id=$2 AND customer_id=$3
+         AND status='active' AND version=$4
+       RETURNING id`,
+      [PLATFORM_TENANT, input.cartId, input.customerId, input.expectedCartVersion]
+    );
+    return result.rowCount === 1 ? "converted" : "conflict";
+  }
+
   private async readCart(queryable: PostgresClient | PostgresPool, customerId: string): Promise<CustomerCart | null> {
     const result = await queryable.query<CartRow>(
       "SELECT id,customer_id,currency,version FROM customer_carts WHERE tenant_id=$1 AND customer_id=$2 AND status='active'",

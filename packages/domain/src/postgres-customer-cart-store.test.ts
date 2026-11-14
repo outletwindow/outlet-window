@@ -115,4 +115,40 @@ describe("PostgresCustomerCartStore",()=>{
   expect(cartUpdate?.values).toEqual(["cart-1"]);
   expect(s.calls.at(-1)?.sql).toBe("COMMIT");
  });
+
+ it("converts only the expected active customer cart inside the caller transaction",async()=>{
+  const s=setup();
+  const result=await s.store.closeAsConvertedInTransaction({
+   customerId:"customer-1",cartId:"cart-1",expectedCartVersion:7
+  },s.client);
+  expect(result).toBe("converted");
+  const update=s.calls.find(x=>x.sql.includes("SET status='converted'"));
+  expect(update?.sql).toContain("tenant_id=$1 AND id=$2 AND customer_id=$3");
+  expect(update?.sql).toContain("status='active' AND version=$4");
+  expect(update?.values).toEqual(["platform","cart-1","customer-1",7]);
+  expect(s.calls.some(x=>x.sql==="COMMIT"||x.sql==="ROLLBACK")).toBe(false);
+  expect(s.client.release).not.toHaveBeenCalled();
+ });
+ it("reports a cart conversion conflict without taking transaction ownership",async()=>{
+  const s=setup();
+  s.query.mockImplementation(async(sql:string,values?:readonly unknown[])=>{
+   s.calls.push({sql,...(values===undefined?{}:{values})});
+   if(sql.includes("SET status='converted'")) return {rows:[],rowCount:0};
+   return {rows:[],rowCount:1};
+  });
+  const result=await s.store.closeAsConvertedInTransaction({
+   customerId:"customer-1",cartId:"cart-1",expectedCartVersion:7
+  },s.client);
+  expect(result).toBe("conflict");
+  expect(s.calls.some(x=>x.sql==="COMMIT"||x.sql==="ROLLBACK")).toBe(false);
+  expect(s.client.release).not.toHaveBeenCalled();
+ });
+ it("rejects invalid conversion requests before issuing SQL",async()=>{
+  const s=setup();
+  await expect(s.store.closeAsConvertedInTransaction({
+   customerId:"customer-1",cartId:"cart-1",expectedCartVersion:0
+  },s.client)).rejects.toThrow("invalid_customer_cart_conversion_request");
+  expect(s.calls).toHaveLength(0);
+ });
+
 });
