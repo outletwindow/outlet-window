@@ -9,7 +9,7 @@ export type CustomerPaymentIntentCheckoutResult =
 /** Authenticated server-side checkout. The callback URL is fixed by trusted server configuration. */
 export class PostgresCustomerPaymentIntentCheckout {
  private readonly attempts:PostgresPaymentIntentCreationAttemptStore;
- constructor(private readonly pool:PostgresPool, private readonly provider:Pick<MoyasarPaymentIntentClient,"createIntent">&Partial<Pick<MoyasarPaymentIntentClient,"fetchIntent">>, private readonly callbackUrl:string) {
+ constructor(private readonly pool:PostgresPool, private readonly provider:Pick<MoyasarPaymentIntentClient,"createIntent">&Partial<Pick<MoyasarPaymentIntentClient,"fetchIntent">>, private readonly callbackUrl:string, private readonly now:()=>Date = () => new Date()) {
   const callback=new URL(callbackUrl);
   if(callback.protocol!=="https:"||callback.username||callback.password) throw new Error("INVALID_PAYMENT_CALLBACK_URL");
   this.attempts=new PostgresPaymentIntentCreationAttemptStore(pool);
@@ -30,7 +30,7 @@ export class PostgresCustomerPaymentIntentCheckout {
    try { recovered=await this.provider.fetchIntent(attempt.providerPaymentReference); }
    catch { return {outcome:"recovery_unavailable"}; }
    if(recovered.status!=="created"||recovered.id!==attempt.providerPaymentReference||recovered.amount!==amountMinor||recovered.currency!==currency||
-      Date.parse(recovered.expiresAtUtc)!==Date.parse(attempt.expiresAtUtc)||Date.parse(recovered.expiresAtUtc)<=Date.now()) return {outcome:"attempt_exists"};
+      Date.parse(recovered.expiresAtUtc)!==Date.parse(attempt.expiresAtUtc)||Date.parse(recovered.expiresAtUtc)<=this.now().getTime()) return {outcome:"attempt_exists"};
    return {outcome:"created",providerPaymentReference:recovered.id,clientSecret:recovered.clientSecret,
     expiresAtUtc:recovered.expiresAtUtc,amountMinor,currency};
   }
