@@ -13,7 +13,7 @@ const event = (id: string, suborderId: string, tenantId: string, merchantId: str
   metadata: { orderId: "order-1", previousStatus: "pending_validation", nextStatus: "awaiting_payment" }
 });
 
-function database(options: { parentStatus?: string; version?: number; expiredQuote?: boolean; badOrderTotal?: boolean; hiddenDiscount?: boolean; multiBranch?: boolean } = {}) {
+function database(options: { parentStatus?: string; version?: number; expiredQuote?: boolean; badOrderTotal?: boolean; hiddenDiscount?: boolean; multiBranch?: boolean; missingDeliveryQuote?: boolean; mismatchedDeliveryQuote?: boolean } = {}) {
   const statements: string[] = [];
   const query = vi.fn(async <Row>(sql: string, values?: readonly unknown[]) => {
     statements.push(sql);
@@ -38,6 +38,20 @@ function database(options: { parentStatus?: string; version?: number; expiredQuo
           { id: "sub-2", tenant_id: "merchant-tenant-2", merchant_id: "merchant-2", branch_id: "branch-2", status: "pending_validation", version: 1 }
         ] : [])
       ];
+    } else if (sql.includes("FROM customer_order_suborder_delivery_quotes")) {
+      rows = options.missingDeliveryQuote ? [] : [{
+        id: "quote-1", tenant_id: "merchant-tenant-1", order_id: "order-1",
+        suborder_id: "sub-1", merchant_id: "merchant-1",
+        branch_id: options.mismatchedDeliveryQuote ? "wrong-branch" : "branch-1",
+        currency: "SAR", total_minor: "1500",
+        created_at: "2026-11-14T15:59:00.000Z",
+        expires_at: "2026-11-14T16:05:00.000Z",
+        quote_snapshot: {
+          quoteId: "quote-1", ruleId: "rule-1", ruleVersion: 1, currency: "SAR",
+          totalMinor: 1500, createdAtUtc: "2026-11-14T15:59:00.000Z",
+          expiresAtUtc: "2026-11-14T16:05:00.000Z"
+        }
+      }];
     } else if (sql.includes("COUNT(i.id)::int AS item_count")) {
       rows = [
         { suborder_id: "sub-1", item_count: 1, subtotal_minor: options.multiBranch ? "5000" : "12000" },
@@ -95,6 +109,22 @@ describe("PostgresPlatformCheckoutReadinessStore", () => {
     expect(db.statements).not.toContain("COMMIT");
     expect(db.statements).not.toContain("ROLLBACK");
     expect(db.client.release).not.toHaveBeenCalled();
+  });
+
+  it("rejects readiness when the immutable per-suborder delivery quote is missing", async () => {
+    const db = database({ missingDeliveryQuote: true });
+    const result = await new PostgresPlatformCheckoutReadinessStore(db.pool).transitionToAwaitingPayment(baseInput);
+    expect(result).toEqual({ outcome: "invalid_snapshot" });
+    expect(db.statements).toContain("ROLLBACK");
+    expect(db.statements.some(sql => sql.startsWith("UPDATE"))).toBe(false);
+  });
+
+  it("rejects a delivery quote ledger entry assigned to a different branch", async () => {
+    const db = database({ mismatchedDeliveryQuote: true });
+    const result = await new PostgresPlatformCheckoutReadinessStore(db.pool).transitionToAwaitingPayment(baseInput);
+    expect(result).toEqual({ outcome: "invalid_snapshot" });
+    expect(db.statements).toContain("ROLLBACK");
+    expect(db.statements.some(sql => sql.startsWith("UPDATE"))).toBe(false);
   });
 
   it("rejects multiple delivery branches when the parent stores only one branch quote", async () => {
