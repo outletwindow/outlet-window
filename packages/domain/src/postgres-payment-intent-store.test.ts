@@ -18,13 +18,16 @@ describe("PostgreSQL server-owned payment intents",()=>{
     expect(query.mock.calls[0]?.[0]).toContain("ON CONFLICT DO NOTHING");
   });
 
-  it("resolves only exact provider reference, amount and currency while the order remains payable, including delayed webhooks",async()=>{
+  it("resolves exact provider reference, amount and currency after the parent order advances",async()=>{
     const query=vi.fn(async(_sql:string,_values?:readonly unknown[])=>({rows:[{id:"intent-1",tenant_id:"tenant-1",order_id:"order-1"}],rowCount:1}));
     const store=new PostgresPaymentIntentStore({query,connect:vi.fn()} as unknown as PostgresPool,undefined,now);
     await expect(store.findExpectedOrder({
       providerKey:"psp-a",providerPaymentReference:"provider-ref-1",amountMinor:12500,currency:"SAR"
     })).resolves.toEqual({tenantId:"tenant-1",orderId:"order-1",paymentIntentId:"intent-1"});
     expect(query.mock.calls[0]?.[0]).toContain("i.amount_minor=$3 AND i.currency=$4");
+    // A sibling suborder may already have advanced the aggregate parent to preparing
+    // before a duplicate or delayed provider webhook is delivered.
+    expect(query.mock.calls[0]?.[0]).not.toContain("o.status");
   });
 
   it("fails closed when provider reference and idempotency key resolve to different intents",async()=>{
