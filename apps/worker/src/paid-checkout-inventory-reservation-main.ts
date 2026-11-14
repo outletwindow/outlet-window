@@ -72,7 +72,7 @@ try {
   const required = [
     "0007_branch_inventory_reservations", "0027_verified_order_payment_captures",
     "0030_checkout_recovery_cases", "0039_single_initial_capture_per_order",
-    "0040_paid_checkout_inventory_reservation_jobs", "0041_branch_inventory_snapshot_watermark", "0042_branch_inventory_reconciliation_alerts", "0043_merchant_inventory_provider_branch_scopes", "0044_external_inventory_reservation_evidence", "0045_checkout_recovery_suborder_scope", "0046_checkout_recovery_reservation_scope", "0047_checkout_recovery_reservation_error_codes"
+    "0040_paid_checkout_inventory_reservation_jobs", "0041_branch_inventory_snapshot_watermark", "0042_branch_inventory_reconciliation_alerts", "0043_merchant_inventory_provider_branch_scopes", "0044_external_inventory_reservation_evidence", "0045_checkout_recovery_suborder_scope", "0046_checkout_recovery_reservation_scope", "0047_checkout_recovery_reservation_error_codes", "0048_suborder_delivery_quote_snapshots"
   ];
   const migrations = await pool.query<{ version: string }>(
     "SELECT version FROM schema_migrations WHERE version=ANY($1::text[])", [required]
