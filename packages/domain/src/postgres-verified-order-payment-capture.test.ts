@@ -74,6 +74,23 @@ describe("PostgreSQL verified order payment capture store", () => {
     await expect(store.recordVerifiedCapture(input)).resolves.toEqual({ outcome:"identity_collision" });
   });
 
+  it("rejects a second provider capture for an order already captured by another intent", async () => {
+    const query = vi.fn()
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 })
+      .mockResolvedValueOnce({ rows: [{
+        id: "capture-first", tenant_id: input.tenantId, order_id: input.orderId,
+        provider_key: "other-psp", provider_event_id: "evt-first",
+        provider_payment_reference: "pay-first", amount_minor: "12500",
+        currency: "SAR", captured_at: new Date(input.capturedAtUtc),
+        idempotency_key: "other-payment-key"
+      }], rowCount: 1 });
+    const store = new PostgresVerifiedOrderPaymentCaptureStore(
+      { query, connect: vi.fn() } as unknown as PostgresPool
+    );
+    await expect(store.recordVerifiedCapture(input)).resolves.toEqual({ outcome: "identity_collision" });
+    expect(query.mock.calls[1]?.[0]).toContain("OR (tenant_id=$4 AND order_id=$5)");
+  });
+
   it("rejects malformed or unsafe evidence before database access", async () => {
     const query = vi.fn();
     const store = new PostgresVerifiedOrderPaymentCaptureStore(
