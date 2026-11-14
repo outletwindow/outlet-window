@@ -365,3 +365,9 @@ checkout API route exists.
   verified capture, post-capture inventory reservation, recovery/reconciliation, and end-to-end
   PostgreSQL concurrency/failure-injection tests remain release gates. Do not enable live
   payment capture or production checkout.
+
+
+- Added a PostgreSQL failure-path integration test: when the approved delivery pricing rule
+  is suspended before checkout, the service returns `no_active_pricing_rule`, leaves the cart
+  active at its original version, and creates no parent order. This verifies rollback after
+  the cart has been repriced and locked but before order persistence.

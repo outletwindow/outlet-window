@@ -124,6 +124,29 @@ integration("PostgreSQL customer checkout orchestration", () => {
   afterEach(cleanup);
   afterAll(async () => { await pool.end(); });
 
+  it("leaves the cart and order tables unchanged when the active delivery rule is unavailable", async () => {
+    await pool.query(
+      "UPDATE delivery_pricing_rules SET status='suspended' WHERE tenant_id='platform' AND id=$1",
+      [ruleId]
+    );
+    const service = new PostgresCustomerCheckoutService(pool, randomUUID);
+    const result = await service.create({
+      customerId, expectedCartVersion: 2, idempotencyKey: "checkout-no-rule-" + suffix,
+      destination: { countryCode: "SA", cityCode: "JUBAIL", serviceCode: "standard_delivery",
+        latitude: 27.010000, longitude: 49.650000 },
+      actorId: "checkout-system", actorRole: "system", correlationId
+    });
+    expect(result).toEqual({ outcome: "no_active_pricing_rule" });
+    const cart = await pool.query<{ status: string; version: number }>(
+      "SELECT status,version FROM customer_carts WHERE id=$1", [cartId]
+    );
+    expect(cart.rows).toEqual([{ status: "active", version: 2 }]);
+    const orders = await pool.query<{ count: string }>(
+      "SELECT COUNT(*)::text AS count FROM customer_orders WHERE customer_id=$1", [customerId]
+    );
+    expect(orders.rows[0]?.count).toBe("0");
+  });
+
   it("creates order, persists delivery and pricing snapshots, transitions readiness, and converts cart atomically", async () => {
     const service = new PostgresCustomerCheckoutService(pool, randomUUID);
     const checkoutInput = {
