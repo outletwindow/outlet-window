@@ -10,6 +10,8 @@ export interface InventoryReservationRequest {
   suborderId: string;
   merchantId: string;
   branchId: string;
+  /** Set by the trusted database router, never supplied by the customer. */
+  providerIntegrationId?: string;
   idempotencyKey: string;
   requestedAtUtc: string;
   expiresAtUtc?: string;
