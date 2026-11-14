@@ -57,6 +57,7 @@ describe("PostgreSQL branch inventory reader", () => {
       tenantId: "tenant-1", merchantId: "merchant-1", branchId: "branch-1", limit: 20
     });
     expect(db.sql).toContain("a.tenant_id = $1 AND a.merchant_id = $2 AND a.branch_id = $3");
+    expect(db.sql).toContain("m.status = 'active' AND b.status = 'active'");
     expect(db.sql).toContain("a.status = 'open'");
     expect(db.values).toEqual(["tenant-1", "merchant-1", "branch-1", 20]);
     expect(result).toEqual([{
