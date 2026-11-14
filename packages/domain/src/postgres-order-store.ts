@@ -237,6 +237,20 @@ export class PostgresOrderStore {
           throw new Error("Merchant branch is unavailable for order creation");
         }
         for (const item of suborder.items) {
+          const variant = await client.query<{ id: string }>(
+            `SELECT v.id
+             FROM commerce_catalog_variants v
+             JOIN commerce_catalog_products p
+               ON p.tenant_id = v.tenant_id AND p.id = v.product_id
+             WHERE v.tenant_id = $1 AND v.id = $2 AND v.sku = $3
+               AND COALESCE(v.currency, p.currency) = $4
+               AND p.published_at IS NOT NULL
+             FOR SHARE OF v, p`,
+            [persistedSuborder.tenant_id, item.productVariantId, item.sku, item.currency]
+          );
+          if (variant.rowCount !== 1 || !variant.rows[0]) {
+            throw new Error("Order item variant is not published for this merchant or its SKU/currency does not match");
+          }
           await client.query(
             `INSERT INTO customer_order_items
              (id, tenant_id, order_id, suborder_id, merchant_id, branch_id,
