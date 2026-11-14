@@ -13,7 +13,7 @@ const event = (id: string, suborderId: string, tenantId: string, merchantId: str
   metadata: { orderId: "order-1", previousStatus: "pending_validation", nextStatus: "awaiting_payment" }
 });
 
-function database(options: { parentStatus?: string; version?: number; expiredQuote?: boolean; badOrderTotal?: boolean } = {}) {
+function database(options: { parentStatus?: string; version?: number; expiredQuote?: boolean; badOrderTotal?: boolean; hiddenDiscount?: boolean } = {}) {
   const statements: string[] = [];
   const query = vi.fn(async <Row>(sql: string, values?: readonly unknown[]) => {
     statements.push(sql);
@@ -21,9 +21,9 @@ function database(options: { parentStatus?: string; version?: number; expiredQuo
     let rowCount: number | null = 1;
     if (sql.includes("FROM customer_orders") && sql.includes("FOR UPDATE")) {
       rows = [{ id: "order-1", customer_id: "customer-1", status: options.parentStatus ?? "pending_validation",
-        version: options.version ?? 4, currency: "SAR", total_minor: options.badOrderTotal ? "13501" : "13500",
+        version: options.version ?? 4, currency: "SAR", total_minor: options.badOrderTotal ? "13501" : options.hiddenDiscount ? "13000" : "13500",
         metadata: { checkoutPricing: { currency: "SAR", deliveryQuoteId: "quote-1",
-          deliveryRuleId: "rule-1", deliveryRuleVersion: 1, discountMinor: 0, components: [
+          deliveryRuleId: "rule-1", deliveryRuleVersion: 1, discountMinor: options.hiddenDiscount ? 500 : 0, components: [
           { kind: "product_subtotal", amountMinor: 12000, label: "Products" },
           { kind: "delivery", amountMinor: 1500, label: "Delivery" }
         ] } }, delivery_destination: { city: "Jubail" },
@@ -96,6 +96,14 @@ describe("PostgresPlatformCheckoutReadinessStore", () => {
 
   it("rejects a parent total that does not reconcile to the persisted pricing components", async () => {
     const db = database({ badOrderTotal: true });
+    const result = await new PostgresPlatformCheckoutReadinessStore(db.pool).transitionToAwaitingPayment(baseInput);
+    expect(result).toEqual({ outcome: "invalid_snapshot" });
+    expect(db.statements).toContain("ROLLBACK");
+    expect(db.statements.some(sql => sql.startsWith("UPDATE"))).toBe(false);
+  });
+
+  it("rejects a discount deducted from the total when no discount component is recorded", async () => {
+    const db = database({ hiddenDiscount: true });
     const result = await new PostgresPlatformCheckoutReadinessStore(db.pool).transitionToAwaitingPayment(baseInput);
     expect(result).toEqual({ outcome: "invalid_snapshot" });
     expect(db.statements).toContain("ROLLBACK");
