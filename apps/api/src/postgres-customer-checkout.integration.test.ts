@@ -276,20 +276,22 @@ integration("PostgreSQL customer checkout orchestration", () => {
     );
     expect(parent.rows[0]?.status).toBe("awaiting_payment");
     expect(parent.rows[0]?.currency).toBe("SAR");
-    expect(parent.rows[0]?.total_minor).toBe("3500");
+    expect(parent.rows[0]?.total_minor).toBe("8000");
     expect(parent.rows[0]?.delivery_zone_id).toBe(areaId);
     expect(parent.rows[0]?.delivery_branch_id).toBe(branchId);
     expect(parent.rows[0]?.delivery_quote.totalMinor).toBe(1500);
-    expect(parent.rows[0]?.metadata.checkoutPricing.components).toHaveLength(2);
+    expect(parent.rows[0]?.metadata.checkoutPricing.components).toHaveLength(3);
+    expect(parent.rows[0]?.metadata.checkoutPricing.deliveryQuotes).toHaveLength(2);
     expect(parent.rows[0]?.metadata.checkoutPricing.checkoutRequest).toMatchObject({
       expectedCartVersion: 2, destination: { latitude: 27.010000 }
     });
 
     const suborders = await pool.query<{ id: string; status: string; merchant_id: string; branch_id: string }>(
-      "SELECT id,status,merchant_id,branch_id FROM merchant_suborders WHERE order_id=$1", [result.orderId]
+      "SELECT id,status,merchant_id,branch_id FROM merchant_suborders WHERE order_id=$1 ORDER BY merchant_id,branch_id", [result.orderId]
     );
-    expect(suborders.rows).toHaveLength(1);
+    expect(suborders.rows).toHaveLength(2);
     expect(suborders.rows[0]).toMatchObject({ status: "awaiting_payment", merchant_id: merchantId, branch_id: branchId });
+    expect(suborders.rows[1]).toMatchObject({ status: "awaiting_payment", merchant_id: merchant2Id, branch_id: branch2Id });
 
     const deliveryQuoteLedger = await pool.query<{
       suborder_id: string; merchant_id: string; branch_id: string; currency: string;
@@ -299,12 +301,19 @@ integration("PostgreSQL customer checkout orchestration", () => {
        FROM customer_order_suborder_delivery_quotes WHERE order_id=$1`,
       [result.orderId]
     );
-    expect(deliveryQuoteLedger.rows).toHaveLength(1);
-    expect(deliveryQuoteLedger.rows[0]).toMatchObject({
-      suborder_id: suborders.rows[0]?.id, merchant_id: merchantId, branch_id: branchId,
-      currency: "SAR", total_minor: "1500",
-      quote_snapshot: { quoteId: expect.any(String), totalMinor: 1500 }
-    });
+    expect(deliveryQuoteLedger.rows).toHaveLength(2);
+    expect(deliveryQuoteLedger.rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        suborder_id: suborders.rows[0]?.id, merchant_id: merchantId, branch_id: branchId,
+        currency: "SAR", total_minor: "1500",
+        quote_snapshot: { quoteId: expect.any(String), totalMinor: 1500 }
+      }),
+      expect.objectContaining({
+        suborder_id: suborders.rows[1]?.id, merchant_id: merchant2Id, branch_id: branch2Id,
+        currency: "SAR", total_minor: "1500",
+        quote_snapshot: { quoteId: expect.any(String), totalMinor: 1500 }
+      })
+    ]));
 
     const cart = await pool.query<{ status: string; version: number }>(
       "SELECT status,version FROM customer_carts WHERE id=$1", [cartId]
@@ -312,15 +321,18 @@ integration("PostgreSQL customer checkout orchestration", () => {
     expect(cart.rows).toEqual([{ status: "converted", version: 3 }]);
 
     const audit = await pool.query<{ count: string }>(
-      "SELECT COUNT(*)::text AS count FROM audit_events WHERE correlation_id=$1 AND resource_id=$2",
-      [correlationId, suborders.rows[0]?.id]
+      "SELECT COUNT(*)::text AS count FROM audit_events WHERE correlation_id=$1 AND resource_id = ANY($2::text[])",
+      [correlationId, suborders.rows.map(row => row.id)]
     );
-    expect(audit.rows[0]?.count).toBe("1");
+    expect(audit.rows[0]?.count).toBe("2");
 
-    const stock = await pool.query<{ reserved_quantity: number }>(
-      "SELECT reserved_quantity FROM branch_inventory WHERE merchant_id=$1 AND branch_id=$2",
-      [merchantId, branchId]
+    const stock = await pool.query<{ merchant_id: string; reserved_quantity: number }>(
+      "SELECT merchant_id,reserved_quantity FROM branch_inventory WHERE merchant_id = ANY($1::text[]) ORDER BY merchant_id",
+      [[merchantId, merchant2Id]]
     );
-    expect(stock.rows[0]?.reserved_quantity).toBe(0);
+    expect(stock.rows).toEqual([
+      { merchant_id: merchantId, reserved_quantity: 0 },
+      { merchant_id: merchant2Id, reserved_quantity: 0 }
+    ]);
   });
 });
