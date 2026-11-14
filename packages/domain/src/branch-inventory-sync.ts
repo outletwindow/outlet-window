@@ -80,8 +80,8 @@ export class PostgresBranchInventorySyncStore implements BranchInventorySyncStor
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      const branch = await client.query<{ id: string }>(
-        `SELECT b.id FROM merchant_branches b
+      const branch = await client.query<{ id: string; inventory_snapshot_at: Date | string | null }>(
+        `SELECT b.id, b.inventory_snapshot_at FROM merchant_branches b
          JOIN merchants m ON m.id = b.merchant_id
          WHERE m.tenant_id = $1 AND m.id = $2 AND b.id = $3
            AND m.status = 'active' AND b.status = 'active'
@@ -89,6 +89,21 @@ export class PostgresBranchInventorySyncStore implements BranchInventorySyncStor
         [input.tenantId, input.merchantId, input.branchId]
       );
       if (branch.rows.length !== 1) throw new Error("BRANCH_INVENTORY_SCOPE_NOT_FOUND");
+
+      // The branch row is locked for the whole transaction. Enforce ordering at the
+      // snapshot level before touching any variant, including variants omitted here.
+      const latestSnapshotAt = branch.rows[0]!.inventory_snapshot_at;
+      if (latestSnapshotAt !== null &&
+          Date.parse(input.capturedAtUtc) <= new Date(latestSnapshotAt).getTime()) {
+        await client.query("COMMIT");
+        return { accepted: 0, stale: input.lines.length };
+      }
+      await client.query(
+        `UPDATE merchant_branches
+         SET inventory_snapshot_at = $3, inventory_snapshot_source = $4
+         WHERE merchant_id = $1 AND id = $2`,
+        [input.merchantId, input.branchId, input.capturedAtUtc, input.source]
+      );
 
       let accepted = 0;
       let stale = 0;
