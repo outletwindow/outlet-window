@@ -31,7 +31,7 @@ export type CustomerCartRepricingResult =
 
 function minor(value: string | number | null): number | null {
   if (typeof value === "number") return Number.isSafeInteger(value) && value >= 0 ? value : null;
-  if (typeof value !== "string" || !/^\\d+$/.test(value)) return null;
+  if (typeof value !== "string" || !/^\d+$/.test(value)) return null;
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) ? parsed : null;
 }
@@ -40,7 +40,10 @@ function minor(value: string | number | null): number | null {
  * Produces an authoritative, locked price snapshot from the live catalog and branch stock.
  * Cart display prices are intentionally never read. The shared customer-cart advisory lock
  * serializes this operation with add/remove; row locks protect catalog and stock through the
- * caller's transaction. This is a domain building block, not a public checkout endpoint.
+ * this method's transaction. The returned snapshot is a preflight result only: it must not
+ * be used to create an order after these locks are released. Final checkout must revalidate
+ * and persist pricing in the same transaction that creates the order. This is not a public
+ * checkout endpoint.
  */
 export class PostgresCustomerCartRepricingService {
   constructor(private readonly pool: PostgresPool) {}
@@ -148,7 +151,7 @@ export class PostgresCustomerCartRepricingService {
         };
         items.push(line);
         subtotalMinor += lineTotalMinor;
-        const key = row.merchant_id + ":" + row.branch_id;
+        const key = JSON.stringify([row.merchant_id, row.branch_id]);
         let group = groups.get(key);
         if (!group) {
           group = { merchantId: row.merchant_id, branchId: row.branch_id,
