@@ -214,4 +214,5 @@ into `PostgresOrderStore` would be unsafe and is intentionally not an acceptable
   only by the existing verified-payment-capture reservation workflow. Stock can change after
   order creation, so post-capture reservation and recovery remain mandatory.
 - Added tests for the row lock, exact external variant/SKU mapping, freshness, available quantity,
-  and rollback on stale/insufficient stock.
+  and rollback on stale/insufficient stock. The PostgreSQL order-store integration fixture now
+  seeds and cleans up the corresponding fresh branch-inventory row.

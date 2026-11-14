@@ -50,10 +50,18 @@ integration("PostgreSQL customer order persistence", () => {
        VALUES ($1,$2,$3,$4,$5,'SAR',6450)`,
       [variantId,merchantId,productId,"external-variant-"+suffix,"ORDER-STORE-SKU-"+suffix]
     );
+    await pool.query(
+      `INSERT INTO branch_inventory
+       (merchant_id,branch_id,product_variant_id,sku,available_quantity,reserved_quantity,
+        source,last_synced_at,availability_confidence)
+       VALUES ($1,$2,$3,$4,20,0,'manual',now(),'high')`,
+      [merchantId,branchId,"external-variant-"+suffix,"ORDER-STORE-SKU-"+suffix]
+    );
   });
 
   async function cleanup() {
     await pool.query("DELETE FROM customer_order_items WHERE merchant_id=$1",[merchantId]);
+    await pool.query("DELETE FROM branch_inventory WHERE merchant_id=$1",[merchantId]);
     await pool.query("DELETE FROM merchant_suborders WHERE merchant_id=$1",[merchantId]);
     await pool.query("DELETE FROM customer_orders WHERE id = ANY($1::text[])",[orderIds]);
     await pool.query("DELETE FROM commerce_catalog_products WHERE tenant_id=$1",[merchantId]);
