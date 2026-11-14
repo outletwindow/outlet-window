@@ -102,6 +102,7 @@ export class PostgresBranchInventoryReader {
          ON b.merchant_id = a.merchant_id AND b.id = a.branch_id
        JOIN merchants m ON m.id = b.merchant_id
        WHERE a.tenant_id = $1 AND a.merchant_id = $2 AND a.branch_id = $3
+         AND m.status = 'active' AND b.status = 'active'
          AND a.status = 'open'
        ORDER BY a.created_at DESC, a.id
        LIMIT $4`,
