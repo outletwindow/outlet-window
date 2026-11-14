@@ -3,7 +3,7 @@
 Status: **not ready for a production checkout endpoint**
 
 This note records the verified repository state on branch `work/outlet-window-build` at branch head commit
-`1d184e38e3d9f1f36038bcbcd47b7435983a7374`. It is an implementation gate, not a claim that
+`2c77d0bda1d7003385b314055583b41c8516d44c`. It is an implementation gate, not a claim that
 checkout is complete.
 
 ## Verified building blocks
@@ -23,14 +23,17 @@ checkout is complete.
   claim an external POS/ERP hard reservation unless the integration guarantees one.
 - `PostgresCustomerPaymentIntentCheckout` creates a payment intent only for an existing
   `awaiting_payment` order, using durable attempt/idempotency records and an unresolved
-  outcome when provider creation may have succeeded but persistence is uncertain.
+  outcome when provider creation may have succeeded but persistence is uncertain. The
+  attempt store shares the injected checkout clock when validating provider expiry bounds,
+  keeping deterministic expiry checks aligned across the checkout boundary.
 - `PostgresOrderTransitionStore` persists merchant suborder transitions and derived parent
   status with an audit event in one transaction.
 
 ## Latest verification
 
-- CI run `43611671089` (push workflow #1657) and run `43611672988` (pull-request workflow #1658) both passed on branch head `1d184e38e3d9f1f36038bcbcd47b7435983a7374`.
-- The pull-request workflow completed successfully, including the API build, tests, and typecheck job. The push workflow also completed successfully.
+- Push workflow #1669 (run `43612317321`) and pull-request workflow #1670 (run `43612322324`) both passed on branch head `2c77d0bda1d7003385b314055583b41c8516d44c`.
+- Both workflows completed successfully, including the API build, tests, and typecheck job.
+- The cart snapshot regression test was corrected after the preceding run exposed a test-double query matcher that did not recognize the updated header query. The production read path remains a single repeatable-read snapshot.
 - These runs verify the current branch head; they do not close the checkout orchestration gaps below. The cart remains separate from order creation and payment execution.
 
 ## Blocking gaps before a real cart-to-order checkout
