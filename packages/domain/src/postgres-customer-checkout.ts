@@ -179,7 +179,7 @@ export class PostgresCustomerCheckoutService {
         ...branchQuotes.map(({ suborder, result }) => ({
           kind: "delivery", amountMinor: result.quote.totalMinor,
           label: `Delivery - ${suborder.branchId}`,
-          suborderId: suborder.merchantId + ":" + suborder.branchId,
+          suborderKey: suborder.merchantId + ":" + suborder.branchId,
           quoteId: result.quote.quoteId
         }))
       ];
