@@ -100,12 +100,17 @@ export class VerifiedInventoryProviderReservationAdapter implements InventoryRes
         !validUtc(releasedAtUtc) || !this.client.releaseExactReservation) {
       return { outcome: "unsupported" };
     }
+    // Reserve and release are distinct provider operations. Reusing the reserve
+    // idempotency key can make some providers replay the reserve response instead
+    // of executing the release. This deterministic operation-scoped key is stable
+    // across retries while remaining distinct from the original hold creation.
+    const releaseIdempotencyKey = `release:${request.idempotencyKey}`;
     const acknowledgement = await this.client.releaseExactReservation({
       providerIntegrationId: request.providerIntegrationId,
       tenantId: request.tenantId,
       merchantId: request.merchantId,
       branchId: request.branchId,
-      idempotencyKey: request.idempotencyKey,
+      idempotencyKey: releaseIdempotencyKey,
       requestedAtUtc: request.requestedAtUtc,
       lines: request.lines,
       reservationReference,
@@ -115,7 +120,7 @@ export class VerifiedInventoryProviderReservationAdapter implements InventoryRes
     if (acknowledgement.tenantId !== request.tenantId ||
         acknowledgement.merchantId !== request.merchantId ||
         acknowledgement.branchId !== request.branchId ||
-        acknowledgement.idempotencyKey !== request.idempotencyKey ||
+        acknowledgement.idempotencyKey !== releaseIdempotencyKey ||
         acknowledgement.reservationReference !== reservationReference) {
       throw new Error("INVENTORY_PROVIDER_RELEASE_ACKNOWLEDGEMENT_SCOPE_MISMATCH");
     }
