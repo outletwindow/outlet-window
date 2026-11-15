@@ -24,6 +24,7 @@
     "ops:status": "docker compose ps",
     "ops:logs": "docker compose logs -f --tail=100",
     "ops:down": "docker compose down",
-    "worker:paid-checkout-reservations": "pnpm --filter @outlet-window/worker start:paid-checkout-reservations"
+    "worker:paid-checkout-reservations": "pnpm --filter @outlet-window/worker start:paid-checkout-reservations",
+    "worker:financial-journal-projection": "pnpm --filter @outlet-window/worker start:financial-journal-projection"
   }
 }
