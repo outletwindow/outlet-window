@@ -229,7 +229,11 @@ export class PostgresPaidCheckoutInventoryReservationWorker {
         return { needsReview: true, failureCode: code };
       }
       reservations.push({
-        suborder, request: reservationRequest, reservationReference: reservation.reservationReference
+        suborder,
+        request: reservation.providerIntegrationId
+          ? { ...reservationRequest, providerIntegrationId: reservation.providerIntegrationId }
+          : reservationRequest,
+        reservationReference: reservation.reservationReference
       });
     }
 
