@@ -72,6 +72,30 @@ export class PostgresExternalInventoryReservationEvidenceStore implements Extern
     if (row.status === "released") return { outcome: "already_released" };
     if (row.status !== "reserved") return { outcome: "unsupported" };
 
+    // The reservation id and order scope are not enough on their own: the
+    // compensation payload must also match the exact persisted variant/SKU/
+    // quantity set before the external provider is asked to release the hold.
+    const persistedLines = await this.pool.query<{
+      catalog_variant_id: string; sku: string; quantity: number;
+    }>(
+      `SELECT catalog_variant_id,sku,quantity
+       FROM inventory_reservation_lines
+       WHERE reservation_id=$1
+       ORDER BY catalog_variant_id`,
+      [input.reservationId]
+    );
+    const expectedLines = [...request.lines].sort((a,b) =>
+      a.productVariantId.localeCompare(b.productVariantId)
+    );
+    if (persistedLines.rows.length !== expectedLines.length ||
+        persistedLines.rows.some((line,index) =>
+          line.catalog_variant_id !== expectedLines[index]?.productVariantId ||
+          line.sku !== expectedLines[index]?.sku ||
+          line.quantity !== expectedLines[index]?.quantity
+        )) {
+      return { outcome: "unsupported" };
+    }
+
     // Provider release is deliberately performed before local ledger release.
     // If the process crashes between them, the next attempt repeats the same
     // provider idempotency key and then completes the local compare-and-swap.
