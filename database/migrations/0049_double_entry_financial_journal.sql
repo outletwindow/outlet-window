@@ -1,7 +1,7 @@
 -- Double-entry financial journal foundation. A journal is immutable after posting.
 CREATE TABLE financial_accounts (
   id text PRIMARY KEY,
-  tenant_id text NOT NULL,
+  tenant_id text NOT NULL REFERENCES tenants(id) ON DELETE RESTRICT,
   account_code text NOT NULL CHECK (length(trim(account_code)) BETWEEN 1 AND 80),
   account_name text NOT NULL CHECK (length(trim(account_name)) BETWEEN 1 AND 200),
   account_type text NOT NULL CHECK (account_type IN ('asset','liability','equity','revenue','expense')),
@@ -15,7 +15,7 @@ CREATE TABLE financial_accounts (
 
 CREATE TABLE financial_journals (
   id text PRIMARY KEY,
-  tenant_id text NOT NULL,
+  tenant_id text NOT NULL REFERENCES tenants(id) ON DELETE RESTRICT,
   idempotency_key text NOT NULL CHECK (length(trim(idempotency_key)) BETWEEN 8 AND 240),
   source_type text NOT NULL CHECK (length(trim(source_type)) BETWEEN 1 AND 80),
   source_reference text NOT NULL CHECK (length(trim(source_reference)) BETWEEN 1 AND 240),
