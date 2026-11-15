@@ -20,7 +20,7 @@ INSERT INTO merchant_settlement_lines
 (id,tenant_id,batch_id,merchant_id,currency,order_id,suborder_id,branch_id,
  contract_reference,gross_minor,deductions_minor,net_minor,deduction_breakdown)
 VALUES ('settle-line','settle-tenant','settle-batch','settle-merchant','SAR',
-        'settle-order-2','settle-suborder-2','settle-branch','approved-contract-v1',
+        'settle-order','settle-suborder','settle-branch','approved-contract-v1',
         12000,1000,11000,'[{"code":"platform_fee","amountMinor":1000}]'::jsonb);
 INSERT INTO financial_journals
 (id,tenant_id,idempotency_key,source_type,source_reference,currency,description,occurred_at)
@@ -90,7 +90,7 @@ INSERT INTO merchant_settlement_lines
 (id,tenant_id,batch_id,merchant_id,currency,order_id,suborder_id,branch_id,
  contract_reference,gross_minor,deductions_minor,net_minor,deduction_breakdown)
 VALUES ('settle-line-invalid','settle-tenant','settle-batch-invalid','settle-merchant','SAR',
-        'settle-order','settle-suborder','settle-branch','approved-contract-v1',
+        'settle-order-2','settle-suborder-2','settle-branch','approved-contract-v1',
         12000,1000,11000,'[{"code":"platform_fee","amountMinor":1000}]'::jsonb);
 INSERT INTO financial_journals
 (id,tenant_id,idempotency_key,source_type,source_reference,currency,description,occurred_at)
