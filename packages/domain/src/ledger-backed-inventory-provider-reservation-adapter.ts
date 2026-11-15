@@ -34,10 +34,10 @@ export class LedgerBackedInventoryProviderReservationAdapter implements Inventor
     if (!this.ledger.release) return { outcome: "unsupported" };
     return this.ledger.release(
       { request, reservationId: reservationReference, releasedAtUtc },
-      async evidence => {
+      async (evidence, stableReleasedAtUtc) => {
         if (evidence.providerKey !== this.providerKey) return { outcome: "unsupported" };
         return this.verified.releaseExactReservation(
-          request, evidence.providerReservationReference, releasedAtUtc
+          request, evidence.providerReservationReference, stableReleasedAtUtc
         );
       }
     );
