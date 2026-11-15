@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type { InventoryReservationRequest } from "./inventory-reservation.js";
+import type { InventoryReservationRequest, InventoryReservationReleaseResult } from "./inventory-reservation.js";
+import { PostgresBranchInventoryReservationLifecycle } from "./postgres-branch-inventory-reservation-lifecycle.js";
 import type { PostgresPool } from "./postgres-iam-store.js";
 
 export interface ExternalInventoryReservationEvidenceInput {
@@ -11,6 +12,15 @@ export interface ExternalInventoryReservationEvidenceInput {
 
 export interface ExternalInventoryReservationEvidenceStore {
   record(input: ExternalInventoryReservationEvidenceInput): Promise<{ reservationId: string; expiresAtUtc: string }>;
+  release(
+    input: {
+      request: InventoryReservationRequest;
+      reservationId: string;
+      releasedAtUtc: string;
+    },
+    releaseProvider: (evidence: { providerKey: string; providerReservationReference: string }) =>
+      Promise<InventoryReservationReleaseResult>
+  ): Promise<InventoryReservationReleaseResult>;
 }
 
 /**
@@ -18,10 +28,74 @@ export interface ExternalInventoryReservationEvidenceStore {
  * It deliberately does not invent a hold: callers must supply a verified provider receipt.
  */
 export class PostgresExternalInventoryReservationEvidenceStore implements ExternalInventoryReservationEvidenceStore {
+  private readonly lifecycle: PostgresBranchInventoryReservationLifecycle;
+
   constructor(
     private readonly pool: PostgresPool,
     private readonly createId: () => string = randomUUID
-  ) {}
+  ) {
+    this.lifecycle = new PostgresBranchInventoryReservationLifecycle(pool);
+  }
+
+  async release(
+    input: {
+      request: InventoryReservationRequest;
+      reservationId: string;
+      releasedAtUtc: string;
+    },
+    releaseProvider: (evidence: { providerKey: string; providerReservationReference: string }) =>
+      Promise<InventoryReservationReleaseResult>
+  ): Promise<InventoryReservationReleaseResult> {
+    const request = input.request;
+    if (!request.providerIntegrationId?.trim() || !input.reservationId.trim() ||
+        !Number.isFinite(Date.parse(input.releasedAtUtc)) ||
+        new Date(input.releasedAtUtc).toISOString() !== input.releasedAtUtc) {
+      return { outcome: "unsupported" };
+    }
+    const evidence = await this.pool.query<{
+      provider_key: string;
+      provider_reservation_reference: string;
+      status: string;
+    }>(
+      `SELECT e.provider_key,e.provider_reservation_reference,r.status
+       FROM inventory_provider_reservation_evidence e
+       JOIN inventory_reservations r
+         ON r.tenant_id=e.tenant_id AND r.id=e.reservation_id
+       WHERE e.tenant_id=$1 AND e.reservation_id=$2
+         AND e.integration_id=$3 AND r.order_id=$4 AND r.suborder_id=$5
+         AND r.merchant_id=$6 AND r.branch_id=$7`,
+      [request.tenantId,input.reservationId,request.providerIntegrationId,
+        request.orderId,request.suborderId,request.merchantId,request.branchId]
+    );
+    if (evidence.rowCount !== 1) return { outcome: "unsupported" };
+    const row = evidence.rows[0]!;
+    if (row.status === "released") return { outcome: "already_released" };
+    if (row.status !== "reserved") return { outcome: "unsupported" };
+
+    // Provider release is deliberately performed before local ledger release.
+    // If the process crashes between them, the next attempt repeats the same
+    // provider idempotency key and then completes the local compare-and-swap.
+    const providerResult = await releaseProvider({
+      providerKey: row.provider_key,
+      providerReservationReference: row.provider_reservation_reference
+    });
+    if (providerResult.outcome === "unsupported") return providerResult;
+    const local = await this.lifecycle.release({
+      tenantId: request.tenantId,
+      merchantId: request.merchantId,
+      branchId: request.branchId,
+      reservationId: input.reservationId,
+      nowUtc: input.releasedAtUtc,
+      reason: "external_provider_reservation_released"
+    });
+    if (local.outcome === "not_found") return { outcome: "unsupported" };
+    if (local.outcome === "already_finalized" && local.status !== "released") {
+      return { outcome: "unsupported" };
+    }
+    return local.outcome === "already_finalized"
+      ? { outcome: "already_released" }
+      : { outcome: "released" };
+  }
 
   async record(input: ExternalInventoryReservationEvidenceInput): Promise<{ reservationId: string; expiresAtUtc: string }> {
     const request = input.request;
