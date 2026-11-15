@@ -284,9 +284,17 @@ export class PostgresPaidCheckoutInventoryReservationWorker {
   ): Promise<void> {
     if (!this.inventory.releaseExactReservation) return;
     for (const held of reservations) {
-      await this.inventory.releaseExactReservation(
-        held.request, held.reservationReference, this.now().toISOString()
-      );
+      try {
+        await this.inventory.releaseExactReservation(
+          held.request, held.reservationReference, this.now().toISOString()
+        );
+      } catch {
+        // The recovery case was persisted before compensation began and contains
+        // every exact hold reference. Do not retry the whole paid-checkout saga:
+        // a provider may have released an earlier hold before this failure, and
+        // replaying reserve with the same key could return a terminal hold.
+        // Leave the order on hold for the recovery workflow/operator instead.
+      }
     }
   }
 
