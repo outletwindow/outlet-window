@@ -20,18 +20,27 @@ function createPool(options: {
   eligible?: boolean;
   stockMatches?: boolean;
   quantityMatches?: boolean;
+  releaseEvidence?: boolean;
+  releaseStatus?: string;
 } = {}) {
   const calls: Array<{sql:string;values:readonly unknown[]}> = [];
   const query = vi.fn(async <Row>(sql:string,values:readonly unknown[]=[]):Promise<PostgresQueryResult<Row>> => {
     calls.push({sql,values});
     let rows: unknown[]=[];
-    if(sql.includes("FROM inventory_reservations r")) {
+    if(sql.includes("FROM inventory_provider_reservation_evidence e")) {
+      rows=options.releaseEvidence===false ? [] : [{
+        provider_key:"pos-acme",provider_reservation_reference:"external-hold-1",
+        status:options.releaseStatus ?? "reserved"
+      }];
+    } else if(sql.includes("FROM inventory_reservations r")) {
       rows=options.existing ? [{
         id:"local-res-1",tenant_id:request.tenantId,order_id:request.orderId,
         suborder_id:request.suborderId,merchant_id:request.merchantId,branch_id:request.branchId,
         status:"reserved",integration_id:"pos-1",provider_key:"pos-acme",
         provider_reservation_reference:"external-hold-1",expires_at:"2026-11-14T12:15:00.000Z"
       }] : [];
+    } else if(sql.includes("FROM inventory_reservations") && sql.includes("FOR UPDATE")) {
+      rows=[{id:"local-res-1",status:options.releaseStatus ?? "reserved",expires_at:"2026-11-14T12:15:00.000Z"}];
     } else if(sql.includes("FROM inventory_reservation_lines")) {
       rows=[{catalog_variant_id:"catalog-variant-1",sku:"SKU-1",quantity:2}];
     } else if(sql.includes("FROM tenant_integrations i")) {
@@ -112,4 +121,51 @@ describe("PostgresExternalInventoryReservationEvidenceStore",()=>{
       .rejects.toThrow("external_inventory_reservation_evidence_invalid");
     expect(db.client.query).not.toHaveBeenCalled();
   });
+
+  it("releases the provider hold first and then finalizes the exact local reservation",async()=>{
+    const db=createPool();
+    const store=new PostgresExternalInventoryReservationEvidenceStore(db.pool);
+    const releaseProvider=vi.fn().mockResolvedValue({outcome:"released"});
+    await expect(store.release({
+      request,reservationId:"local-res-1",releasedAtUtc:"2026-11-14T12:05:00.000Z"
+    },releaseProvider)).resolves.toEqual({outcome:"released"});
+    expect(releaseProvider).toHaveBeenCalledWith({
+      providerKey:"pos-acme",providerReservationReference:"external-hold-1"
+    });
+    expect(db.calls.some(c=>c.sql.startsWith("UPDATE branch_inventory"))).toBe(true);
+    expect(db.calls.some(c=>c.sql.startsWith("UPDATE inventory_reservations"))).toBe(true);
+  });
+
+  it("does not change the local ledger when provider release is unsupported",async()=>{
+    const db=createPool();
+    const store=new PostgresExternalInventoryReservationEvidenceStore(db.pool);
+    const releaseProvider=vi.fn().mockResolvedValue({outcome:"unsupported"});
+    await expect(store.release({
+      request,reservationId:"local-res-1",releasedAtUtc:"2026-11-14T12:05:00.000Z"
+    },releaseProvider)).resolves.toEqual({outcome:"unsupported"});
+    expect(db.calls.some(c=>c.sql.startsWith("UPDATE branch_inventory"))).toBe(false);
+    expect(db.calls.some(c=>c.sql.startsWith("UPDATE inventory_reservations"))).toBe(false);
+  });
+
+  it("returns unsupported when the local reservation does not match the originating integration",async()=>{
+    const db=createPool({releaseEvidence:false});
+    const store=new PostgresExternalInventoryReservationEvidenceStore(db.pool);
+    const releaseProvider=vi.fn();
+    await expect(store.release({
+      request,reservationId:"local-res-1",releasedAtUtc:"2026-11-14T12:05:00.000Z"
+    },releaseProvider)).resolves.toEqual({outcome:"unsupported"});
+    expect(releaseProvider).not.toHaveBeenCalled();
+  });
+
+  it("leaves the local reservation untouched when the provider release call fails",async()=>{
+    const db=createPool();
+    const store=new PostgresExternalInventoryReservationEvidenceStore(db.pool);
+    const releaseProvider=vi.fn().mockRejectedValue(new Error("provider_timeout"));
+    await expect(store.release({
+      request,reservationId:"local-res-1",releasedAtUtc:"2026-11-14T12:05:00.000Z"
+    },releaseProvider)).rejects.toThrow("provider_timeout");
+    expect(db.calls.some(c=>c.sql.startsWith("UPDATE branch_inventory"))).toBe(false);
+    expect(db.calls.some(c=>c.sql.startsWith("UPDATE inventory_reservations"))).toBe(false);
+  });
+
 });
