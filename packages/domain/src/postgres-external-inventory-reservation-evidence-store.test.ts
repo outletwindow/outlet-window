@@ -58,7 +58,9 @@ function createPool(options: {
       rows=[{
         product_variant_id:"external-variant-1",available_quantity:8,reserved_quantity:2
       }];
-    } else if(sql.includes("UPDATE branch_inventory")) {
+    } else if(sql.startsWith("UPDATE branch_inventory")) {
+      return {rows:[],rowCount:1};
+    } else if(sql.startsWith("UPDATE inventory_reservations SET status")) {
       return {rows:[],rowCount:1};
     }
     return {rows:rows as Row[],rowCount:rows.length};
