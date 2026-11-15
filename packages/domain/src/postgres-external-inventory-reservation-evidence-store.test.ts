@@ -145,8 +145,10 @@ describe("PostgresExternalInventoryReservationEvidenceStore",()=>{
     const db=createPool();
     const store=new PostgresExternalInventoryReservationEvidenceStore(db.pool);
     const releaseProvider=vi.fn();
+    const { providerIntegrationId: _providerIntegrationId, ...requestWithoutIntegration } = request;
+    void _providerIntegrationId;
     await expect(store.release({
-      request:{...request,providerIntegrationId:undefined},
+      request:requestWithoutIntegration,
       reservationId:"local-res-1",releasedAtUtc:"2026-11-14T12:05:00.000Z"
     },releaseProvider)).resolves.toEqual({outcome:"unsupported"});
     expect(db.query).not.toHaveBeenCalled();
