@@ -20,7 +20,7 @@ INSERT INTO merchant_settlement_lines
 (id,tenant_id,batch_id,merchant_id,currency,order_id,suborder_id,branch_id,
  contract_reference,gross_minor,deductions_minor,net_minor,deduction_breakdown)
 VALUES ('settle-line','settle-tenant','settle-batch','settle-merchant','SAR',
-        'settle-order','settle-suborder','settle-branch','approved-contract-v1',
+        'settle-order-2','settle-suborder-2','settle-branch','approved-contract-v1',
         12000,1000,11000,'[{"code":"platform_fee","amountMinor":1000}]'::jsonb);
 INSERT INTO financial_journals
 (id,tenant_id,idempotency_key,source_type,source_reference,currency,description,occurred_at)
@@ -78,6 +78,10 @@ BEGIN
   END;
 END $$;
 
+INSERT INTO customer_orders (id,tenant_id,customer_id,idempotency_key,status,currency,total_minor)
+VALUES ('settle-order-2','platform','settle-customer','settle-order-key-2','pending_validation','SAR',12000);
+INSERT INTO merchant_suborders (id,tenant_id,order_id,merchant_id,branch_id,status,subtotal_minor)
+VALUES ('settle-suborder-2','settle-tenant','settle-order-2','settle-merchant','settle-branch','delivered',12000);
 INSERT INTO merchant_settlement_batches
 (id,tenant_id,merchant_id,currency,period_start,period_end)
 VALUES ('settle-batch-invalid','settle-tenant','settle-merchant','SAR',
