@@ -23,6 +23,8 @@ function createPool(options: {
   releaseEvidence?: boolean;
   releaseStatus?: string;
   releaseLinesMatch?: boolean;
+  releaseSkuMatches?: boolean;
+  releaseQuantityMatches?: boolean;
 } = {}) {
   const calls: Array<{sql:string;values:readonly unknown[]}> = [];
   const query = vi.fn(async <Row>(sql:string,values:readonly unknown[]=[]):Promise<PostgresQueryResult<Row>> => {
@@ -47,7 +49,8 @@ function createPool(options: {
     } else if(sql.includes("FROM inventory_reservation_lines")) {
       rows=[{
         catalog_variant_id:options.releaseLinesMatch === false ? "catalog-variant-other" : "catalog-variant-1",
-        sku:"SKU-1",quantity:2
+        sku:options.releaseSkuMatches === false ? "SKU-OTHER" : "SKU-1",
+        quantity:options.releaseQuantityMatches === false ? 1 : 2
       }];
     } else if(sql.includes("FROM tenant_integrations i")) {
       rows=options.eligible===false ? [] : [{id:"pos-1"}];
@@ -175,6 +178,21 @@ describe("PostgresExternalInventoryReservationEvidenceStore",()=>{
 
   it("does not call the provider when persisted reservation lines differ from the release request",async()=>{
     const db=createPool({releaseLinesMatch:false});
+    const store=new PostgresExternalInventoryReservationEvidenceStore(db.pool);
+    const releaseProvider=vi.fn().mockResolvedValue({outcome:"released"});
+    await expect(store.release({
+      request,reservationId:"local-res-1",releasedAtUtc:"2026-11-14T12:05:00.000Z"
+    },releaseProvider)).resolves.toEqual({outcome:"unsupported"});
+    expect(releaseProvider).not.toHaveBeenCalled();
+    expect(db.calls.some(c=>c.sql.includes("FROM inventory_reservation_lines"))).toBe(true);
+    expect(db.calls.some(c=>c.sql.startsWith("UPDATE branch_inventory"))).toBe(false);
+  });
+
+  it.each([
+    ["SKU", { releaseSkuMatches: false }],
+    ["quantity", { releaseQuantityMatches: false }]
+  ] as const)("does not call the provider when persisted reservation %s differs from the release request",async(_field,options)=>{
+    const db=createPool(options);
     const store=new PostgresExternalInventoryReservationEvidenceStore(db.pool);
     const releaseProvider=vi.fn().mockResolvedValue({outcome:"released"});
     await expect(store.release({
