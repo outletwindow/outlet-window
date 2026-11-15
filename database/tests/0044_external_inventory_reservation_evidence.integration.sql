@@ -119,6 +119,38 @@ BEGIN
     RAISE EXCEPTION 'duplicate external provider reservation reference unexpectedly accepted';
   EXCEPTION WHEN unique_violation THEN NULL;
   END;
+
+  INSERT INTO inventory_provider_reservation_release_intents
+    (tenant_id,reservation_id,integration_id,released_at)
+  VALUES ('provider-evidence-tenant','provider-evidence-reservation','provider-evidence-pos',
+          '2026-11-15T12:00:00Z')
+  ON CONFLICT (tenant_id,reservation_id) DO NOTHING;
+  INSERT INTO inventory_provider_reservation_release_intents
+    (tenant_id,reservation_id,integration_id,released_at)
+  VALUES ('provider-evidence-tenant','provider-evidence-reservation','provider-evidence-pos',
+          '2026-11-15T12:05:00Z')
+  ON CONFLICT (tenant_id,reservation_id) DO NOTHING;
+  IF (SELECT released_at FROM inventory_provider_reservation_release_intents
+      WHERE tenant_id='provider-evidence-tenant'
+        AND reservation_id='provider-evidence-reservation')
+       <> '2026-11-15T12:00:00Z'::timestamptz THEN
+    RAISE EXCEPTION 'provider release retry changed the original release timestamp';
+  END IF;
+
+  BEGIN
+    UPDATE inventory_provider_reservation_release_intents
+    SET released_at='2026-11-15T12:10:00Z'
+    WHERE tenant_id='provider-evidence-tenant'
+      AND reservation_id='provider-evidence-reservation';
+    RAISE EXCEPTION 'provider release intent unexpectedly mutable';
+  EXCEPTION WHEN SQLSTATE '55000' THEN NULL;
+  END;
+
+  BEGIN
+    TRUNCATE inventory_provider_reservation_release_intents;
+    RAISE EXCEPTION 'provider release intents unexpectedly truncated';
+  EXCEPTION WHEN SQLSTATE '55000' THEN NULL;
+  END;
 END $$;
 
 ROLLBACK;
