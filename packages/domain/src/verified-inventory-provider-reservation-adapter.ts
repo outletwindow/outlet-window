@@ -12,6 +12,17 @@ export interface InventoryProviderReservationCommand {
   lines: InventoryReservationRequest["lines"];
 }
 
+export type InventoryProviderReservationReleaseAcknowledgement =
+  | {
+      outcome: "released" | "already_released";
+      tenantId: string;
+      merchantId: string;
+      branchId: string;
+      idempotencyKey: string;
+      reservationReference: string;
+    }
+  | { outcome: "unsupported" };
+
 export type InventoryProviderReservationAcknowledgement =
   | {
       outcome: "reserved";
@@ -40,6 +51,9 @@ export type InventoryProviderReservationAcknowledgement =
  */
 export interface InventoryProviderReservationClient {
   reserveExactVariants(command: InventoryProviderReservationCommand): Promise<InventoryProviderReservationAcknowledgement>;
+  releaseExactReservation?(
+    command: InventoryProviderReservationCommand & { reservationReference: string; releasedAtUtc: string }
+  ): Promise<InventoryProviderReservationReleaseAcknowledgement>;
 }
 
 export class InventoryProviderTransientError extends Error {
@@ -75,6 +89,38 @@ function sameLines(
  */
 export class VerifiedInventoryProviderReservationAdapter implements InventoryReservationPort {
   constructor(private readonly client: InventoryProviderReservationClient) {}
+
+  async releaseExactReservation(
+    request: InventoryReservationRequest,
+    reservationReference: string,
+    releasedAtUtc: string
+  ): Promise<import("./inventory-reservation.js").InventoryReservationReleaseResult> {
+    if (!request.providerIntegrationId?.trim() ||
+        !/^[a-zA-Z0-9._:-]{1,240}$/.test(reservationReference) ||
+        !validUtc(releasedAtUtc) || !this.client.releaseExactReservation) {
+      return { outcome: "unsupported" };
+    }
+    const acknowledgement = await this.client.releaseExactReservation({
+      providerIntegrationId: request.providerIntegrationId,
+      tenantId: request.tenantId,
+      merchantId: request.merchantId,
+      branchId: request.branchId,
+      idempotencyKey: request.idempotencyKey,
+      requestedAtUtc: request.requestedAtUtc,
+      lines: request.lines,
+      reservationReference,
+      releasedAtUtc
+    });
+    if (acknowledgement.outcome === "unsupported") return acknowledgement;
+    if (acknowledgement.tenantId !== request.tenantId ||
+        acknowledgement.merchantId !== request.merchantId ||
+        acknowledgement.branchId !== request.branchId ||
+        acknowledgement.idempotencyKey !== request.idempotencyKey ||
+        acknowledgement.reservationReference !== reservationReference) {
+      throw new Error("INVENTORY_PROVIDER_RELEASE_ACKNOWLEDGEMENT_SCOPE_MISMATCH");
+    }
+    return { outcome: acknowledgement.outcome };
+  }
 
   async reserveExactVariants(request: InventoryReservationRequest): Promise<InventoryReservationPortResult> {
     if (!request.providerIntegrationId?.trim()) {
