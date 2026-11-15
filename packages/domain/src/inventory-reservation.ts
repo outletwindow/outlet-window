@@ -23,9 +23,23 @@ export type InventoryReservationPortResult =
   | { outcome: "unavailable"; unavailableLines: readonly string[] }
   | { outcome: "unsupported"; reason: "merchant_integration_missing" | "hard_reservation_not_supported" };
 
+export type InventoryReservationReleaseResult =
+  | { outcome: "released" }
+  | { outcome: "already_released" }
+  | { outcome: "unsupported" };
+
+/**
+ * Release is optional during adapter rollout. When implemented, it must be idempotent
+ * for the same provider reservation reference and must never release a different order's hold.
+ */
 export interface InventoryReservationPort {
   /** Must reserve every requested variant atomically, or reserve none; idempotency is mandatory. */
   reserveExactVariants(request: InventoryReservationRequest): Promise<InventoryReservationPortResult>;
+  releaseExactReservation?(
+    request: InventoryReservationRequest,
+    reservationReference: string,
+    releasedAtUtc: string
+  ): Promise<InventoryReservationReleaseResult>;
 }
 
 /**
