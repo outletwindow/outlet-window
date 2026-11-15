@@ -13,7 +13,7 @@ const event = (id: string, suborderId: string, tenantId: string, merchantId: str
   metadata: { orderId: "order-1", previousStatus: "pending_validation", nextStatus: "awaiting_payment" }
 });
 
-function database(options: { parentStatus?: string; version?: number; expiredQuote?: boolean; badOrderTotal?: boolean } = {}) {
+function database(options: { parentStatus?: string; version?: number; expiredQuote?: boolean; badOrderTotal?: boolean; discountWithoutComponent?: boolean } = {}) {
   const statements: string[] = [];
   const query = vi.fn(async <Row>(sql: string, values?: readonly unknown[]) => {
     statements.push(sql);
@@ -21,8 +21,8 @@ function database(options: { parentStatus?: string; version?: number; expiredQuo
     let rowCount: number | null = 1;
     if (sql.includes("FROM customer_orders") && sql.includes("FOR UPDATE")) {
       rows = [{ id: "order-1", customer_id: "customer-1", status: options.parentStatus ?? "pending_validation",
-        version: options.version ?? 4, currency: "SAR", total_minor: options.badOrderTotal ? "13501" : "13500",
-        metadata: { checkoutPricing: { currency: "SAR", discountMinor: 0, components: [
+        version: options.version ?? 4, currency: "SAR", total_minor: options.badOrderTotal ? "13501" : options.discountWithoutComponent ? "13000" : "13500",
+        metadata: { checkoutPricing: { currency: "SAR", discountMinor: options.discountWithoutComponent ? 500 : 0, components: [
           { kind: "product_subtotal", amountMinor: 12000, label: "Products" },
           { kind: "delivery", amountMinor: 1500, label: "Delivery" }
         ] } }, delivery_destination: { city: "Jubail" },
@@ -91,7 +91,7 @@ describe("PostgresPlatformCheckoutReadinessStore", () => {
     expect(db.statements.some(sql => sql.startsWith("UPDATE"))).toBe(false);
   });
 
-  it("refuses an expired delivery quote before writing any state", async () => {
+  it("rejects a discount amount that is missing from pricing components", async () => {\n    const db = database({ discountWithoutComponent: true });\n    const result = await new PostgresPlatformCheckoutReadinessStore(db.pool).transitionToAwaitingPayment(baseInput);\n    expect(result).toEqual({ outcome: "invalid_snapshot" });\n    expect(db.statements).toContain("ROLLBACK");\n    expect(db.statements.some(sql => sql.startsWith("UPDATE"))).toBe(false);\n  });\n\n  it("refuses an expired delivery quote before writing any state", async () => {
     const db = database({ expiredQuote: true });
     const result = await new PostgresPlatformCheckoutReadinessStore(db.pool).transitionToAwaitingPayment(baseInput);
     expect(result).toEqual({ outcome: "invalid_snapshot" });
