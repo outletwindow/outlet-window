@@ -92,7 +92,7 @@ export class PostgresPlatformCheckoutReadinessStore {
     try {
       await client.query("BEGIN");
       const parentResult = await client.query<LockedOrder>(
-        `SELECT id, customer_id, status, version, currency,
+        `SELECT id, customer_id, status, version, currency, metadata,
                 delivery_destination, delivery_quote, delivery_zone_id, delivery_branch_id
          FROM customer_orders
          WHERE id = $1 AND tenant_id = 'platform' AND customer_id = $2
