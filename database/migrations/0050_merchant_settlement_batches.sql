@@ -73,6 +73,9 @@ BEGIN
   IF order_currency IS NULL OR order_currency <> NEW.currency THEN
     RAISE EXCEPTION 'merchant_settlement_currency_mismatch' USING ERRCODE='23514';
   END IF;
+  IF suborder_row.status NOT IN ('delivered','completed') THEN
+    RAISE EXCEPTION 'merchant_settlement_suborder_not_fulfilled' USING ERRCODE='23514';
+  END IF;
   IF suborder_row.subtotal_minor <> NEW.gross_minor THEN
     RAISE EXCEPTION 'merchant_settlement_gross_must_match_suborder_subtotal'
       USING ERRCODE='23514';
