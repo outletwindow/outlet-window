@@ -52,6 +52,10 @@ function createPool(options: {
         catalog_variant_id:"catalog-variant-1",external_variant_id:"external-variant-1",sku:"SKU-1",
         order_quantity:options.quantityMatches===false ? 1 : 2
       }];
+    } else if(sql.includes("FROM branch_inventory i")) {
+      rows=[{
+        product_variant_id:"external-variant-1",available_quantity:8,reserved_quantity:2
+      }];
     } else if(sql.includes("UPDATE branch_inventory")) {
       return {rows:[],rowCount:1};
     }
