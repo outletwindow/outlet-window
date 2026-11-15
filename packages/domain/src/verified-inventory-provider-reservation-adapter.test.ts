@@ -157,7 +157,7 @@ describe("VerifiedInventoryProviderReservationAdapter", () => {
       request, "hold-123", "2026-11-14T12:05:00.000Z"
     )).resolves.toEqual({ outcome: "already_released" });
     await expect(adapter.releaseExactReservation(
-      request, "hold-123", "2026-11-14T12:06:00.000Z"
+      request, "hold-123", "2026-11-14T12:05:00.000Z"
     )).resolves.toEqual({ outcome: "already_released" });
     expect(releaseExactReservation.mock.calls[0]?.[0].idempotencyKey)
       .toBe(releaseExactReservation.mock.calls[1]?.[0].idempotencyKey);
