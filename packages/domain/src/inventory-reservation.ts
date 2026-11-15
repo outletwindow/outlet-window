@@ -19,7 +19,7 @@ export interface InventoryReservationRequest {
 }
 
 export type InventoryReservationPortResult =
-  | { outcome: "reserved"; reservationReference: string; expiresAtUtc?: string }
+  | { outcome: "reserved"; reservationReference: string; expiresAtUtc?: string; providerIntegrationId?: string }
   | { outcome: "unavailable"; unavailableLines: readonly string[] }
   | { outcome: "unsupported"; reason: "merchant_integration_missing" | "hard_reservation_not_supported" };
 
@@ -53,7 +53,7 @@ export class UnconfiguredMerchantInventoryReservationAdapter implements Inventor
 }
 
 export type InventoryReservationResult =
-  | { state: "reserved"; reservationReference: string; expiresAtUtc?: string }
+  | { state: "reserved"; reservationReference: string; expiresAtUtc?: string; providerIntegrationId?: string }
   | { state: "unavailable"; unavailableLines: readonly string[] }
   | { state: "unguaranteed"; reason: "merchant_integration_missing" | "hard_reservation_not_supported" };
 
@@ -108,7 +108,8 @@ export async function reserveInventoryForPaidOrder(input: {
     return {
       state: "reserved",
       reservationReference: result.reservationReference,
-      ...(result.expiresAtUtc === undefined ? {} : { expiresAtUtc: new Date(result.expiresAtUtc).toISOString() })
+      ...(result.expiresAtUtc === undefined ? {} : { expiresAtUtc: new Date(result.expiresAtUtc).toISOString() }),
+      ...(result.providerIntegrationId === undefined ? {} : { providerIntegrationId: result.providerIntegrationId })
     };
   }
   if (result.outcome === "unavailable") {
