@@ -118,4 +118,25 @@ Provide authorized reports for:
 - Access and approvals are enforced.
 
 ## 13. Implementation Status
-Specification only. No payment provider, bank account, wallet, money custody or production settlement integration is claimed.
+
+Partial implementation — database foundation only; this is not a production settlement or payout system.
+
+Implemented in migration 0049:
+- Tenant- and currency-scoped double-entry accounts, journals and journal lines.
+- A journal must balance before posting; posted journals and their lines are immutable.
+- Idempotent journal writes are provided by the domain journal service.
+
+Implemented in migration 0050:
+- Merchant-scoped settlement batches and suborder lines.
+- Settlement lines must reference a fulfilled suborder, match its recorded subtotal and order currency, and include a contract reference plus an arithmetically reconciled deduction breakdown.
+- A suborder can appear in at most one settlement line.
+- Approval requires a matching posted journal that debits CUSTOMER_FUNDS_HELD for gross proceeds, credits MERCHANT_PAYABLE for net proceeds, and allocates deductions to other credit accounts.
+- Approved batches and their lines are immutable.
+
+Not implemented or enabled:
+- Contract/commission/tax policy calculation or independent verification of the supplied contract reference and deduction amounts.
+- An authenticated approval API or dual-control workflow.
+- Provider payout execution, bank transfer, wallet transfer, payout confirmation, or settlement reconciliation against bank/provider statements.
+- Refund execution or production money custody.
+
+The database approval transition is an accounting-record control, not evidence that a merchant was paid. No live payment, payout, bank account or money movement is claimed. Legal, regulatory, payment-provider and accounting review remains required before activation.
