@@ -110,6 +110,27 @@ describe("PostgresPaidCheckoutInventoryReservationWorker", () => {
     expect(inventory.reserveExactVariants).not.toHaveBeenCalled();
   });
 
+  it("moves unpaid suborders to hold when paid order lines are missing", async () => {
+    const db = createPool({
+      lines: [],
+      suborders: [suborder, { ...suborder, id: "sub-2", merchant_id: "merchant-2", branch_id: "branch-2" }]
+    });
+    const transition = vi.fn().mockResolvedValue({
+      outcome: "updated", parentStatus: "on_hold",
+      transition: { ok: true, previousStatus: "pending_validation", order: { status: "on_hold" } }
+    });
+    const { worker, inventory, recovery } = createWorker({ pool: db.pool, transition });
+    await expect(worker.runOnce()).resolves.toMatchObject({
+      outcome: "needs_review", failureCode: "ORDER_LINES_MISSING"
+    });
+    expect(inventory.reserveExactVariants).not.toHaveBeenCalled();
+    expect(recovery).toHaveBeenCalledWith(expect.objectContaining({
+      failureCode: "TASK_COMMIT_REJECTED", failedSuborderId: "sub-1"
+    }));
+    expect(transition).toHaveBeenCalledTimes(2);
+    expect(transition.mock.calls.every(call => call[0].nextStatus === "on_hold")).toBe(true);
+  });
+
   it("holds a paid order and records recovery when exact branch stock is unavailable", async () => {
     const db = createPool();
     const inventory: InventoryReservationPort = {
