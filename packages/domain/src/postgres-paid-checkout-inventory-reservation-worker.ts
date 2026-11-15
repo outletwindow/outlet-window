@@ -190,6 +190,9 @@ export class PostgresPaidCheckoutInventoryReservationWorker {
         await this.recordRecovery(job, payment, "TASK_COMMIT_REJECTED", suborder.id,
           reservations.map(item => ({ suborderId: item.suborder.id, reservationReference: item.reservationReference })));
         await this.releaseHeldReservations(reservations);
+        for (const candidate of orderedSuborders) {
+          await this.moveToHoldIfSafe(job, candidate, "invalid_order_lines");
+        }
         return { needsReview: true, failureCode: "ORDER_LINES_MISSING" };
       }
       const reservationRequest = {
@@ -299,7 +302,8 @@ export class PostgresPaidCheckoutInventoryReservationWorker {
   }
 
   private async moveToHoldIfSafe(
-    job: ReservationJobRow, suborder: SuborderRow, state: "unavailable" | "unguaranteed"
+    job: ReservationJobRow, suborder: SuborderRow,
+    state: "unavailable" | "unguaranteed" | "invalid_order_lines"
   ): Promise<void> {
     if (suborder.status === "on_hold" || suborder.status === "confirmed") return;
     if (suborder.status !== "pending_validation" && suborder.status !== "awaiting_payment") return;
@@ -320,7 +324,8 @@ export class PostgresPaidCheckoutInventoryReservationWorker {
         actorId: this.options.workerId, actorRole: "system", occurredAt,
         expectedVersion: suborder.version,
         reason: state === "unavailable" ? "Paid order inventory is unavailable" :
-          "Merchant inventory hard reservation is not guaranteed"
+          state === "invalid_order_lines" ? "Paid order lines failed inventory validation" :
+            "Merchant inventory hard reservation is not guaranteed"
       },
       auditEvent
     });
