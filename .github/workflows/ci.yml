@@ -235,6 +235,8 @@ jobs:
           DATABASE_URL: postgres://outlet_window:ci_only_password@127.0.0.1:5432/outlet_window_test
           MOYASAR_EXPECT_LIVE: "false"
         run: docker compose -f compose.yaml config --quiet
+      - name: Verify financial journal projection worker is part of runtime Compose
+        run: docker compose -f compose.yaml config --services | grep -Fx financial-journal-projection-worker
       - name: Typecheck
         run: pnpm typecheck
       - name: Lint
