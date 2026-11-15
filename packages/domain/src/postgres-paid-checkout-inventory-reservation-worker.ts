@@ -189,6 +189,7 @@ export class PostgresPaidCheckoutInventoryReservationWorker {
       if (itemResult.rows.length < 1) {
         await this.recordRecovery(job, payment, "TASK_COMMIT_REJECTED", suborder.id,
           reservations.map(item => ({ suborderId: item.suborder.id, reservationReference: item.reservationReference })));
+        await this.releaseHeldReservations(reservations);
         return { needsReview: true, failureCode: "ORDER_LINES_MISSING" };
       }
       const reservationRequest = {
@@ -216,13 +217,7 @@ export class PostgresPaidCheckoutInventoryReservationWorker {
         // Compensate successful earlier branch holds when a later branch cannot reserve.
         // Provider release is idempotent; if an adapter has not implemented it yet,
         // keep the hold and leave its reference in the durable recovery case for review.
-        if (this.inventory.releaseExactReservation) {
-          for (const held of reservations) {
-            await this.inventory.releaseExactReservation(
-              held.request, held.reservationReference, this.now().toISOString()
-            );
-          }
-        }
+        await this.releaseHeldReservations(reservations);
         for (const candidate of orderedSuborders) {
           await this.moveToHoldIfSafe(job, candidate, reservation.state);
         }
@@ -279,6 +274,20 @@ export class PostgresPaidCheckoutInventoryReservationWorker {
       context: { actorId, actorRole: "system", occurredAt, expectedVersion: suborder.version },
       auditEvent
     });
+  }
+
+  private async releaseHeldReservations(
+    reservations: readonly {
+      request: import("./inventory-reservation.js").InventoryReservationRequest;
+      reservationReference: string;
+    }[]
+  ): Promise<void> {
+    if (!this.inventory.releaseExactReservation) return;
+    for (const held of reservations) {
+      await this.inventory.releaseExactReservation(
+        held.request, held.reservationReference, this.now().toISOString()
+      );
+    }
   }
 
   private async moveToHoldIfSafe(
