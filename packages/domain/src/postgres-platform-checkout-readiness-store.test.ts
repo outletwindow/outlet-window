@@ -91,7 +91,15 @@ describe("PostgresPlatformCheckoutReadinessStore", () => {
     expect(db.statements.some(sql => sql.startsWith("UPDATE"))).toBe(false);
   });
 
-  it("rejects a discount amount that is missing from pricing components", async () => {\n    const db = database({ discountWithoutComponent: true });\n    const result = await new PostgresPlatformCheckoutReadinessStore(db.pool).transitionToAwaitingPayment(baseInput);\n    expect(result).toEqual({ outcome: "invalid_snapshot" });\n    expect(db.statements).toContain("ROLLBACK");\n    expect(db.statements.some(sql => sql.startsWith("UPDATE"))).toBe(false);\n  });\n\n  it("refuses an expired delivery quote before writing any state", async () => {
+  it("rejects a discount amount that is missing from pricing components", async () => {
+    const db = database({ discountWithoutComponent: true });
+    const result = await new PostgresPlatformCheckoutReadinessStore(db.pool).transitionToAwaitingPayment(baseInput);
+    expect(result).toEqual({ outcome: "invalid_snapshot" });
+    expect(db.statements).toContain("ROLLBACK");
+    expect(db.statements.some(sql => sql.startsWith("UPDATE"))).toBe(false);
+  });
+
+  it("refuses an expired delivery quote before writing any state", async () => {
     const db = database({ expiredQuote: true });
     const result = await new PostgresPlatformCheckoutReadinessStore(db.pool).transitionToAwaitingPayment(baseInput);
     expect(result).toEqual({ outcome: "invalid_snapshot" });
