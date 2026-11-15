@@ -27,7 +27,7 @@ describe("PostgresMerchantInventoryReservationRouter", () => {
     const adapter: InventoryReservationPort = { reserveExactVariants };
     const router = new PostgresMerchantInventoryReservationRouter(db.client, new Map([["pos-acme", adapter]]));
     await expect(router.reserveExactVariants(request)).resolves.toEqual({
-      outcome: "reserved", reservationReference: "external-hold-1"
+      outcome: "reserved", reservationReference: "external-hold-1", providerIntegrationId: "pos-1"
     });
     expect(reserveExactVariants).toHaveBeenCalledWith({ ...request, providerIntegrationId: "pos-1" });
     expect(db.query.mock.calls[0]?.[1]).toEqual(["merchant-tenant-1", "merchant-1", "branch-1"]);
@@ -38,6 +38,31 @@ describe("PostgresMerchantInventoryReservationRouter", () => {
     expect(sql).toContain("m.status = 'active'");
     expect(sql).toContain("b.status = 'active'");
     expect(sql).toContain("i.family IN ('pos','erp')");
+  });
+
+  it("routes release to the exact originating integration, even if it is no longer connected", async () => {
+    const db = database([{ id: "pos-1", provider_key: "pos-acme" }]);
+    const releaseExactReservation = vi.fn().mockResolvedValue({ outcome: "released" });
+    const adapter: InventoryReservationPort = {
+      reserveExactVariants: vi.fn().mockResolvedValue({
+        outcome: "reserved", reservationReference: "external-hold-1"
+      }),
+      releaseExactReservation
+    };
+    const router = new PostgresMerchantInventoryReservationRouter(db.client, new Map([["pos-acme", adapter]]));
+    await expect(router.releaseExactReservation(
+      { ...request, providerIntegrationId: "pos-1" },
+      "external-hold-1",
+      "2026-11-14T12:05:00.000Z"
+    )).resolves.toEqual({ outcome: "released" });
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining("i.id = $2"), [
+      "merchant-tenant-1", "pos-1", "merchant-1", "branch-1"
+    ]);
+    expect(releaseExactReservation).toHaveBeenCalledWith(
+      { ...request, providerIntegrationId: "pos-1" },
+      "external-hold-1",
+      "2026-11-14T12:05:00.000Z"
+    );
   });
 
   it("fails closed when no provider has an exact branch grant", async () => {
