@@ -93,21 +93,20 @@ describe("PostgresPaidCheckoutInventoryReservationWorker", () => {
 
   it("reuses the immutable outbox timestamp and idempotency key after a provider retry", async () => {
     const db = createPool();
-    const inventory: InventoryReservationPort = {
-      reserveExactVariants: vi.fn()
-        .mockRejectedValueOnce(new Error("INVENTORY_PROVIDER_TRANSIENT_FAILURE"))
-        .mockResolvedValueOnce({
-          outcome: "reserved", reservationReference: "reservation-1"
-        })
-    };
+    const reserveExactVariants = vi.fn()
+      .mockRejectedValueOnce(new Error("INVENTORY_PROVIDER_TRANSIENT_FAILURE"))
+      .mockResolvedValueOnce({
+        outcome: "reserved", reservationReference: "reservation-1"
+      });
+    const inventory: InventoryReservationPort = { reserveExactVariants };
     const { worker } = createWorker({ pool: db.pool, inventory });
     await expect(worker.runOnce()).resolves.toMatchObject({
       outcome: "retry_scheduled", failureCode: "INVENTORY_PROVIDER_TRANSIENT_FAILURE"
     });
     await expect(worker.runOnce()).resolves.toMatchObject({ outcome: "completed" });
-    expect(inventory.reserveExactVariants).toHaveBeenCalledTimes(2);
-    const first = inventory.reserveExactVariants.mock.calls[0]?.[0];
-    const retry = inventory.reserveExactVariants.mock.calls[1]?.[0];
+    expect(reserveExactVariants).toHaveBeenCalledTimes(2);
+    const first = reserveExactVariants.mock.calls[0]?.[0];
+    const retry = reserveExactVariants.mock.calls[1]?.[0];
     expect(first).toMatchObject({
       idempotencyKey: "paid-checkout:platform:order-1:sub-1",
       requestedAtUtc: "2026-11-14T11:59:00.000Z"
