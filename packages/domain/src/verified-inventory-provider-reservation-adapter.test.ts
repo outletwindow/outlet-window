@@ -120,4 +120,50 @@ describe("VerifiedInventoryProviderReservationAdapter", () => {
       outcome: "unsupported", reason: "hard_reservation_not_supported"
     });
   });
+
+  it("releases an exact provider reservation and validates the acknowledgement scope", async () => {
+    const releaseExactReservation = vi.fn().mockResolvedValue({
+      outcome: "released", tenantId: request.tenantId, merchantId: request.merchantId,
+      branchId: request.branchId, idempotencyKey: request.idempotencyKey,
+      reservationReference: "hold-123"
+    });
+    const client: InventoryProviderReservationClient = {
+      reserveExactVariants: vi.fn(),
+      releaseExactReservation
+    };
+    const adapter = new VerifiedInventoryProviderReservationAdapter(client);
+    await expect(adapter.releaseExactReservation(
+      request, "hold-123", "2026-11-14T12:05:00.000Z"
+    )).resolves.toEqual({ outcome: "released" });
+    expect(releaseExactReservation).toHaveBeenCalledWith({
+      providerIntegrationId: "integration-1", tenantId: request.tenantId,
+      merchantId: request.merchantId, branchId: request.branchId,
+      idempotencyKey: request.idempotencyKey, requestedAtUtc: request.requestedAtUtc,
+      lines: request.lines, reservationReference: "hold-123",
+      releasedAtUtc: "2026-11-14T12:05:00.000Z"
+    });
+  });
+
+  it("rejects provider release acknowledgements for a different reservation", async () => {
+    const client: InventoryProviderReservationClient = {
+      reserveExactVariants: vi.fn(),
+      releaseExactReservation: vi.fn().mockResolvedValue({
+        outcome: "released", tenantId: request.tenantId, merchantId: request.merchantId,
+        branchId: request.branchId, idempotencyKey: request.idempotencyKey,
+        reservationReference: "another-hold"
+      })
+    };
+    const adapter = new VerifiedInventoryProviderReservationAdapter(client);
+    await expect(adapter.releaseExactReservation(
+      request, "hold-123", "2026-11-14T12:05:00.000Z"
+    )).rejects.toThrow("INVENTORY_PROVIDER_RELEASE_ACKNOWLEDGEMENT_SCOPE_MISMATCH");
+  });
+
+  it("fails closed when the provider client does not implement release", async () => {
+    const { adapter } = adapterFor(reserved);
+    await expect(adapter.releaseExactReservation(
+      request, "hold-123", "2026-11-14T12:05:00.000Z"
+    )).resolves.toEqual({ outcome: "unsupported" });
+  });
+
 });
