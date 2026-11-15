@@ -24,7 +24,8 @@ describe("LedgerBackedInventoryProviderReservationAdapter", () => {
       })
     };
     const record=vi.fn().mockResolvedValue({reservationId:"local-reservation-1",expiresAtUtc:"2026-11-14T12:15:00.000Z"});
-    const ledger:ExternalInventoryReservationEvidenceStore={record};
+    const release = vi.fn().mockResolvedValue({ outcome: "released" });
+    const ledger:ExternalInventoryReservationEvidenceStore={record,release};
     const adapter=new LedgerBackedInventoryProviderReservationAdapter(client,ledger,"pos-acme");
     await expect(adapter.reserveExactVariants(request)).resolves.toEqual({
       outcome:"reserved",reservationReference:"local-reservation-1",
@@ -45,7 +46,7 @@ describe("LedgerBackedInventoryProviderReservationAdapter", () => {
     };
     const record=vi.fn();
     const adapter=new LedgerBackedInventoryProviderReservationAdapter(
-      client,{record} as unknown as ExternalInventoryReservationEvidenceStore,"pos-acme"
+      client,{record,release:vi.fn()} as unknown as ExternalInventoryReservationEvidenceStore,"pos-acme"
     );
     await expect(adapter.reserveExactVariants(request)).resolves.toEqual({
       outcome:"unavailable",unavailableLines:["variant-1"]
