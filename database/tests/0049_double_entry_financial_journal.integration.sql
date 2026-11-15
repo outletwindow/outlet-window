@@ -1,6 +1,9 @@
 \set ON_ERROR_STOP on
 BEGIN;
 
+INSERT INTO tenants (id,tenant_type,display_name,status)
+VALUES ('ledger-tenant','platform','Ledger Test Tenant','active');
+
 INSERT INTO financial_accounts
 (id,tenant_id,account_code,account_name,account_type,currency)
 VALUES
