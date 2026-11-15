@@ -52,6 +52,29 @@ export class PostgresVerifiedCaptureFinancialJournalProjector {
   private readonly clearingAccountCode: string;
   private readonly heldFundsAccountCode: string;
 
+  /** Reconciles previously verified captures that do not yet have a journal. Safe to rerun. */
+  async projectPending(limit = 25): Promise<VerifiedCaptureJournalProjectionResult[]> {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 250) {
+      throw new Error("INVALID_CAPTURE_FINANCIAL_PROJECTION_BATCH_SIZE");
+    }
+    const pending = await this.pool.query<{ id: string }>(
+      `SELECT c.id
+       FROM verified_order_payment_captures c
+       WHERE NOT EXISTS (
+         SELECT 1 FROM financial_journals j
+         WHERE j.tenant_id=c.tenant_id
+           AND j.source_type='verified_payment_capture'
+           AND j.source_reference=c.id
+       )
+       ORDER BY c.verified_at,c.id
+       LIMIT $1`,
+      [limit]
+    );
+    const results: VerifiedCaptureJournalProjectionResult[] = [];
+    for (const row of pending.rows) results.push(await this.project(row.id));
+    return results;
+  }
+
   async project(captureId: string): Promise<VerifiedCaptureJournalProjectionResult> {
     if (typeof captureId !== "string" || !captureId.trim() || captureId.length > 200) {
       throw new Error("INVALID_VERIFIED_CAPTURE_ID");
