@@ -172,7 +172,11 @@ export class PostgresPaidCheckoutInventoryReservationWorker {
     // Reserve every branch first. No suborder is confirmed until all branch holds
     // have succeeded, so an unavailable later branch cannot leave a partially
     // fulfilled paid order without a durable recovery record for earlier holds.
-    const reservations: Array<{ suborder: SuborderRow; reservationReference: string }> = [];
+    const reservations: Array<{
+      suborder: SuborderRow;
+      request: import("./inventory-reservation.js").InventoryReservationRequest;
+      reservationReference: string;
+    }> = [];
     for (const suborder of orderedSuborders) {
       if (suborder.status === "confirmed") continue;
       const itemResult = await this.pool.query<OrderLineRow>(
@@ -187,21 +191,20 @@ export class PostgresPaidCheckoutInventoryReservationWorker {
           reservations.map(item => ({ suborderId: item.suborder.id, reservationReference: item.reservationReference })));
         return { needsReview: true, failureCode: "ORDER_LINES_MISSING" };
       }
+      const reservationRequest = {
+        tenantId: suborder.tenant_id,
+        orderId: job.order_id,
+        suborderId: suborder.id,
+        merchantId: suborder.merchant_id,
+        branchId: suborder.branch_id,
+        idempotencyKey: `paid-checkout:${job.tenant_id}:${job.order_id}:${suborder.id}`,
+        requestedAtUtc: this.now().toISOString(),
+        lines: itemResult.rows.map(line => ({
+          productVariantId: line.product_variant_id, sku: line.sku, quantity: Number(line.quantity)
+        }))
+      };
       const reservation = await reserveInventoryForPaidOrder({
-        paymentCaptured: true,
-        port: this.inventory,
-        request: {
-          tenantId: suborder.tenant_id,
-          orderId: job.order_id,
-          suborderId: suborder.id,
-          merchantId: suborder.merchant_id,
-          branchId: suborder.branch_id,
-          idempotencyKey: `paid-checkout:${job.tenant_id}:${job.order_id}:${suborder.id}`,
-          requestedAtUtc: this.now().toISOString(),
-          lines: itemResult.rows.map(line => ({
-            productVariantId: line.product_variant_id, sku: line.sku, quantity: Number(line.quantity)
-          }))
-        }
+        paymentCaptured: true, port: this.inventory, request: reservationRequest
       });
       if (reservation.state === "unavailable" || reservation.state === "unguaranteed") {
         const code: CheckoutRecoveryFailureCode = reservation.state === "unavailable"
@@ -210,12 +213,24 @@ export class PostgresPaidCheckoutInventoryReservationWorker {
           suborderId: item.suborder.id, reservationReference: item.reservationReference
         }));
         await this.recordRecovery(job, payment, code, suborder.id, references);
+        // Compensate successful earlier branch holds when a later branch cannot reserve.
+        // Provider release is idempotent; if an adapter has not implemented it yet,
+        // keep the hold and leave its reference in the durable recovery case for review.
+        if (this.inventory.releaseExactReservation) {
+          for (const held of reservations) {
+            await this.inventory.releaseExactReservation(
+              held.request, held.reservationReference, this.now().toISOString()
+            );
+          }
+        }
         for (const candidate of orderedSuborders) {
           await this.moveToHoldIfSafe(job, candidate, reservation.state);
         }
         return { needsReview: true, failureCode: code };
       }
-      reservations.push({ suborder, reservationReference: reservation.reservationReference });
+      reservations.push({
+        suborder, request: reservationRequest, reservationReference: reservation.reservationReference
+      });
     }
 
     // All exact branch reservations now exist. Advance each suborder independently;
