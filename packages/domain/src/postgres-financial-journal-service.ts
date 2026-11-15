@@ -56,13 +56,13 @@ export class PostgresFinancialJournalService {
   ) {}
 
   async post(input: PostFinancialJournalInput): Promise<FinancialJournalWriteResult> {
-    if (!input.tenantId.trim() ||
-        !/^[a-zA-Z0-9._:-]{8,240}$/.test(input.idempotencyKey) ||
-        !/^[a-zA-Z0-9._-]{1,80}$/.test(input.sourceType) ||
-        !input.sourceReference.trim() || input.sourceReference.length > 240 ||
-        !/^[A-Z]{3}$/.test(input.currency) ||
-        !input.description.trim() || input.description.length > 500 ||
-        !Number.isFinite(Date.parse(input.occurredAtUtc)) ||
+    if (typeof input.tenantId !== "string" || !input.tenantId.trim() ||
+        typeof input.idempotencyKey !== "string" || !/^[a-zA-Z0-9._:-]{8,240}$/.test(input.idempotencyKey) ||
+        typeof input.sourceType !== "string" || !/^[a-zA-Z0-9._-]{1,80}$/.test(input.sourceType) ||
+        typeof input.sourceReference !== "string" || !input.sourceReference.trim() || input.sourceReference.length > 240 ||
+        typeof input.currency !== "string" || !/^[A-Z]{3}$/.test(input.currency) ||
+        typeof input.description !== "string" || !input.description.trim() || input.description.length > 500 ||
+        typeof input.occurredAtUtc !== "string" || !Number.isFinite(Date.parse(input.occurredAtUtc)) ||
         !Array.isArray(input.lines) || input.lines.length < 2 || input.lines.length > 500) {
       throw new Error("INVALID_FINANCIAL_JOURNAL");
     }
@@ -71,11 +71,11 @@ export class PostgresFinancialJournalService {
     let debitTotal = 0;
     let creditTotal = 0;
     for (const line of lines) {
-      if (!line.accountId.trim() ||
+      if (typeof line.accountId !== "string" || !line.accountId.trim() ||
           !Number.isSafeInteger(line.debitMinor) || !Number.isSafeInteger(line.creditMinor) ||
           line.debitMinor < 0 || line.creditMinor < 0 ||
           ((line.debitMinor > 0) === (line.creditMinor > 0)) ||
-          (line.memo !== null && line.memo.length > 500)) {
+          (line.memo !== undefined && (typeof line.memo !== "string" || line.memo.length > 500))) {
         throw new Error("INVALID_FINANCIAL_JOURNAL_LINE");
       }
       debitTotal += line.debitMinor;
@@ -125,7 +125,13 @@ export class PostgresFinancialJournalService {
           debitMinor: Number(line.debit_minor), creditMinor: Number(line.credit_minor),
           memo: line.memo
         }));
-        const sameLines = JSON.stringify(actualLines) === JSON.stringify(lines);
+        const safeExistingLines = existingLines.rows.every(line =>
+          line.currency === input.currency &&
+          Number.isSafeInteger(Number(line.line_number)) &&
+          Number.isSafeInteger(Number(line.debit_minor)) &&
+          Number.isSafeInteger(Number(line.credit_minor))
+        );
+        const sameLines = safeExistingLines && JSON.stringify(actualLines) === JSON.stringify(lines);
         await client.query("COMMIT");
         return sameHeader && sameLines && row.status === "posted"
           ? { outcome: "duplicate", journalId: row.id }
