@@ -176,7 +176,7 @@ describe("PostgresExternalInventoryReservationEvidenceStore",()=>{
     },releaseProvider)).resolves.toEqual({outcome:"released"});
     expect(releaseProvider).toHaveBeenCalledWith({
       providerKey:"pos-acme",providerReservationReference:"external-hold-1"
-    });
+    },"2026-11-14T12:05:00.000Z");
     expect(db.calls.some(c=>c.sql.startsWith("UPDATE branch_inventory"))).toBe(true);
     expect(db.calls.some(c=>c.sql.startsWith("UPDATE inventory_reservations"))).toBe(true);
   });
