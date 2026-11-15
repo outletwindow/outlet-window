@@ -18,7 +18,7 @@ export interface ExternalInventoryReservationEvidenceStore {
       reservationId: string;
       releasedAtUtc: string;
     },
-    releaseProvider: (evidence: { providerKey: string; providerReservationReference: string }) =>
+    releaseProvider: (evidence: { providerKey: string; providerReservationReference: string }, releasedAtUtc: string) =>
       Promise<InventoryReservationReleaseResult>
   ): Promise<InventoryReservationReleaseResult>;
 }
@@ -96,13 +96,37 @@ export class PostgresExternalInventoryReservationEvidenceStore implements Extern
       return { outcome: "unsupported" };
     }
 
+    // Persist the first release timestamp before contacting the provider. The
+    // provider idempotency key and timestamp together define the exact release
+    // payload; retries must not generate a new timestamp after a timeout/crash.
+    await this.pool.query(
+      `INSERT INTO inventory_provider_reservation_release_intents
+         (tenant_id,reservation_id,integration_id,released_at)
+       VALUES ($1,$2,$3,$4)
+       ON CONFLICT (tenant_id,reservation_id) DO NOTHING`,
+      [request.tenantId,input.reservationId,request.providerIntegrationId,input.releasedAtUtc]
+    );
+    const releaseIntent = await this.pool.query<{
+      integration_id: string; released_at: Date | string;
+    }>(
+      `SELECT integration_id,released_at
+       FROM inventory_provider_reservation_release_intents
+       WHERE tenant_id=$1 AND reservation_id=$2`,
+      [request.tenantId,input.reservationId]
+    );
+    if (releaseIntent.rowCount !== 1 ||
+        releaseIntent.rows[0]!.integration_id !== request.providerIntegrationId) {
+      return { outcome: "unsupported" };
+    }
+    const stableReleasedAtUtc = new Date(releaseIntent.rows[0]!.released_at).toISOString();
+
     // Provider release is deliberately performed before local ledger release.
-    // If the process crashes between them, the next attempt repeats the same
-    // provider idempotency key and then completes the local compare-and-swap.
+    // If the process crashes between them, the next attempt reuses the durable
+    // timestamp and idempotency key, then completes the local compare-and-swap.
     const providerResult = await releaseProvider({
       providerKey: row.provider_key,
       providerReservationReference: row.provider_reservation_reference
-    });
+    }, stableReleasedAtUtc);
     if (providerResult.outcome === "unsupported") return providerResult;
     const local = await this.lifecycle.release({
       tenantId: request.tenantId,
