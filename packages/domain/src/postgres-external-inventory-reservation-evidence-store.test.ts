@@ -165,6 +165,28 @@ describe("PostgresExternalInventoryReservationEvidenceStore",()=>{
     expect(releaseProvider).not.toHaveBeenCalled();
   });
 
+  it("finishes the local release when the provider confirms the hold was already released",async()=>{
+    const db=createPool();
+    const store=new PostgresExternalInventoryReservationEvidenceStore(db.pool);
+    const releaseProvider=vi.fn().mockResolvedValue({outcome:"already_released"});
+    await expect(store.release({
+      request,reservationId:"local-res-1",releasedAtUtc:"2026-11-14T12:05:00.000Z"
+    },releaseProvider)).resolves.toEqual({outcome:"released"});
+    expect(db.calls.some(c=>c.sql.startsWith("UPDATE branch_inventory"))).toBe(true);
+    expect(db.calls.some(c=>c.sql.startsWith("UPDATE inventory_reservations SET status"))).toBe(true);
+  });
+
+  it("never calls the provider for a reservation already consumed locally",async()=>{
+    const db=createPool({releaseStatus:"consumed"});
+    const store=new PostgresExternalInventoryReservationEvidenceStore(db.pool);
+    const releaseProvider=vi.fn();
+    await expect(store.release({
+      request,reservationId:"local-res-1",releasedAtUtc:"2026-11-14T12:05:00.000Z"
+    },releaseProvider)).resolves.toEqual({outcome:"unsupported"});
+    expect(releaseProvider).not.toHaveBeenCalled();
+    expect(db.calls.some(c=>c.sql.startsWith("UPDATE branch_inventory"))).toBe(false);
+  });
+
   it("leaves the local reservation untouched when the provider release call fails",async()=>{
     const db=createPool();
     const store=new PostgresExternalInventoryReservationEvidenceStore(db.pool);
