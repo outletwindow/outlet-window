@@ -12,7 +12,8 @@
     "start:payment-webhooks": "tsx src/payment-webhook-main.ts",
     "start:initial-payment-captures": "tsx src/initial-payment-capture-main.ts",
     "start:inventory-expiry": "tsx src/inventory-reservation-expiry-main.ts",
-    "start:paid-checkout-reservations": "tsx src/paid-checkout-inventory-reservation-main.ts"
+    "start:paid-checkout-reservations": "tsx src/paid-checkout-inventory-reservation-main.ts",
+    "start:financial-journal-projection": "tsx src/financial-journal-projection-main.ts"
   },
   "dependencies": {
     "pg": "^8.16.3"
