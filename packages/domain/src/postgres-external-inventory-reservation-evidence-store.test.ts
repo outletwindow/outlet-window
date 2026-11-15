@@ -22,6 +22,7 @@ function createPool(options: {
   quantityMatches?: boolean;
   releaseEvidence?: boolean;
   releaseStatus?: string;
+  releaseLinesMatch?: boolean;
 } = {}) {
   const calls: Array<{sql:string;values:readonly unknown[]}> = [];
   const query = vi.fn(async <Row>(sql:string,values:readonly unknown[]=[]):Promise<PostgresQueryResult<Row>> => {
@@ -44,7 +45,10 @@ function createPool(options: {
     } else if(sql.includes("FROM inventory_reservation_lines") && sql.includes("product_variant_id")) {
       rows=[{merchant_id:request.merchantId,branch_id:request.branchId,product_variant_id:"external-variant-1",quantity:2}];
     } else if(sql.includes("FROM inventory_reservation_lines")) {
-      rows=[{catalog_variant_id:"catalog-variant-1",sku:"SKU-1",quantity:2}];
+      rows=[{
+        catalog_variant_id:options.releaseLinesMatch === false ? "catalog-variant-other" : "catalog-variant-1",
+        sku:"SKU-1",quantity:2
+      }];
     } else if(sql.includes("FROM tenant_integrations i")) {
       rows=options.eligible===false ? [] : [{id:"pos-1"}];
     } else if(sql.includes("FROM merchant_suborders s")) {
@@ -167,6 +171,18 @@ describe("PostgresExternalInventoryReservationEvidenceStore",()=>{
     });
     expect(db.calls.some(c=>c.sql.startsWith("UPDATE branch_inventory"))).toBe(true);
     expect(db.calls.some(c=>c.sql.startsWith("UPDATE inventory_reservations"))).toBe(true);
+  });
+
+  it("does not call the provider when persisted reservation lines differ from the release request",async()=>{
+    const db=createPool({releaseLinesMatch:false});
+    const store=new PostgresExternalInventoryReservationEvidenceStore(db.pool);
+    const releaseProvider=vi.fn().mockResolvedValue({outcome:"released"});
+    await expect(store.release({
+      request,reservationId:"local-res-1",releasedAtUtc:"2026-11-14T12:05:00.000Z"
+    },releaseProvider)).resolves.toEqual({outcome:"unsupported"});
+    expect(releaseProvider).not.toHaveBeenCalled();
+    expect(db.calls.some(c=>c.sql.includes("FROM inventory_reservation_lines"))).toBe(true);
+    expect(db.calls.some(c=>c.sql.startsWith("UPDATE branch_inventory"))).toBe(false);
   });
 
   it("does not change the local ledger when provider release is unsupported",async()=>{
