@@ -130,6 +130,29 @@ describe("PostgresExternalInventoryReservationEvidenceStore",()=>{
     expect(db.client.query).not.toHaveBeenCalled();
   });
 
+  it("rejects a non-canonical release timestamp before querying provider evidence",async()=>{
+    const db=createPool();
+    const store=new PostgresExternalInventoryReservationEvidenceStore(db.pool);
+    const releaseProvider=vi.fn();
+    await expect(store.release({
+      request,reservationId:"local-res-1",releasedAtUtc:"2026-11-14T12:05:00Z"
+    },releaseProvider)).resolves.toEqual({outcome:"unsupported"});
+    expect(db.query).not.toHaveBeenCalled();
+    expect(releaseProvider).not.toHaveBeenCalled();
+  });
+
+  it("rejects a release request without its originating integration identity",async()=>{
+    const db=createPool();
+    const store=new PostgresExternalInventoryReservationEvidenceStore(db.pool);
+    const releaseProvider=vi.fn();
+    await expect(store.release({
+      request:{...request,providerIntegrationId:undefined},
+      reservationId:"local-res-1",releasedAtUtc:"2026-11-14T12:05:00.000Z"
+    },releaseProvider)).resolves.toEqual({outcome:"unsupported"});
+    expect(db.query).not.toHaveBeenCalled();
+    expect(releaseProvider).not.toHaveBeenCalled();
+  });
+
   it("releases the provider hold first and then finalizes the exact local reservation",async()=>{
     const db=createPool();
     const store=new PostgresExternalInventoryReservationEvidenceStore(db.pool);
