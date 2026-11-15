@@ -124,7 +124,7 @@ describe("VerifiedInventoryProviderReservationAdapter", () => {
   it("releases an exact provider reservation and validates the acknowledgement scope", async () => {
     const releaseExactReservation = vi.fn().mockResolvedValue({
       outcome: "released", tenantId: request.tenantId, merchantId: request.merchantId,
-      branchId: request.branchId, idempotencyKey: request.idempotencyKey,
+      branchId: request.branchId, idempotencyKey: `release:${request.idempotencyKey}`,
       reservationReference: "hold-123"
     });
     const client: InventoryProviderReservationClient = {
@@ -138,7 +138,7 @@ describe("VerifiedInventoryProviderReservationAdapter", () => {
     expect(releaseExactReservation).toHaveBeenCalledWith({
       providerIntegrationId: "integration-1", tenantId: request.tenantId,
       merchantId: request.merchantId, branchId: request.branchId,
-      idempotencyKey: request.idempotencyKey, requestedAtUtc: request.requestedAtUtc,
+      idempotencyKey: `release:${request.idempotencyKey}`, requestedAtUtc: request.requestedAtUtc,
       lines: request.lines, reservationReference: "hold-123",
       releasedAtUtc: "2026-11-14T12:05:00.000Z"
     });
@@ -149,7 +149,7 @@ describe("VerifiedInventoryProviderReservationAdapter", () => {
       reserveExactVariants: vi.fn(),
       releaseExactReservation: vi.fn().mockResolvedValue({
         outcome: "released", tenantId: request.tenantId, merchantId: request.merchantId,
-        branchId: request.branchId, idempotencyKey: request.idempotencyKey,
+        branchId: request.branchId, idempotencyKey: `release:${request.idempotencyKey}`,
         reservationReference: "another-hold"
       })
     };
