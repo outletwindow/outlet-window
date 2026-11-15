@@ -13,6 +13,7 @@ import {
 
 type ReservationJobRow = {
   id: string; tenant_id: string; order_id: string; capture_id: string; attempt_count: number;
+  created_at: Date | string;
 };
 type PaidOrderRow = {
   tenant_id: string; status: string; total_minor: string | number; currency: string;
@@ -86,7 +87,7 @@ export class PostgresPaidCheckoutInventoryReservationWorker {
            lease_owner = $2, lease_expires_at = $1 + ($3::integer * interval '1 second'),
            updated_at = $1
        FROM due WHERE job.id = due.id
-       RETURNING job.id,job.tenant_id,job.order_id,job.capture_id,job.attempt_count`,
+       RETURNING job.id,job.tenant_id,job.order_id,job.capture_id,job.attempt_count,job.created_at`,
       [nowUtc, this.options.workerId, this.leaseSeconds]
     );
     const job = claimed.rows[0];
@@ -154,6 +155,15 @@ export class PostgresPaidCheckoutInventoryReservationWorker {
       return { needsReview: true, failureCode: "ORDER_SUBORDERS_MISSING" };
     }
     const orderedSuborders = suborders.rows;
+    // Use the immutable outbox creation timestamp for every provider reservation
+    // attempt. A stable idempotency key must never be paired with a fresh timestamp
+    // after a worker retry or lease recovery.
+    const reservationRequestedAtUtc = job.created_at instanceof Date
+      ? job.created_at.toISOString() : new Date(job.created_at).toISOString();
+    if (!Number.isFinite(Date.parse(reservationRequestedAtUtc)) ||
+        new Date(reservationRequestedAtUtc).toISOString() !== reservationRequestedAtUtc) {
+      throw new Error("PAID_CHECKOUT_RESERVATION_JOB_TIMESTAMP_INVALID");
+    }
     if (orderedSuborders.some(row => !["pending_validation", "awaiting_payment", "confirmed"].includes(row.status))) {
       const failed = orderedSuborders.find(row => !["pending_validation", "awaiting_payment", "confirmed"].includes(row.status));
       await this.recordRecovery(job, payment, "TASK_COMMIT_REJECTED", failed?.id, []);
@@ -202,7 +212,7 @@ export class PostgresPaidCheckoutInventoryReservationWorker {
         merchantId: suborder.merchant_id,
         branchId: suborder.branch_id,
         idempotencyKey: `paid-checkout:${job.tenant_id}:${job.order_id}:${suborder.id}`,
-        requestedAtUtc: this.now().toISOString(),
+        requestedAtUtc: reservationRequestedAtUtc,
         lines: itemResult.rows.map(line => ({
           productVariantId: line.product_variant_id, sku: line.sku, quantity: Number(line.quantity)
         }))
