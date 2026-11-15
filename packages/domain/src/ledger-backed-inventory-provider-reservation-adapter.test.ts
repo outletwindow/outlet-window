@@ -74,7 +74,7 @@ describe("LedgerBackedInventoryProviderReservationAdapter", () => {
       reserveExactVariants: vi.fn(),
       releaseExactReservation: vi.fn().mockResolvedValue({
         outcome: "released", tenantId: "tenant-1", merchantId: "merchant-1",
-        branchId: "branch-1", idempotencyKey: request.idempotencyKey,
+        branchId: "branch-1", idempotencyKey: `release:${request.idempotencyKey}`,
         reservationReference: "external-hold-1"
       })
     };
@@ -100,7 +100,7 @@ describe("LedgerBackedInventoryProviderReservationAdapter", () => {
     expect(client.releaseExactReservation).toHaveBeenCalledWith({
       providerIntegrationId: "integration-1", tenantId: "tenant-1",
       merchantId: "merchant-1", branchId: "branch-1",
-      idempotencyKey: request.idempotencyKey, requestedAtUtc: request.requestedAtUtc,
+      idempotencyKey: `release:${request.idempotencyKey}`, requestedAtUtc: request.requestedAtUtc,
       lines: request.lines, reservationReference: "external-hold-1",
       releasedAtUtc: "2026-11-14T12:05:00.000Z"
     });
