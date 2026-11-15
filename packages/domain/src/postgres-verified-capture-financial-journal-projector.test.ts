@@ -91,6 +91,46 @@ describe("PostgresVerifiedCaptureFinancialJournalProjector", () => {
     expect(poolQuery).toHaveBeenCalledTimes(1);
   });
 
+  it("scans a bounded batch of unprojected verified captures and projects them idempotently", async () => {
+    const poolQuery = vi.fn()
+      .mockResolvedValueOnce({ rows: [{ id: "capture-1" }, { id: "capture-2" }], rowCount: 2 })
+      .mockResolvedValueOnce({ rows: [capture], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: accounts, rowCount: 2 })
+      .mockResolvedValueOnce({ rows: [capture], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: accounts, rowCount: 2 });
+    const clientQuery = vi.fn()
+      .mockResolvedValueOnce({ rows: [], rowCount: null })
+      .mockResolvedValueOnce({ rows: [{ id: "journal-1" }], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ id: "journal-1" }], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [], rowCount: null })
+      .mockResolvedValueOnce({ rows: [], rowCount: null })
+      .mockResolvedValueOnce({ rows: [{ id: "journal-1" }], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ id: "journal-1" }], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [], rowCount: null });
+    const client = { query: clientQuery, release: vi.fn() } as unknown as PostgresClient;
+    const pool = { query: poolQuery, connect: vi.fn().mockResolvedValue(client) } as unknown as PostgresPool;
+    const projector = new PostgresVerifiedCaptureFinancialJournalProjector(pool, { createId: () => "journal-1" });
+    // Each capture uses a fresh client in production; mock the two transaction sequences explicitly.
+    const secondClient = { query: vi.fn()
+      .mockResolvedValueOnce({ rows: [], rowCount: null })
+      .mockResolvedValueOnce({ rows: [{ id: "journal-2" }], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ id: "journal-2" }], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [], rowCount: null }), release: vi.fn() } as unknown as PostgresClient;
+    (pool.connect as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(client).mockResolvedValueOnce(secondClient);
+    await expect(projector.projectPending(2)).resolves.toHaveLength(2);
+    expect(poolQuery.mock.calls[0]?.[0]).toContain("NOT EXISTS");
+    expect(poolQuery.mock.calls[0]?.[1]).toEqual([2]);
+    expect(client.release).toHaveBeenCalledOnce();
+    expect(secondClient.release).toHaveBeenCalledOnce();
+  });
+
   it("rejects an invalid capture identifier before database access", async () => {
     const poolQuery = vi.fn();
     const { projector } = setup(poolQuery, vi.fn());
