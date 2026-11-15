@@ -8,6 +8,7 @@ export interface ProvisionCaptureAccountsInput {
 export interface CaptureLedgerAccounts {
   clearingAccountId: string;
   heldFundsAccountId: string;
+  merchantPayableAccountId: string;
   currency: string;
 }
 type AccountRow = {
@@ -19,7 +20,7 @@ type AccountRow = {
 };
 
 /**
- * Explicitly provisions the two system accounts required to journal a verified capture.
+ * Explicitly provisions capture-clearing, customer-funds-held, and merchant-payable accounts.
  * Existing account definitions are never overwritten; incompatible definitions fail closed.
  */
 export class PostgresCaptureFinancialAccountProvisioner {
@@ -52,27 +53,36 @@ export class PostgresCaptureFinancialAccountProvisioner {
          ON CONFLICT (tenant_id,account_code,currency) DO NOTHING`,
         [this.createId(), input.tenantId, input.currency]
       );
+      await client.query(
+        `INSERT INTO financial_accounts
+         (id,tenant_id,account_code,account_name,account_type,currency)
+         VALUES ($1,$2,'MERCHANT_PAYABLE','Merchant payable','liability',$3)
+         ON CONFLICT (tenant_id,account_code,currency) DO NOTHING`,
+        [this.createId(), input.tenantId, input.currency]
+      );
       const result = await client.query<AccountRow>(
         `SELECT id,account_code,account_type,currency,is_active
          FROM financial_accounts
          WHERE tenant_id=$1 AND currency=$2
            AND account_code=ANY($3::text[])
          ORDER BY account_code FOR UPDATE`,
-        [input.tenantId, input.currency, ["PAYMENT_CLEARING", "CUSTOMER_FUNDS_HELD"]]
+        [input.tenantId, input.currency, ["PAYMENT_CLEARING", "CUSTOMER_FUNDS_HELD", "MERCHANT_PAYABLE"]]
       );
       const clearing = result.rows.find(row => row.account_code === "PAYMENT_CLEARING");
       const heldFunds = result.rows.find(row => row.account_code === "CUSTOMER_FUNDS_HELD");
-      if (result.rows.length !== 2 || !clearing || !heldFunds ||
-          clearing.account_type !== "asset" || heldFunds.account_type !== "liability" ||
-          !clearing.is_active || !heldFunds.is_active ||
-          clearing.currency !== input.currency || heldFunds.currency !== input.currency ||
-          clearing.id === heldFunds.id) {
+      const merchantPayable = result.rows.find(row => row.account_code === "MERCHANT_PAYABLE");
+      if (result.rows.length !== 3 || !clearing || !heldFunds || !merchantPayable ||
+          clearing.account_type !== "asset" || heldFunds.account_type !== "liability" || merchantPayable.account_type !== "liability" ||
+          !clearing.is_active || !heldFunds.is_active || !merchantPayable.is_active ||
+          clearing.currency !== input.currency || heldFunds.currency !== input.currency || merchantPayable.currency !== input.currency ||
+          clearing.id === heldFunds.id || clearing.id === merchantPayable.id || heldFunds.id === merchantPayable.id) {
         throw new Error("CAPTURE_FINANCIAL_ACCOUNT_CONFIGURATION_CONFLICT");
       }
       await client.query("COMMIT");
       return {
         clearingAccountId: clearing.id,
         heldFundsAccountId: heldFunds.id,
+        merchantPayableAccountId: merchantPayable.id,
         currency: input.currency
       };
     } catch (error) {
