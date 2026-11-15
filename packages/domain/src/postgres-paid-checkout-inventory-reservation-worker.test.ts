@@ -238,7 +238,7 @@ describe("PostgresPaidCheckoutInventoryReservationWorker", () => {
     expect(transition.mock.calls.every(call => call[0].nextStatus === "on_hold")).toBe(true);
   });
 
-  it("retries safely when releasing an earlier external hold fails", async () => {
+  it("keeps the paid order on hold when compensation fails instead of replaying the reservation saga", async () => {
     const db = createPool({ suborders: [suborder, { ...suborder, id: "sub-2", merchant_id: "merchant-2", branch_id: "branch-2" }] });
     const inventory: InventoryReservationPort = {
       reserveExactVariants: vi.fn()
@@ -246,14 +246,21 @@ describe("PostgresPaidCheckoutInventoryReservationWorker", () => {
         .mockResolvedValueOnce({ outcome: "unavailable", unavailableLines: ["catalog-v2"] }),
       releaseExactReservation: vi.fn().mockRejectedValue(new Error("PROVIDER_RELEASE_TIMEOUT"))
     };
-    const { worker, recovery } = createWorker({ pool: db.pool, inventory });
+    const transition = vi.fn().mockResolvedValue({
+      outcome: "updated", parentStatus: "on_hold",
+      transition: { ok: true, previousStatus: "pending_validation", order: { status: "on_hold" } }
+    });
+    const { worker, recovery } = createWorker({ pool: db.pool, inventory, transition });
     await expect(worker.runOnce()).resolves.toMatchObject({
-      outcome: "retry_scheduled", failureCode: "PROVIDER_RELEASE_TIMEOUT"
+      outcome: "needs_review", failureCode: "INVENTORY_UNAVAILABLE"
     });
     expect(recovery).toHaveBeenCalledWith(expect.objectContaining({
       reservationReferences: [{ suborderId: "sub-1", reservationReference: "reservation-1" }]
     }));
     expect(inventory.releaseExactReservation).toHaveBeenCalledTimes(1);
+    expect(inventory.reserveExactVariants).toHaveBeenCalledTimes(2);
+    expect(transition).toHaveBeenCalledTimes(2);
+    expect(transition.mock.calls.every(call => call[0].nextStatus === "on_hold")).toBe(true);
   });
 
 });
