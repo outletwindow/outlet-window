@@ -68,4 +68,42 @@ describe("LedgerBackedInventoryProviderReservationAdapter", () => {
     );
     await expect(adapter.reserveExactVariants(request)).rejects.toThrow("database_unavailable");
   });
+
+  it("releases the provider hold using the external reference stored against the local reservation id", async () => {
+    const client: InventoryProviderReservationClient = {
+      reserveExactVariants: vi.fn(),
+      releaseExactReservation: vi.fn().mockResolvedValue({
+        outcome: "released", tenantId: "tenant-1", merchantId: "merchant-1",
+        branchId: "branch-1", idempotencyKey: request.idempotencyKey,
+        reservationReference: "external-hold-1"
+      })
+    };
+    const release = vi.fn(async (input, releaseProvider) => {
+      const providerResult = await releaseProvider({
+        providerKey: "pos-acme",
+        providerReservationReference: "external-hold-1"
+      });
+      return providerResult;
+    });
+    const ledger = {
+      record: vi.fn(),
+      release
+    } as unknown as ExternalInventoryReservationEvidenceStore;
+    const adapter = new LedgerBackedInventoryProviderReservationAdapter(client, ledger, "pos-acme");
+    await expect(adapter.releaseExactReservation(
+      request, "local-reservation-1", "2026-11-14T12:05:00.000Z"
+    )).resolves.toEqual({ outcome: "released" });
+    expect(release).toHaveBeenCalledWith(
+      { request, reservationId: "local-reservation-1", releasedAtUtc: "2026-11-14T12:05:00.000Z" },
+      expect.any(Function)
+    );
+    expect(client.releaseExactReservation).toHaveBeenCalledWith({
+      providerIntegrationId: "integration-1", tenantId: "tenant-1",
+      merchantId: "merchant-1", branchId: "branch-1",
+      idempotencyKey: request.idempotencyKey, requestedAtUtc: request.requestedAtUtc,
+      lines: request.lines, reservationReference: "external-hold-1",
+      releasedAtUtc: "2026-11-14T12:05:00.000Z"
+    });
+  });
+
 });
