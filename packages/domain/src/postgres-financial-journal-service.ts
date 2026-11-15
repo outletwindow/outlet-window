@@ -75,7 +75,8 @@ export class PostgresFinancialJournalService {
           !Number.isSafeInteger(line.debitMinor) || !Number.isSafeInteger(line.creditMinor) ||
           line.debitMinor < 0 || line.creditMinor < 0 ||
           ((line.debitMinor > 0) === (line.creditMinor > 0)) ||
-          (line.memo !== undefined && (typeof line.memo !== "string" || line.memo.length > 500))) {
+          (line.memo !== undefined && line.memo !== null &&
+            (typeof line.memo !== "string" || line.memo.length > 500))) {
         throw new Error("INVALID_FINANCIAL_JOURNAL_LINE");
       }
       debitTotal += line.debitMinor;
