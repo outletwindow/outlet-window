@@ -61,7 +61,7 @@ function pricingSnapshotMatches(input: {
   const storedTotal = Number(input.totalMinor);
   return productSubtotalCount === 1 && deliveryCount === 1 &&
     Number.isSafeInteger(discount) && discount >= 0 && discount <= subtotal &&
-    (discountComponents === 0 || discountComponents === discount) &&
+    discountComponents === discount &&
     Number.isSafeInteger(storedTotal) && storedTotal >= 0 &&
     subtotal - discount === storedTotal;
 }
