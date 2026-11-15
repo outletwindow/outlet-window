@@ -41,6 +41,8 @@ function createPool(options: {
       }] : [];
     } else if(sql.includes("FROM inventory_reservations") && sql.includes("FOR UPDATE")) {
       rows=[{id:"local-res-1",status:options.releaseStatus ?? "reserved",expires_at:"2026-11-14T12:15:00.000Z"}];
+    } else if(sql.includes("FROM inventory_reservation_lines") && sql.includes("product_variant_id")) {
+      rows=[{merchant_id:request.merchantId,branch_id:request.branchId,product_variant_id:"external-variant-1",quantity:2}];
     } else if(sql.includes("FROM inventory_reservation_lines")) {
       rows=[{catalog_variant_id:"catalog-variant-1",sku:"SKU-1",quantity:2}];
     } else if(sql.includes("FROM tenant_integrations i")) {
