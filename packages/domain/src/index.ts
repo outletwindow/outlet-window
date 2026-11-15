@@ -21,6 +21,7 @@ export * from "./postgres-merchant-branch-reader.js";
 export * from "./postgres-merchant-branch-writer.js";
 export * from "./postgres-audit-event-store.js";
 export * from "./postgres-financial-journal-service.js";
+export * from "./postgres-capture-financial-account-provisioner.js";
 export * from "./postgres-verified-capture-financial-journal-projector.js";
 
 export * from "./order-lifecycle.js";
