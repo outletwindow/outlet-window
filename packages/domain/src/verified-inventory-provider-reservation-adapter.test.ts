@@ -144,6 +144,27 @@ describe("VerifiedInventoryProviderReservationAdapter", () => {
     });
   });
 
+  it("uses the same release-specific idempotency key when retrying a completed release", async () => {
+    const releaseExactReservation = vi.fn().mockResolvedValue({
+      outcome: "already_released", tenantId: request.tenantId, merchantId: request.merchantId,
+      branchId: request.branchId, idempotencyKey: `release:${request.idempotencyKey}`,
+      reservationReference: "hold-123"
+    });
+    const adapter = new VerifiedInventoryProviderReservationAdapter({
+      reserveExactVariants: vi.fn(), releaseExactReservation
+    });
+    await expect(adapter.releaseExactReservation(
+      request, "hold-123", "2026-11-14T12:05:00.000Z"
+    )).resolves.toEqual({ outcome: "already_released" });
+    await expect(adapter.releaseExactReservation(
+      request, "hold-123", "2026-11-14T12:06:00.000Z"
+    )).resolves.toEqual({ outcome: "already_released" });
+    expect(releaseExactReservation.mock.calls[0]?.[0].idempotencyKey)
+      .toBe(releaseExactReservation.mock.calls[1]?.[0].idempotencyKey);
+    expect(releaseExactReservation.mock.calls[0]?.[0].idempotencyKey)
+      .toBe(`release:${request.idempotencyKey}`);
+  });
+
   it("rejects provider release acknowledgements for a different reservation", async () => {
     const client: InventoryProviderReservationClient = {
       reserveExactVariants: vi.fn(),
