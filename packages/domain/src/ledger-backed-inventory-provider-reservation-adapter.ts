@@ -1,5 +1,6 @@
 import type {
-  InventoryReservationPort, InventoryReservationPortResult, InventoryReservationRequest
+  InventoryReservationPort, InventoryReservationPortResult, InventoryReservationRequest,
+  InventoryReservationReleaseResult
 } from "./inventory-reservation.js";
 import {
   VerifiedInventoryProviderReservationAdapter,
@@ -23,6 +24,23 @@ export class LedgerBackedInventoryProviderReservationAdapter implements Inventor
       throw new Error("inventory_provider_key_invalid");
     }
     this.verified = new VerifiedInventoryProviderReservationAdapter(client);
+  }
+
+  async releaseExactReservation(
+    request: InventoryReservationRequest,
+    reservationReference: string,
+    releasedAtUtc: string
+  ): Promise<InventoryReservationReleaseResult> {
+    if (!this.ledger.release) return { outcome: "unsupported" };
+    return this.ledger.release(
+      { request, reservationId: reservationReference, releasedAtUtc },
+      async evidence => {
+        if (evidence.providerKey !== this.providerKey) return { outcome: "unsupported" };
+        return this.verified.releaseExactReservation(
+          request, evidence.providerReservationReference, releasedAtUtc
+        );
+      }
+    );
   }
 
   async reserveExactVariants(request: InventoryReservationRequest): Promise<InventoryReservationPortResult> {
