@@ -7,7 +7,8 @@ import { PostgresPaidCheckoutInventoryReservationWorker } from "./postgres-paid-
 
 const job = {
   id: "job-1", tenant_id: "platform", order_id: "order-1",
-  capture_id: "capture-1", attempt_count: 1
+  capture_id: "capture-1", attempt_count: 1,
+  created_at: new Date("2026-11-14T11:59:00.000Z")
 };
 const payment = {
   tenant_id: "platform", status: "awaiting_payment", total_minor: "12500", currency: "SAR",
@@ -81,12 +82,28 @@ describe("PostgresPaidCheckoutInventoryReservationWorker", () => {
     expect(inventory.reserveExactVariants).toHaveBeenCalledWith(expect.objectContaining({
       tenantId: "merchant-tenant", orderId: "order-1", suborderId: "sub-1",
       idempotencyKey: "paid-checkout:platform:order-1:sub-1",
+      requestedAtUtc: "2026-11-14T11:59:00.000Z",
       lines: [{ productVariantId: "catalog-v1", sku: "SKU-1", quantity: 1 }]
     }));
     expect(transition).toHaveBeenCalledTimes(2);
     expect(transition.mock.calls[0]?.[0]).toMatchObject({ nextStatus: "awaiting_payment" });
     expect(transition.mock.calls[1]?.[0]).toMatchObject({ nextStatus: "confirmed" });
     expect(recovery).not.toHaveBeenCalled();
+  });
+
+  it("uses the immutable outbox creation time as the provider request time", async () => {
+    const db = createPool();
+    const inventory: InventoryReservationPort = {
+      reserveExactVariants: vi.fn().mockResolvedValue({
+        outcome: "reserved", reservationReference: "reservation-1"
+      })
+    };
+    const { worker } = createWorker({ pool: db.pool, inventory });
+    await expect(worker.runOnce()).resolves.toMatchObject({ outcome: "completed" });
+    expect(inventory.reserveExactVariants).toHaveBeenCalledWith(expect.objectContaining({
+      idempotencyKey: "paid-checkout:platform:order-1:sub-1",
+      requestedAtUtc: "2026-11-14T11:59:00.000Z"
+    }));
   });
 
   it("completes a replay for an already confirmed suborder without re-reserving consumed stock", async () => {
