@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { PostgresPool, PostgresClient } from "./postgres-iam-store.js";
+import type { PostgresPool } from "./postgres-iam-store.js";
 
 export interface FinancialJournalLineInput {
   accountId: string;
