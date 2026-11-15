@@ -180,7 +180,8 @@ describe("PostgresPaidCheckoutInventoryReservationWorker", () => {
     const inventory: InventoryReservationPort = {
       reserveExactVariants: vi.fn()
         .mockResolvedValueOnce({ outcome: "reserved", reservationReference: "reservation-1" })
-        .mockResolvedValueOnce({ outcome: "unavailable", unavailableLines: ["catalog-v2"] })
+        .mockResolvedValueOnce({ outcome: "unavailable", unavailableLines: ["catalog-v2"] }),
+      releaseExactReservation: vi.fn().mockResolvedValue({ outcome: "released" })
     };
     const transition = vi.fn().mockResolvedValue({
       outcome: "updated", parentStatus: "on_hold",
@@ -191,6 +192,16 @@ describe("PostgresPaidCheckoutInventoryReservationWorker", () => {
       outcome: "needs_review", failureCode: "INVENTORY_UNAVAILABLE"
     });
     expect(inventory.reserveExactVariants).toHaveBeenCalledTimes(2);
+    expect(inventory.releaseExactReservation).toHaveBeenCalledTimes(1);
+    expect(inventory.releaseExactReservation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: "merchant-tenant", orderId: "order-1", suborderId: "sub-1",
+        merchantId: "merchant-1", branchId: "branch-1",
+        idempotencyKey: "paid-checkout:platform:order-1:sub-1"
+      }),
+      "reservation-1",
+      "2026-11-14T12:01:00.000Z"
+    );
     expect(recovery).toHaveBeenCalledWith(expect.objectContaining({
       failureCode: "INVENTORY_UNAVAILABLE", failedSuborderId: "sub-2",
       reservationReferences: [{ suborderId: "sub-1", reservationReference: "reservation-1" }]
