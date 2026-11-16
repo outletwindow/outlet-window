@@ -90,6 +90,20 @@ export class PostgresPaymentAdjustmentSubmissionOutbox {
     }catch(error){await client.query("ROLLBACK").catch(()=>undefined);throw error;}finally{client.release();}
   }
 
+  async recordUnknown(input:{submissionId:string;workerId:string;failureCode:string}):Promise<"reconciliation_required"|"lease_lost">{
+    if(!/^[a-zA-Z0-9_-]{1,200}$/.test(input.submissionId)||
+       !/^[a-zA-Z0-9_-]{1,200}$/.test(input.workerId)||
+       !/^[A-Z0-9_.:-]{1,100}$/.test(input.failureCode))
+      throw new Error("INVALID_PAYMENT_ADJUSTMENT_UNKNOWN_RESULT");
+    const r=await this.pool.query(
+      `UPDATE payment_adjustment_submission_outbox
+       SET status='reconciliation_required',last_error_code=$3,
+           lease_owner=NULL,lease_expires_at=NULL,updated_at=now()
+       WHERE id=$1 AND status='processing' AND lease_owner=$2 AND lease_expires_at>now()`,
+      [input.submissionId,input.workerId,input.failureCode]);
+    return r.rowCount===1?"reconciliation_required":"lease_lost";
+  }
+
   async retry(input:{submissionId:string;workerId:string;failureCode:string;delaySeconds:number}):Promise<"rescheduled"|"dead_lettered"|"lease_lost">{
     if(!/^[a-zA-Z0-9_-]{1,200}$/.test(input.submissionId)||!/^[a-zA-Z0-9_-]{1,200}$/.test(input.workerId)||
        !/^[A-Z0-9_.:-]{1,100}$/.test(input.failureCode)||!Number.isSafeInteger(input.delaySeconds)||
