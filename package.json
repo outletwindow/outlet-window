@@ -25,6 +25,8 @@
     "ops:logs": "docker compose logs -f --tail=100",
     "ops:down": "docker compose down",
     "worker:paid-checkout-reservations": "pnpm --filter @outlet-window/worker start:paid-checkout-reservations",
-    "worker:financial-journal-projection": "pnpm --filter @outlet-window/worker start:financial-journal-projection"
+    "worker:financial-journal-projection": "pnpm --filter @outlet-window/worker start:financial-journal-projection",
+    "worker:payment-adjustments": "pnpm --filter @outlet-window/worker start:payment-adjustments",
+    "ops:up:payment-adjustments-sandbox": "docker compose --profile payment-adjustments-sandbox up -d --build"
   }
 }
