@@ -92,4 +92,46 @@ BEGIN
 END
 $test$;
 
+
+-- Moyasar additional charges must not use the refund-only missing-reference exception.
+INSERT INTO customer_orders
+  (id,tenant_id,customer_id,idempotency_key,status,currency,total_minor)
+VALUES
+  ('moyasar-charge-no-ref-order','platform','moyasar-charge-no-ref-customer',
+   'moyasar-charge-no-ref-order-key','awaiting_payment','SAR',10000);
+
+INSERT INTO customer_payment_adjustments
+  (id,tenant_id,order_id,customer_id,idempotency_key,quote_reference,currency,
+   adjustment_direction,amount_minor,previous_total_minor,proposed_total_minor,
+   status,consented_at,consent_actor_id,provider_key,expires_at)
+VALUES
+  ('moyasar-charge-no-ref-adjustment','platform','moyasar-charge-no-ref-order','moyasar-charge-no-ref-customer',
+   'moyasar-charge-no-ref-adjustment-key','moyasar-charge-no-ref-quote','SAR','additional_charge',
+   1000,10000,11000,'provider_pending',now(),'moyasar-charge-no-ref-customer',
+   'moyasar',now()+interval '5 minutes');
+
+INSERT INTO payment_adjustment_submission_outbox
+  (id,tenant_id,adjustment_id,provider_key,idempotency_key,status)
+VALUES
+  ('moyasar-charge-no-ref-job','platform','moyasar-charge-no-ref-adjustment','moyasar',
+   'moyasar-charge-no-ref-job-idempotency','queued');
+
+UPDATE payment_adjustment_submission_outbox
+SET status='processing',attempt_count=1,lease_owner='moyasar-charge-worker',
+    lease_expires_at=now()+interval '30 seconds'
+WHERE id='moyasar-charge-no-ref-job';
+
+DO $test$
+BEGIN
+  BEGIN
+    UPDATE payment_adjustment_submission_outbox
+    SET status='submitted',completed_at=now(),lease_owner=NULL,lease_expires_at=NULL
+    WHERE id='moyasar-charge-no-ref-job';
+    RAISE EXCEPTION 'Moyasar additional charge without provider reference unexpectedly accepted';
+  EXCEPTION WHEN check_violation THEN
+    NULL;
+  END;
+END
+$test$;
+
 ROLLBACK;
