@@ -5,7 +5,7 @@ import {
   PostgresIamStore,
   type PostgresPool
 } from "../../../packages/domain/src/postgres-iam-store.js";
-import { buildApp, type AppOptions, type MerchantBranchReader, type CustomerDeliveryDestinationService, type CustomerPaymentAdjustmentActions, type MerchantCatalogRepository, type SallaOAuthFlow, type PaymentCaptureWebhookHandler } from "./app.js";
+import { buildApp, type AppOptions, type MerchantBranchReader, type CustomerDeliveryDestinationService, type CustomerPaymentAdjustmentActions, type MerchantCatalogRepository, type SallaOAuthFlow, type PaymentCaptureWebhookHandler, type PaymentRefundWebhookHandler } from "./app.js";
 import { PostgresMerchantBranchReader } from "../../../packages/domain/src/postgres-merchant-branch-reader.js";
 import { PostgresMerchantBranchWriter } from "../../../packages/domain/src/postgres-merchant-branch-writer.js";
 import { PostgresInventoryProviderBranchScopeStore } from "../../../packages/domain/src/postgres-inventory-provider-branch-scope-store.js";
@@ -33,6 +33,7 @@ import type { MoyasarPaymentIntentClient } from "../../../packages/domain/src/mo
 import { PostgresVerifiedOrderPaymentCaptureStore } from "../../../packages/domain/src/postgres-verified-order-payment-capture.js";
 import { PostgresInitialPaymentCaptureInbox } from "../../../packages/domain/src/postgres-initial-payment-capture-inbox.js";
 import { VerifiedOrderPaymentCaptureWebhookProcessor, type PaymentCaptureEventDecoder, type PaymentCaptureWebhookVerifier } from "../../../packages/domain/src/verified-order-payment-capture-webhook.js";
+import { MoyasarPaymentRefundWebhookProcessor } from "../../../packages/domain/src/moyasar-payment-refund-webhook.js";
 
 export interface PostgresApiOptions {
   pool: PostgresPool;
@@ -51,6 +52,7 @@ export interface PostgresApiOptions {
   commerceConnectors?: CommerceConnectorRegistry;
   paymentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
   paymentCaptureWebhookHandler?: PaymentCaptureWebhookHandler;
+  paymentRefundWebhookHandler?: PaymentRefundWebhookHandler;
   paymentCaptureDecoders?: ReadonlyMap<string, PaymentCaptureEventDecoder>;
   paymentCaptureWebhookVerifiers?: ReadonlyMap<string, PaymentCaptureWebhookVerifier>;
   fulfillmentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
@@ -65,6 +67,16 @@ export interface PostgresApiOptions {
 export function buildPostgresApp(options: PostgresApiOptions) {
   const iam = new PostgresIamStore(options.pool);
   const integrationHub = new IntegrationHub(new PostgresIntegrationRegistryStore(options.pool));
+  const paymentWebhookInbox = new PostgresPaymentWebhookInbox(options.pool);
+  const moyasarWebhookVerifier = options.paymentCaptureWebhookVerifiers?.get("moyasar");
+  const paymentRefundWebhookHandler = options.paymentRefundWebhookHandler ??
+    (options.paymentWebhookSecretResolver && moyasarWebhookVerifier
+      ? new MoyasarPaymentRefundWebhookProcessor({
+          secretResolver: options.paymentWebhookSecretResolver,
+          verifier: moyasarWebhookVerifier,
+          inbox: paymentWebhookInbox
+        })
+      : undefined);
   const paymentCaptureWebhookHandler = options.paymentCaptureWebhookHandler ??
     (options.paymentWebhookSecretResolver && options.paymentCaptureDecoders
       ? new VerifiedOrderPaymentCaptureWebhookProcessor({
@@ -104,9 +116,12 @@ export function buildPostgresApp(options: PostgresApiOptions) {
     inventoryReservationLifecycle: new PostgresBranchInventoryReservationLifecycle(options.pool),
     merchantOrderItemPreparation: new PostgresMerchantOrderItemPreparationStore(options.pool),
     ...(options.sallaOAuthFlow === undefined ? {} : { sallaOAuthFlow: options.sallaOAuthFlow }),
-    paymentWebhookInbox: new PostgresPaymentWebhookInbox(options.pool),
+    paymentWebhookInbox,
     ...(paymentCaptureWebhookHandler === undefined ? {} : {
       paymentCaptureWebhookHandler
+    }),
+    ...(paymentRefundWebhookHandler === undefined ? {} : {
+      paymentRefundWebhookHandler
     }),
     fulfillmentHandoverInbox: new PostgresFulfillmentHandoverInbox(options.pool),
     fulfillmentWebhookAuthorizationResolver: options.fulfillmentWebhookAuthorizationResolver ??
@@ -201,7 +216,8 @@ export function buildPostgresApp(options: PostgresApiOptions) {
         "0056_payment_adjustment_submission_outbox_guards",
         "0057_payment_adjustment_outcome_reconciliation",
         "0058_payment_adjustment_original_capture_binding",
-        "0059_payment_refund_balance_reservations"
+        "0059_payment_refund_balance_reservations",
+        "0060_payment_refund_webhook_reconciliation_state"
       ];
       const result = await options.pool.query<{ version: string }>(
         "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",
