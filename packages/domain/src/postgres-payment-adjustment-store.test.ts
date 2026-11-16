@@ -88,6 +88,8 @@ describe("Postgres payment adjustment provider result", () => {
       providerKey: "moyasar"
     })).resolves.toMatchObject({ outcome: "provider_pending", submissionId: expect.any(String) });
 
+    const captureLock = calls.find(call => call.sql.includes("FROM verified_order_payment_captures"));
+    expect(captureLock?.sql).toContain("FOR UPDATE");
     const transition = calls.find(call => call.sql.includes("SET status='provider_pending'"));
     expect(transition?.params).toEqual([
       "tenant-1", "adjustment-1", "2026-11-16T17:00:00.000Z", "customer-1", "moyasar"
