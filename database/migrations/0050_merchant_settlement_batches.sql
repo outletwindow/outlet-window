@@ -112,8 +112,11 @@ BEGIN
     RAISE EXCEPTION 'merchant_settlement_lines_are_append_only' USING ERRCODE='55000';
   END IF;
   IF TG_OP='INSERT' THEN
+    -- Serialize line insertion with batch approval. Without this row lock, an
+    -- insert could observe 'draft' while approval concurrently snapshots totals.
     SELECT status INTO batch_status FROM merchant_settlement_batches
-     WHERE tenant_id=NEW.tenant_id AND id=NEW.batch_id;
+     WHERE tenant_id=NEW.tenant_id AND id=NEW.batch_id
+     FOR UPDATE;
     IF batch_status IS DISTINCT FROM 'draft' THEN
       RAISE EXCEPTION 'merchant_settlement_lines_require_draft_batch' USING ERRCODE='55000';
     END IF;
