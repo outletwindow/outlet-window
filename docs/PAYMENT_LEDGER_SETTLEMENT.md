@@ -134,12 +134,15 @@ Implemented in migration 0050:
 - Approved batches and their lines are immutable.
 - Migration 0053 requires draft batches to have no journal reference and enforces one settlement batch per posted journal, preventing a journal from being reused to approve multiple batches.
 - Migration 0054 enforces single-use provider references for payment adjustments within a tenant and provider namespace; legacy rows without a provider key share a guarded legacy namespace.
+- Migration 0055 adds a tenant-scoped durable payment-adjustment submission outbox with a stable provider idempotency key, leased processing state, retry scheduling and dead-letter state. Queue creation is transactionally coupled to the adjustment's transition into provider-pending.
+- A separate worker claims only the configured provider queue, submits the same idempotency key on retries, and persists provider acceptance plus the immutable adjustment event in one database transaction. Transient failures are rescheduled; exhausted leases are dead-lettered for reconciliation.
+- The worker refuses to start unless `PAYMENT_ADJUSTMENT_ENVIRONMENT=sandbox` and sandbox endpoint/token settings are supplied. This is a generic HTTPS adapter contract, not a verified provider-specific Moyasar/HyperPay/Tap/Stripe implementation.
 
 Not implemented or enabled:
 - Contract/commission/tax policy calculation or independent verification of the supplied contract reference and deduction amounts.
 - An authenticated approval API or dual-control workflow.
 - Provider payout execution, bank transfer, wallet transfer, payout confirmation, or settlement reconciliation against bank/provider statements.
 - Refund execution or production money custody.
-- A provider-specific payment-adjustment submission flow wired into the production API. The current generic HTTPS adapter is an integration primitive only; customer consent and webhook reconciliation records do not themselves submit or refund funds.
+- A provider-specific payment-adjustment adapter wired into the production API. The generic HTTPS adapter and sandbox-only worker are integration primitives; the current customer consent route still records consent without automatically enqueueing a provider submission. A trusted, configured orchestration path must enqueue the durable outbox, and a verified provider adapter plus webhook/reconciliation contract tests are still required before real refunds or charges.
 
 The database approval transition is an accounting-record control, not evidence that a merchant was paid. No live payment, payout, bank account or money movement is claimed. Legal, regulatory, payment-provider and accounting review remains required before activation.
