@@ -111,7 +111,7 @@ describe("Moyasar one-shot payment refund client", () => {
   });
 
   it("treats 429 and 5xx as unknown and never retries the refund", async () => {
-    for (const status of [429, 500, 503]) {
+    for (const status of [408, 425, 429, 500, 503]) {
       let posts = 0;
       const client = new MoyasarPaymentRefundClient({
         secretKey,
