@@ -326,9 +326,9 @@ describe("PostgresPaidCheckoutInventoryReservationWorker", () => {
     });
     expect(recovery).toHaveBeenCalledWith(expect.objectContaining({
       failureCode: "INVENTORY_UNGUARANTEED",
-      failedSuborderId: undefined,
       reservationReferences: []
     }));
+    expect(recovery.mock.calls[0]?.[0]).not.toHaveProperty("failedSuborderId");
     expect(transition).toHaveBeenCalledWith(expect.objectContaining({
       nextStatus: "on_hold",
       context: expect.objectContaining({ reason: "Merchant inventory hard reservation is not guaranteed" })
