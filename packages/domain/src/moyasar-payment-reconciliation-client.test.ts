@@ -51,4 +51,29 @@ describe("Moyasar read-only payment reconciliation client", () => {
     await expect(client.fetchPayment(paymentId))
       .rejects.toThrow("MOYASAR_PAYMENT_RECONCILIATION_OUTCOME_UNKNOWN");
   });
+
+  it("allows a paid payment's refunded total to be bounded by its original amount", async () => {
+    const client = new MoyasarPaymentReconciliationClient({
+      secretKey: "sk_test_reconciliation123",
+      fetchImpl: async () => new Response(JSON.stringify({
+        id: paymentId, status: "paid", amount: 10000,
+        captured: 0, refunded: 2500, currency: "SAR"
+      }), { status: 200 })
+    });
+    await expect(client.fetchPayment(paymentId)).resolves.toMatchObject({
+      status: "paid", amountMinor: 10000, capturedMinor: 0, refundedMinor: 2500
+    });
+  });
+
+  it("rejects a paid payment whose refunded total exceeds its original amount", async () => {
+    const client = new MoyasarPaymentReconciliationClient({
+      secretKey: "sk_test_reconciliation123",
+      fetchImpl: async () => new Response(JSON.stringify({
+        id: paymentId, status: "paid", amount: 10000,
+        captured: 0, refunded: 12000, currency: "SAR"
+      }), { status: 200 })
+    });
+    await expect(client.fetchPayment(paymentId))
+      .rejects.toThrow("MOYASAR_PAYMENT_RECONCILIATION_INVALID_RESPONSE");
+  });
 });
