@@ -24,6 +24,7 @@ function createPool(rows: {
   payment?: typeof payment | null;
   suborders?: typeof suborder[];
   lines?: { product_variant_id: string; sku: string; quantity: number }[];
+  reservationEvidence?: { suborder_id: string; reservation_reference: string }[];
 } = {}) {
   const calls: string[] = [];
   const query = vi.fn(async <Row>(sql: string) => {
@@ -31,6 +32,10 @@ function createPool(rows: {
     if (sql.includes("WITH due AS")) return { rows: [job] as Row[], rowCount: 1 };
     if (sql.includes("verified_order_payment_captures")) {
       return { rows: rows.payment === null ? [] : [rows.payment ?? payment] as Row[], rowCount: rows.payment === null ? 0 : 1 };
+    }
+    if (sql.includes("FROM inventory_provider_reservation_evidence")) {
+      const found = rows.reservationEvidence ?? [];
+      return { rows: found as Row[], rowCount: found.length };
     }
     if (sql.includes("FROM merchant_suborders")) {
       const found = rows.suborders ?? [suborder];
@@ -329,6 +334,46 @@ describe("PostgresPaidCheckoutInventoryReservationWorker", () => {
     expect(jobUpdate?.[0]).toContain("attempt_count=CASE WHEN $7 THEN LEAST(attempt_count,$5 - 1)");
     expect(jobUpdate?.[1]?.[5]).toBe("PAID_CHECKOUT_ESCALATION_RETRY");
     expect(jobUpdate?.[1]?.[6]).toBe(true);
+  });
+
+  it("includes previously persisted external holds in terminal recovery after a later branch fails", async () => {
+    const secondSuborder = { ...suborder, id: "sub-2" };
+    const db = createPool({
+      suborders: [suborder, secondSuborder],
+      reservationEvidence: [{
+        suborder_id: suborder.id, reservation_reference: "local-reservation-1"
+      }]
+    });
+    const reserveExactVariants = vi.fn()
+      .mockResolvedValueOnce({
+        outcome: "reserved", reservationReference: "local-reservation-1",
+        providerIntegrationId: "integration-1"
+      })
+      .mockRejectedValueOnce(new Error("INVENTORY_PROVIDER_OUTCOME_UNKNOWN"));
+    const inventory: InventoryReservationPort = { reserveExactVariants };
+    const recovery = vi.fn().mockResolvedValue({ outcome: "recorded", caseId: "case-1" });
+    const transition = vi.fn().mockResolvedValue({
+      outcome: "updated", parentStatus: "on_hold",
+      transition: { ok: true, previousStatus: "pending_validation", order: { status: "on_hold" } }
+    });
+    const { worker } = createWorker({
+      pool: db.pool, inventory, recovery, transition, maxAttempts: 1
+    });
+
+    await expect(worker.runOnce()).resolves.toMatchObject({
+      outcome: "dead_lettered", failureCode: "INVENTORY_PROVIDER_OUTCOME_UNKNOWN"
+    });
+    expect(recovery).toHaveBeenCalledWith(expect.objectContaining({
+      failureCode: "INVENTORY_UNGUARANTEED",
+      reservationReferences: [{
+        suborderId: "sub-1", reservationReference: "local-reservation-1"
+      }]
+    }));
+    expect(transition).toHaveBeenCalledTimes(2);
+    expect(db.calls.some(sql =>
+      sql.includes("inventory_provider_reservation_evidence") &&
+      sql.includes("WHERE r.order_id=$1")
+    )).toBe(true);
   });
 
   it("creates a recovery case and holds unpaid suborders when paid inventory retries are exhausted", async () => {
