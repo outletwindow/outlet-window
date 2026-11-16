@@ -96,6 +96,12 @@ export interface PaymentCaptureWebhookHandler {
     | { outcome: "payment_intent_not_found" }
   >;
 }
+export interface PaymentRefundWebhookHandler {
+  process(input: { providerKey: string; rawBody: string }): Promise<
+    | { outcome: "applied" | "ignored" | "reconciliation_required" | "duplicate" }
+    | { outcome: "event_id_collision" | "invalid_signature_or_event" | "provider_not_configured" }
+  >;
+}
 export interface FulfillmentHandoverInboxWriter {
   recordAndApply(input: { event: VerifiedFulfillmentHandoverEvent; rawBody: string; nowUtc?: string }): Promise<
     | { outcome: "applied"; receiptId: string }
@@ -150,6 +156,7 @@ export interface AppOptions {
   merchantCatalogImport?: MerchantCatalogImportService;
   paymentWebhookInbox?: PaymentWebhookInboxWriter;
   paymentCaptureWebhookHandler?: PaymentCaptureWebhookHandler;
+  paymentRefundWebhookHandler?: PaymentRefundWebhookHandler;
   paymentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
   fulfillmentHandoverInbox?: FulfillmentHandoverInboxWriter;
   fulfillmentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
@@ -475,6 +482,22 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       return reply.code(400).send({ error: "invalid_webhook_event" });
     }
     const eventType = (body as { type?: unknown }).type;
+    if (providerKey === "moyasar" && eventType === "payment_refunded") {
+      if (!options.paymentRefundWebhookHandler) {
+        return reply.code(503).send({ error: "payment_refund_processor_unavailable" });
+      }
+      const result = await options.paymentRefundWebhookHandler.process({ providerKey, rawBody });
+      if (result.outcome === "invalid_signature_or_event") {
+        return reply.code(401).send({ error: "invalid_webhook_signature_or_refund_event" });
+      }
+      if (result.outcome === "provider_not_configured") {
+        return reply.code(503).send({ error: "webhook_provider_not_configured" });
+      }
+      if (result.outcome === "event_id_collision") {
+        return reply.code(409).send({ error: "provider_event_id_collision" });
+      }
+      return reply.code(result.outcome === "reconciliation_required" ? 202 : 200).send(result);
+    }
     if (eventType === "payment.captured" || (providerKey === "moyasar" && (eventType === "payment_paid" || eventType === "payment_captured"))) {
       if (!options.paymentCaptureWebhookHandler) {
         return reply.code(503).send({ error: "payment_capture_processor_unavailable" });
