@@ -17,19 +17,20 @@ export class PostgresPaymentAdjustmentSubmissionOutbox {
       id:string;tenant_id:string;adjustment_id:string;provider_key:string;idempotency_key:string;
       attempt_count:number;order_id:string;customer_id:string;adjustment_direction:"additional_charge"|"refund";
       amount_minor:string;currency:string;original_payment_reference:string|null;
-    }>(`WITH exhausted AS (
+    }>(`WITH expired AS (
+        -- A worker may have reached the PSP before its lease expired or process died.
+        -- The outcome is therefore ambiguous: quarantine, never submit it a second time.
         UPDATE payment_adjustment_submission_outbox
-        SET status='dead_letter',lease_owner=NULL,lease_expires_at=NULL,
-            last_error_code='PAYMENT_ADJUSTMENT_ATTEMPTS_EXHAUSTED',updated_at=now()
-        WHERE status='processing' AND attempt_count >= 10 AND lease_expires_at <= now()
+        SET status='reconciliation_required',lease_owner=NULL,lease_expires_at=NULL,
+            last_error_code='PAYMENT_ADJUSTMENT_LEASE_EXPIRED_REQUIRES_RECONCILIATION',updated_at=now()
+        WHERE status='processing' AND lease_expires_at <= now()
         RETURNING id
       ), candidate AS (
         SELECT o.id FROM payment_adjustment_submission_outbox AS o
         JOIN customer_payment_adjustments AS a
           ON a.tenant_id=o.tenant_id AND a.id=o.adjustment_id
-        WHERE o.attempt_count < 10 AND o.available_at <= now()
+        WHERE o.status='queued' AND o.attempt_count < 10 AND o.available_at <= now()
           AND o.provider_key=$3
-          AND (o.status='queued' OR (o.status='processing' AND o.lease_expires_at <= now()))
           AND a.status='provider_pending' AND a.provider_key=o.provider_key
           AND a.provider_reference IS NULL
           AND (a.adjustment_direction <> 'refund' OR o.original_payment_reference IS NOT NULL)
