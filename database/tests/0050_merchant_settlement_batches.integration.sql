@@ -111,5 +111,26 @@ BEGIN
     RAISE EXCEPTION 'incorrect settlement journal unexpectedly approved';
   EXCEPTION WHEN check_violation THEN NULL;
   END;
-END $$;
+  BEGIN
+    UPDATE merchant_settlement_batches
+    SET journal_id='settle-journal'
+    WHERE id='settle-batch-invalid';
+    RAISE EXCEPTION 'draft settlement batch unexpectedly reserved a journal';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_indexes
+    WHERE schemaname=current_schema()
+      AND indexname='merchant_settlement_batches_journal_once_idx'
+  ) THEN
+    RAISE EXCEPTION 'settlement journal single-use index missing';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname='merchant_settlement_batch_journal_status_check'
+      AND conrelid='merchant_settlement_batches'::regclass
+  ) THEN
+    RAISE EXCEPTION 'settlement journal status constraint missing';
+  END IF;
+END $;
 ROLLBACK;
