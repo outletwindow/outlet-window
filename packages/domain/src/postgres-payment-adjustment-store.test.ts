@@ -10,7 +10,7 @@ const adjustment = {
   provider_key: "moyasar", provider_reference: "pay_ref_123"
 };
 
-function makeStore(options: { providerKey?: string; providerReference?: string; orderRowCount?: number } = {}) {
+function makeStore(options: { providerKey?: string; providerReference?: string; orderRowCount?: number; status?: string } = {}) {
   const calls: Array<{ sql: string; params?: unknown[] }> = [];
   const query = vi.fn(async (sql: string, params?: unknown[]) => {
     calls.push({ sql, ...(params === undefined ? {} : { params }) });
@@ -18,6 +18,7 @@ function makeStore(options: { providerKey?: string; providerReference?: string; 
       return {
         rows: [{
           ...adjustment,
+          status: options.status ?? adjustment.status,
           provider_key: options.providerKey ?? adjustment.provider_key,
           provider_reference: options.providerReference ?? adjustment.provider_reference
         }],
@@ -73,6 +74,34 @@ describe("Postgres payment adjustment provider result", () => {
 
     expect(calls.some(call => call.sql.startsWith("UPDATE customer_orders"))).toBe(true);
     expect(calls.some(call => call.sql.includes("status='provider_confirmed'"))).toBe(false);
+    expect(calls.some(call => call.sql === "ROLLBACK")).toBe(true);
+  });
+
+
+  it("persists the provider identity only after customer consent", async () => {
+    const { store, calls } = makeStore({ status: "consented" });
+    await expect(store.markProviderPending({
+      tenantId: "tenant-1", adjustmentId: "adjustment-1", actorId: "service-1",
+      providerKey: "moyasar", providerReference: "refund_ref_456"
+    })).resolves.toEqual({ outcome: "provider_pending" });
+
+    const update = calls.find(call => call.sql.includes("SET status='provider_pending'"));
+    expect(update?.params).toEqual([
+      "tenant-1", "adjustment-1", "moyasar", "refund_ref_456",
+      "2026-11-16T17:00:00.000Z"
+    ]);
+    expect(calls.some(call => call.sql.includes("'provider_submitted'"))).toBe(true);
+    expect(calls.some(call => call.sql === "COMMIT")).toBe(true);
+  });
+
+  it("does not permit a second provider submission for an already pending adjustment", async () => {
+    const { store, calls } = makeStore({ status: "provider_pending" });
+    await expect(store.markProviderPending({
+      tenantId: "tenant-1", adjustmentId: "adjustment-1", actorId: "service-1",
+      providerKey: "moyasar", providerReference: "refund_ref_duplicate"
+    })).resolves.toEqual({ outcome: "conflict" });
+
+    expect(calls.some(call => call.sql.includes("SET status='provider_pending'"))).toBe(false);
     expect(calls.some(call => call.sql === "ROLLBACK")).toBe(true);
   });
 
