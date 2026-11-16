@@ -122,8 +122,10 @@ BEGIN
     END IF;
     RETURN NEW;
   END IF;
+  -- Serialize draft-line deletion with approval for the same reason as inserts.
   SELECT status INTO batch_status FROM merchant_settlement_batches
-   WHERE tenant_id=OLD.tenant_id AND id=OLD.batch_id;
+   WHERE tenant_id=OLD.tenant_id AND id=OLD.batch_id
+   FOR UPDATE;
   IF batch_status='approved' THEN
     RAISE EXCEPTION 'approved_merchant_settlement_lines_are_immutable' USING ERRCODE='55000';
   END IF;
