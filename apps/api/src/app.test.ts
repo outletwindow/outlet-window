@@ -1137,6 +1137,24 @@ describe("Moyasar refund webhook route", () => {
     } finally { await app.close(); }
   });
 
+  it("rejects oversized refund webhook requests at the HTTP boundary before invoking the reconciler", async () => {
+    const process = vi.fn(async () => ({ outcome: "applied" as const }));
+    const app = buildApp({ paymentRefundWebhookHandler: { process } });
+    await app.ready();
+    try {
+      const oversizedBody = JSON.stringify({
+        ...JSON.parse(rawBody),
+        padding: "x".repeat(65_536)
+      });
+      const response = await app.inject({
+        method: "POST", url: "/api/v1/webhooks/payments/moyasar",
+        headers: { "content-type": "application/json" }, payload: oversizedBody
+      });
+      expect(response.statusCode).toBe(413);
+      expect(process).not.toHaveBeenCalled();
+    } finally { await app.close(); }
+  });
+
   it("returns accepted while mismatched refund events are quarantined", async () => {
     const process = vi.fn(async () => ({ outcome: "reconciliation_required" as const }));
     const app = buildApp({ paymentRefundWebhookHandler: { process } });
