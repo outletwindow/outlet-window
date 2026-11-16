@@ -79,6 +79,39 @@ describe("atomic payment webhook reconciliation", () => {
     expect(mock.calls.at(-1)?.sql).toBe("ROLLBACK");
   });
 
+  it("rejects a provider key that does not match the adjustment binding", async () => {
+    const mock = makePool({ adjustmentProviderKey: "psp-other" });
+    const inbox = new PostgresPaymentWebhookInbox(mock.pool);
+    await expect(inbox.reconcileAdjustment({
+      receiptId: "receipt-1", adjustmentId: "adjustment-1", providerKey: "psp-a", actorId: "payment-worker", workerId: "worker-1",
+      confirmed: true, providerReference: "psp-ref-123"
+    })).resolves.toBe("conflict");
+    expect(mock.calls.at(-1)?.sql).toBe("ROLLBACK");
+    expect(mock.calls.some(call => call.sql.includes("UPDATE customer_orders"))).toBe(false);
+  });
+
+  it("rejects a provider reference that does not match the adjustment submission", async () => {
+    const mock = makePool({ adjustmentProviderReference: "psp-ref-other" });
+    const inbox = new PostgresPaymentWebhookInbox(mock.pool);
+    await expect(inbox.reconcileAdjustment({
+      receiptId: "receipt-1", adjustmentId: "adjustment-1", providerKey: "psp-a", actorId: "payment-worker", workerId: "worker-1",
+      confirmed: true, providerReference: "psp-ref-123"
+    })).resolves.toBe("conflict");
+    expect(mock.calls.at(-1)?.sql).toBe("ROLLBACK");
+    expect(mock.calls.some(call => call.sql.includes("UPDATE customer_orders"))).toBe(false);
+  });
+
+  it("rejects a receipt whose provider reference differs from the bound adjustment", async () => {
+    const mock = makePool({ receiptProviderReference: "psp-ref-from-another-payment" });
+    const inbox = new PostgresPaymentWebhookInbox(mock.pool);
+    await expect(inbox.reconcileAdjustment({
+      receiptId: "receipt-1", adjustmentId: "adjustment-1", providerKey: "psp-a", actorId: "payment-worker", workerId: "worker-1",
+      confirmed: true, providerReference: "psp-ref-123"
+    })).resolves.toBe("conflict");
+    expect(mock.calls.at(-1)?.sql).toBe("ROLLBACK");
+    expect(mock.calls.some(call => call.sql.includes("UPDATE customer_orders"))).toBe(false);
+  });
+
   it("rejects a receipt linked to a different adjustment", async () => {
     const mock = makePool({ receiptAdjustmentId: "other-adjustment" });
     const inbox = new PostgresPaymentWebhookInbox(mock.pool);
