@@ -10,6 +10,15 @@ Status: Operational checklist — sandbox only
 - Do not put live credentials in the worker environment, commit credentials, or paste credentials into tickets or chat.
 - Do not enable a live refund worker as part of this validation. Live rollout requires a separate security and operational review.
 
+## Provider contract reference
+
+Validate this integration against Moyasar's current provider contract before running the scenarios:
+
+- Refund endpoint: [POST /payments/:id/refund](https://docs.moyasar.com/api/payments/05-refund-payment). The request accepts an optional `amount` in the smallest currency unit, and the successful response is a payment snapshot containing `status`, `refunded`, `captured`, and `currency`.
+- Payment operations guide: [Partial Refund](https://docs.moyasar.com/guides/payment-operations). Moyasar documents that a partial refund changes the payment status to `refunded`; paid payments are bounded by `amount`, while captured payments are bounded by `captured`.
+
+The one-refund-operation-per-payment guard in migration `0062` is based on that documented status transition. Do not interpret the cumulative `refunded` field as evidence that another refund request can be submitted after the first partial refund.
+
 ## Required configuration
 
 Set these values through the deployment secret manager or a protected local `.env` file:
