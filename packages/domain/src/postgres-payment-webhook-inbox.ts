@@ -160,9 +160,11 @@ export class PostgresPaymentWebhookInbox {
         await client.query("COMMIT");
         return "reconciliation_required";
       }
-      if (original.currency !== input.currency ||
-          Number(original.amount_minor) !== input.refundableBaseMinor ||
-          input.refundedMinor > Number(original.amount_minor)) {
+      const originalCaptureMinor = Number(original.amount_minor);
+      if (!Number.isSafeInteger(originalCaptureMinor) || originalCaptureMinor <= 0 ||
+          original.currency !== input.currency ||
+          originalCaptureMinor !== input.refundableBaseMinor ||
+          input.refundedMinor > originalCaptureMinor) {
         await this.quarantineRefundReceipt(client,receiptId,"REFUND_CAPTURE_SNAPSHOT_MISMATCH");
         await client.query("COMMIT");
         return "reconciliation_required";
