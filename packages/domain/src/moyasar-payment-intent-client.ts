@@ -60,7 +60,6 @@ export class MoyasarPaymentIntentClient {
     }
   }
 
-
   /** Server-side lookup used only to recover an exact idempotent checkout replay. */
   async fetchIntent(intentId: string): Promise<RetrievedMoyasarPaymentIntent> {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(intentId)) {
@@ -124,6 +123,8 @@ export class MoyasarPaymentIntentClient {
           ...(input.description === undefined ? {} : { description: input.description }),
           callback_url: callbackUrl.toString()
         }),
+        // Never forward an authenticated payment-creation request to a redirect target.
+        redirect: "error",
         signal: AbortSignal.timeout(this.timeoutMs)
       });
     } catch {
