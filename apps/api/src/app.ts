@@ -76,6 +76,7 @@ export interface CustomerCheckoutService {
 }
 export interface CustomerPaymentAdjustmentActions {
   consent(input: { orderId: string; adjustmentId: string; customerId: string }): Promise<{ outcome: string }>;
+  consentAndQueue?(input: { orderId: string; adjustmentId: string; customerId: string }): Promise<{ outcome: string; submissionId?: string }>;
   decline(input: { orderId: string; adjustmentId: string; customerId: string }): Promise<{ outcome: string }>;
 }
 export interface PaymentWebhookInboxWriter {
@@ -1000,14 +1001,23 @@ app.patch<{
     if (!result.actor) return sendAuthorizationFailure(reply, result.statusCode, result.decision.reason);
     if (result.actor.role !== "customer") return reply.code(403).send({ error: "customer_only" });
     if (!options.customerPaymentAdjustments) return reply.code(503).send({ error: "service_unavailable" });
-    const outcome = await options.customerPaymentAdjustments.consent({
+    const input = {
       orderId: request.params.orderId, adjustmentId: request.params.adjustmentId,
       customerId: result.actor.id
-    });
+    };
+    const outcome = options.customerPaymentAdjustments.consentAndQueue
+      ? await options.customerPaymentAdjustments.consentAndQueue(input)
+      : await options.customerPaymentAdjustments.consent(input);
     if (outcome.outcome === "not_found") return reply.code(404).send({ error: "not_found" });
     if (outcome.outcome === "expired") return reply.code(410).send({ error: "adjustment_expired" });
+    if (outcome.outcome === "provider_pending") {
+      return reply.code(202).send({
+        outcome: "provider_pending", submissionId: outcome.submissionId,
+        message: "Customer consent and provider submission were durably queued; provider confirmation is still pending."
+      });
+    }
     if (outcome.outcome !== "consented") return reply.code(409).send({ error: "adjustment_not_pending" });
-    return reply.code(200).send({ outcome: "consented", message: "Customer consent recorded; payment processing is not yet confirmed." });
+    return reply.code(200).send({ outcome: "consented", message: "Customer consent recorded; provider submission is not configured." });
   });
 
   app.post<{
