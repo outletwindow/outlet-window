@@ -119,6 +119,17 @@ export class PostgresPaymentAdjustmentStore {
     }catch(error){await client.query("ROLLBACK").catch(()=>undefined);throw error;}finally{client.release();}
   }
 
+  private async hasVerifiedOriginalCapture(client:PostgresClient,row:AdjustmentRow,providerKey:string):Promise<boolean>{
+    if(row.adjustment_direction!=="refund")return true;
+    const capture=await client.query(
+      `SELECT 1 FROM verified_order_payment_captures
+       WHERE tenant_id=$1 AND order_id=$2 AND provider_key=$3
+         AND amount_minor >= $4 AND currency=$5
+       FOR KEY SHARE`,
+      [row.tenant_id,row.order_id,providerKey,row.amount_minor,row.currency]);
+    return capture.rowCount===1;
+  }
+
   async consentAndQueue(input:{adjustmentId:string;orderId:string;customerId:string;providerKey:string;nowUtc?:string}):Promise<PaymentAdjustmentOutcome & {submissionId?:string}>{
     if(!/^[a-zA-Z0-9._-]{1,100}$/.test(input.providerKey))
       throw new Error("invalid_payment_provider");
@@ -139,6 +150,9 @@ export class PostgresPaymentAdjustmentStore {
           [row.tenant_id,now,input.adjustmentId]);
         await this.appendEvent(client,row,input.customerId,"expired",now);
         await client.query("COMMIT");return{outcome:"expired"};
+      }
+      if(!(await this.hasVerifiedOriginalCapture(client,row,input.providerKey))){
+        await client.query("ROLLBACK");return{outcome:"conflict"};
       }
       const consented=await client.query(
         "UPDATE customer_payment_adjustments SET status='provider_pending',consented_at=$3,consent_actor_id=$4,provider_key=$5,updated_at=$3 WHERE tenant_id=$1 AND id=$2 AND status='awaiting_customer_consent'",
@@ -168,6 +182,9 @@ export class PostgresPaymentAdjustmentStore {
       if(found.rowCount!==1){await client.query("ROLLBACK");return{outcome:"not_found"};}
       const row=found.rows[0]!;
       if(row.status!=="consented"){await client.query("ROLLBACK");return{outcome:"conflict"};}
+      if(!(await this.hasVerifiedOriginalCapture(client,row,input.providerKey))){
+        await client.query("ROLLBACK");return{outcome:"conflict"};
+      }
       const updated=await client.query(
         "UPDATE customer_payment_adjustments SET status='provider_pending',provider_key=$3,updated_at=$4 WHERE tenant_id=$1 AND id=$2 AND status='consented'",
         [input.tenantId,input.adjustmentId,input.providerKey,now]);
