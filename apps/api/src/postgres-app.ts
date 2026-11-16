@@ -189,7 +189,8 @@ export function buildPostgresApp(options: PostgresApiOptions) {
         "0051_inventory_provider_reservation_release_intents",
         "0052_payment_adjustment_provider_binding",
         "0053_merchant_settlement_journal_uniqueness",
-        "0054_payment_adjustment_provider_reference_uniqueness"
+        "0054_payment_adjustment_provider_reference_uniqueness",
+        "0055_payment_adjustment_submission_outbox"
       ];
       const result = await options.pool.query<{ version: string }>(
         "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",
