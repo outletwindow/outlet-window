@@ -82,7 +82,7 @@ export class PostgresPaymentWebhookInbox {
     const now = new Date().toISOString();
     try {
       await client.query("BEGIN");
-      const receipt = await client.query<{ id: string; adjustment_id: string | null; status: string; lease_owner: string | null }>(
+      const receipt = await client.query<{ id: string; adjustment_id: string | null; status: string; lease_owner: string | null; lease_valid: boolean }>(
         "SELECT id,adjustment_id,status,lease_owner,(lease_expires_at > now()) AS lease_valid FROM payment_provider_webhook_events WHERE id=$1 FOR UPDATE",
         [input.receiptId]
       );
