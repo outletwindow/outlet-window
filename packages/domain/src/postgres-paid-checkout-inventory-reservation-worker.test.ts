@@ -323,9 +323,9 @@ describe("PostgresPaidCheckoutInventoryReservationWorker", () => {
     });
     expect(recovery).toHaveBeenCalledTimes(1);
     expect(transition).not.toHaveBeenCalled();
-    const jobUpdate = db.query.mock.calls.find(call =>
+    const jobUpdate = db.query.mock.calls.filter(call =>
       String(call[0]).includes("UPDATE paid_checkout_inventory_reservation_jobs")
-    ) as unknown as [string, unknown[]] | undefined;
+    ).at(-1) as unknown as [string, unknown[]] | undefined;
     expect(jobUpdate?.[0]).toContain("attempt_count=CASE WHEN $7 THEN LEAST(attempt_count,$5 - 1)");
     expect(jobUpdate?.[1]?.[5]).toBe("PAID_CHECKOUT_ESCALATION_RETRY");
     expect(jobUpdate?.[1]?.[6]).toBe(true);
