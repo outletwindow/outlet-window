@@ -31,7 +31,7 @@ BEGIN
       USING ERRCODE='23514';
   END IF;
 
-  PERFORM 1
+  SELECT r.role INTO authorized_role
   FROM identities i
   JOIN role_assignments r ON r.principal_id=i.id
   WHERE i.id=NEW.actor_id
@@ -58,7 +58,7 @@ BEGIN
   VALUES
     ('settlement-approval-audit-' || NEW.id,1,'merchant_settlement.approved',
      'financial_settlement',NEW.approved_at,NEW.actor_id,'platform_user',
-     'finance','approve','success','merchant_settlement_batch',NEW.batch_id,
+     authorized_role,'approve','success','merchant_settlement_batch',NEW.batch_id,
      NEW.tenant_id,batch_merchant_id,'settlement-approval-' || NEW.batch_id,
      'database_trigger','high',NEW.id,
      jsonb_build_object('decision',NEW.decision,'approvalId',NEW.id));
