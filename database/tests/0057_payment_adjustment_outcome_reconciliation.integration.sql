@@ -4,7 +4,15 @@ INSERT INTO customer_orders
   (id,tenant_id,customer_id,idempotency_key,status,currency,total_minor)
 VALUES
   ('outbox-unknown-order','platform','outbox-unknown-customer',
-   'outbox-unknown-order-key','confirmed','SAR',10000);
+   'outbox-unknown-order-key','awaiting_payment','SAR',10000);
+
+INSERT INTO verified_order_payment_captures
+  (id,tenant_id,order_id,provider_key,provider_event_id,provider_payment_reference,
+   amount_minor,currency,captured_at,idempotency_key)
+VALUES
+  ('outbox-unknown-capture','platform','outbox-unknown-order','moyasar','evt-outbox-unknown-capture','pay-outbox-unknown-capture',
+   10000,'SAR',now(),'capture-key-outbox-unknown-capture');
+
 INSERT INTO customer_payment_adjustments
   (id,tenant_id,order_id,customer_id,idempotency_key,quote_reference,currency,
    adjustment_direction,amount_minor,previous_total_minor,proposed_total_minor,
