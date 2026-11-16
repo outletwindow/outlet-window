@@ -111,8 +111,7 @@ export class PostgresPaymentWebhookInbox {
       }>(
         `SELECT tenant_id,order_id,amount_minor,currency
          FROM verified_order_payment_captures
-         WHERE provider_key='moyasar' AND provider_payment_reference=$1
-         FOR UPDATE`,
+         WHERE provider_key='moyasar' AND provider_payment_reference=$1`,
         [input.providerPaymentReference]
       );
       if (capture.rowCount !== 1) {
@@ -121,6 +120,46 @@ export class PostgresPaymentWebhookInbox {
         return "reconciliation_required";
       }
       const original = capture.rows[0]!;
+      const candidate = await client.query<{ adjustment_id: string }>(
+        `SELECT r.adjustment_id
+         FROM payment_refund_reservations r
+         WHERE r.tenant_id=$1 AND r.provider_key='moyasar'
+           AND r.original_payment_reference=$2 AND r.status='reserved'
+         LIMIT 2`,
+        [original.tenant_id,input.providerPaymentReference]
+      );
+      if (candidate.rowCount > 1) {
+        await this.quarantineRefundReceipt(client,receiptId,"MULTIPLE_ACTIVE_REFUND_RESERVATIONS");
+        await client.query("COMMIT");
+        return "reconciliation_required";
+      }
+      if (candidate.rowCount === 1) {
+        const lockedAdjustment = await client.query(
+          "SELECT id FROM customer_payment_adjustments WHERE tenant_id=$1 AND id=$2 FOR UPDATE",
+          [original.tenant_id,candidate.rows[0]!.adjustment_id]
+        );
+        if (lockedAdjustment.rowCount !== 1) {
+          await this.quarantineRefundReceipt(client,receiptId,"REFUND_ADJUSTMENT_NOT_FOUND");
+          await client.query("COMMIT");
+          return "reconciliation_required";
+        }
+      }
+      const lockedCapture = await client.query<{
+        tenant_id: string; order_id: string; amount_minor: string; currency: string;
+      }>(
+        `SELECT tenant_id,order_id,amount_minor,currency
+         FROM verified_order_payment_captures
+         WHERE provider_key='moyasar' AND provider_payment_reference=$1
+         FOR UPDATE`,
+        [input.providerPaymentReference]
+      );
+      if (lockedCapture.rowCount !== 1 ||
+          lockedCapture.rows[0]!.tenant_id !== original.tenant_id ||
+          lockedCapture.rows[0]!.order_id !== original.order_id) {
+        await this.quarantineRefundReceipt(client,receiptId,"ORIGINAL_PAYMENT_CAPTURE_CHANGED");
+        await client.query("COMMIT");
+        return "reconciliation_required";
+      }
       if (original.currency !== input.currency ||
           Number(original.amount_minor) !== input.refundableBaseMinor ||
           input.refundedMinor > Number(original.amount_minor)) {
