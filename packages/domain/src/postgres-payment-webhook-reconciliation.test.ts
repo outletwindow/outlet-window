@@ -2,17 +2,18 @@ import { describe, expect, it, vi } from "vitest";
 import type { PostgresClient, PostgresPool } from "./postgres-iam-store.js";
 import { PostgresPaymentWebhookInbox } from "./postgres-payment-webhook-inbox.js";
 
-function makePool(options: { receiptStatus?: string; receiptAdjustmentId?: string | null; adjustmentStatus?: string; orderRowCount?: number } = {}) {
+function makePool(options: { receiptStatus?: string; receiptAdjustmentId?: string | null; receiptProviderKey?: string; receiptProviderReference?: string | null; adjustmentProviderKey?: string | null; adjustmentProviderReference?: string | null; adjustmentStatus?: string; orderRowCount?: number } = {}) {
   const calls: Array<{ sql: string; values?: readonly unknown[] }> = [];
   const query = vi.fn(async (sql: string, values?: readonly unknown[]) => {
     calls.push({ sql, ...(values === undefined ? {} : { values }) });
-    if (sql.includes("SELECT id,adjustment_id,status,lease_owner,(lease_expires_at > now()) AS lease_valid FROM payment_provider_webhook_events")) {
-      return { rows: [{ id: "receipt-1", adjustment_id: options.receiptAdjustmentId ?? "adjustment-1", status: options.receiptStatus ?? "processing", lease_owner: "worker-1", lease_valid: true }], rowCount: 1 };
+    if (sql.includes("SELECT id,adjustment_id,provider_key,provider_reference,status,lease_owner,(lease_expires_at > now()) AS lease_valid FROM payment_provider_webhook_events")) {
+      return { rows: [{ id: "receipt-1", adjustment_id: options.receiptAdjustmentId ?? "adjustment-1", provider_key: options.receiptProviderKey ?? "psp-a", provider_reference: options.receiptProviderReference ?? "psp-ref-123", status: options.receiptStatus ?? "processing", lease_owner: "worker-1", lease_valid: true }], rowCount: 1 };
     }
-    if (sql.includes("SELECT id,tenant_id,order_id,customer_id,currency,previous_total_minor,proposed_total_minor,status FROM customer_payment_adjustments")) {
+    if (sql.includes("SELECT id,tenant_id,order_id,customer_id,currency,previous_total_minor,proposed_total_minor,provider_key,provider_reference,status FROM customer_payment_adjustments")) {
       return { rows: [{
         id: "adjustment-1", tenant_id: "tenant-1", order_id: "order-1", customer_id: "customer-1",
         currency: "SAR", previous_total_minor: "10000", proposed_total_minor: "12000",
+        provider_key: options.adjustmentProviderKey ?? "psp-a", provider_reference: options.adjustmentProviderReference ?? "psp-ref-123",
         status: options.adjustmentStatus ?? "provider_pending"
       }], rowCount: 1 };
     }
@@ -31,7 +32,7 @@ describe("atomic payment webhook reconciliation", () => {
     const mock = makePool();
     const inbox = new PostgresPaymentWebhookInbox(mock.pool);
     await expect(inbox.reconcileAdjustment({
-      receiptId: "receipt-1", adjustmentId: "adjustment-1", actorId: "payment-worker", workerId: "worker-1",
+      receiptId: "receipt-1", adjustmentId: "adjustment-1", providerKey: "psp-a", actorId: "payment-worker", workerId: "worker-1",
       confirmed: true, providerReference: "psp-ref-123"
     })).resolves.toBe("applied");
     expect(mock.calls[0]?.sql).toBe("BEGIN");
