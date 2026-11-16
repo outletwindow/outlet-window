@@ -110,7 +110,7 @@ BEGIN
   BEGIN
     TRUNCATE inventory_provider_reservation_evidence;
     RAISE EXCEPTION 'provider reservation evidence unexpectedly truncated';
-  EXCEPTION WHEN SQLSTATE '55000' THEN NULL;
+  EXCEPTION WHEN SQLSTATE '55000' OR feature_not_supported THEN NULL;
   END;
 
   BEGIN
