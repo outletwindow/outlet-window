@@ -59,7 +59,10 @@ export class PostgresPaymentAdjustmentSubmissionOutbox {
     if(result.rowCount!==1)return null;
     const row=result.rows[0]!;
     const amount=Number(row.amount_minor);
+    const expectedRefunded=Number(row.expected_refunded_minor);
     if(!Number.isSafeInteger(amount)||amount<=0)throw new Error("PAYMENT_ADJUSTMENT_AMOUNT_INVALID");
+    if(row.adjustment_direction==="refund"&&(!Number.isSafeInteger(expectedRefunded)||expectedRefunded<0))
+      throw new Error("PAYMENT_ADJUSTMENT_EXPECTED_REFUND_TOTAL_INVALID");
     return {
       submissionId:row.id,tenantId:row.tenant_id,adjustmentId:row.adjustment_id,
       providerKey:row.provider_key,idempotencyKey:row.idempotency_key,attemptCount:Number(row.attempt_count),
@@ -67,12 +70,12 @@ export class PostgresPaymentAdjustmentSubmissionOutbox {
         direction:row.adjustment_direction,amountMinor:amount,currency:row.currency,customerId:row.customer_id,
         ...(row.original_payment_reference===null?{}:{
           originalPaymentReference:row.original_payment_reference,
-          expectedRefundedMinor:Number(row.expected_refunded_minor)
+          expectedRefundedMinor:expectedRefunded
         })}
     };
   }
 
-  async recordAccepted(input:{submissionId:string;workerId:string;providerReference:string;actorId:string}):Promise<"submitted"|"lease_lost"|"conflict">{
+  async recordAccepted(input:{submissionId:string;workerId:string;providerReference?:string;actorId:string}):Promise<"submitted"|"lease_lost"|"conflict">{
     if(!/^[a-zA-Z0-9_-]{1,200}$/.test(input.submissionId)||!input.providerReference.trim()||
        input.providerReference.length>240||!/^[a-zA-Z0-9_-]{1,200}$/.test(input.workerId)||
        !input.actorId.trim())throw new Error("INVALID_PAYMENT_ADJUSTMENT_PROVIDER_RESULT");
@@ -95,14 +98,17 @@ export class PostgresPaymentAdjustmentSubmissionOutbox {
         await client.query("ROLLBACK");return "conflict";
       }
       await client.query(
-        "UPDATE customer_payment_adjustments SET provider_reference=$3,updated_at=$4 WHERE tenant_id=$1 AND id=$2 AND status='provider_pending' AND provider_reference IS NULL",
-        [job.tenant_id,job.adjustment_id,input.providerReference,now]);
+        "UPDATE customer_payment_adjustments SET provider_reference=COALESCE(provider_reference,$3),updated_at=$4 WHERE tenant_id=$1 AND id=$2 AND status='provider_pending' AND (provider_reference IS NULL OR provider_reference=$3)",
+        [job.tenant_id,job.adjustment_id,input.providerReference ?? null,now]);
       await client.query(
         "INSERT INTO customer_payment_adjustment_events (id,tenant_id,adjustment_id,actor_id,event_type,occurred_at,snapshot) VALUES ($1,$2,$3,$4,'provider_submitted',$5,$6::jsonb)",
-        [randomUUID(),job.tenant_id,job.adjustment_id,input.actorId,now,JSON.stringify({status:"provider_submitted",providerKey:job.provider_key,providerReference:input.providerReference})]);
+        [randomUUID(),job.tenant_id,job.adjustment_id,input.actorId,now,JSON.stringify({
+          status:"provider_submitted",providerKey:job.provider_key,
+          ...(input.providerReference === undefined ? {} : {providerReference:input.providerReference})
+        })]);
       await client.query(
-        "UPDATE payment_adjustment_submission_outbox SET status='submitted',provider_reference=$2,completed_at=$3,updated_at=$3,lease_owner=NULL,lease_expires_at=NULL WHERE id=$1",
-        [input.submissionId,input.providerReference,now]);
+        "UPDATE payment_adjustment_submission_outbox SET status='submitted',provider_reference=COALESCE(provider_reference,$2),completed_at=$3,updated_at=$3,lease_owner=NULL,lease_expires_at=NULL WHERE id=$1",
+        [input.submissionId,input.providerReference ?? null,now]);
       await client.query("COMMIT");return "submitted";
     }catch(error){await client.query("ROLLBACK").catch(()=>undefined);throw error;}finally{client.release();}
   }
