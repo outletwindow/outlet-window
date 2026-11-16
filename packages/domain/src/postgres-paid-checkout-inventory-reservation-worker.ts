@@ -110,6 +110,19 @@ export class PostgresPaidCheckoutInventoryReservationWorker {
       const code = error instanceof Error && /^[A-Z0-9_]{1,100}$/.test(error.message)
         ? error.message : "PAID_CHECKOUT_RESERVATION_RETRY";
       const delaySeconds = Math.min(1800, 5 * 2 ** Math.min(Math.max(job.attempt_count - 1, 0), 8));
+      const terminalFailure = job.attempt_count >= this.maxAttempts;
+      if (terminalFailure) {
+        // A captured payment must not remain in the ordinary payment-waiting state
+        // after inventory processing is exhausted. Escalate to durable recovery and
+        // put every still-unconfirmed suborder on hold before closing the outbox job.
+        // If persistence itself is unavailable, the lease/job remains recoverable.
+        try {
+          await this.escalateTerminalFailure(job);
+        } catch {
+          // Keep the original provider/worker failure code; the job is marked for
+          // operator review below and can be reconciled from the immutable capture.
+        }
+      }
       const retry = await this.pool.query(
         `UPDATE paid_checkout_inventory_reservation_jobs
          SET status=CASE WHEN attempt_count >= $5 THEN 'needs_review' ELSE 'pending' END,
@@ -266,6 +279,37 @@ export class PostgresPaidCheckoutInventoryReservationWorker {
       }
     }
     return { needsReview: false };
+  }
+
+  private async escalateTerminalFailure(job: ReservationJobRow): Promise<void> {
+    const paid = await this.pool.query<PaidOrderRow>(
+      `SELECT o.tenant_id,o.status,o.total_minor,o.currency,
+              p.provider_payment_reference,p.captured_at,p.amount_minor AS capture_amount_minor,
+              p.currency AS capture_currency
+       FROM customer_orders o
+       JOIN verified_order_payment_captures p
+         ON p.tenant_id=o.tenant_id AND p.order_id=o.id
+       WHERE o.id=$1 AND p.id=$2 AND p.tenant_id=$3`,
+      [job.order_id, job.capture_id, job.tenant_id]
+    );
+    const payment = paid.rows[0];
+    if (paid.rows.length !== 1 || !payment ||
+        Number(payment.total_minor) !== Number(payment.capture_amount_minor) ||
+        payment.currency !== payment.capture_currency) {
+      throw new Error("PAID_CHECKOUT_CAPTURE_EVIDENCE_MISMATCH");
+    }
+
+    await this.recordRecovery(job, payment, "INVENTORY_UNGUARANTEED", undefined, []);
+    const suborders = await this.pool.query<SuborderRow>(
+      `SELECT s.id,s.tenant_id,s.merchant_id,s.branch_id,s.status,s.version
+       FROM merchant_suborders s
+       JOIN customer_orders o ON o.id=s.order_id AND o.tenant_id=$2
+       WHERE s.order_id=$1 ORDER BY s.id`,
+      [job.order_id, job.tenant_id]
+    );
+    for (const suborder of suborders.rows) {
+      await this.moveToHoldIfSafe(job, suborder, "unguaranteed");
+    }
   }
 
   private async transition(
