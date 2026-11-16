@@ -140,6 +140,18 @@ describe("Moyasar one-shot payment refund client", () => {
     })).resolves.toEqual({ outcome: "unknown", code: "MOYASAR_REFUND_RESPONSE_UNVERIFIABLE" });
   });
 
+  it("does not confirm an exact cumulative total when the provider status is not refunded", async () => {
+    const client = new MoyasarPaymentRefundClient({
+      secretKey,
+      fetchImpl: async (_url, init) => init?.method === "GET"
+        ? new Response(JSON.stringify(payment()), { status: 200 })
+        : new Response(JSON.stringify(payment({ status: "captured", refunded: 3_500 })), { status: 200 })
+    });
+    await expect(client.refund({
+      paymentId, amountMinor: 2_500, currency: "SAR", expectedRefundedMinor: 1_000
+    })).resolves.toEqual({ outcome: "unknown", code: "MOYASAR_REFUND_RESPONSE_UNVERIFIABLE" });
+  });
+
   it("rejects malformed identifiers and never performs a request", async () => {
     let calls = 0;
     const client = new MoyasarPaymentRefundClient({
