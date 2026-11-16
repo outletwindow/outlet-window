@@ -116,7 +116,7 @@ export class PostgresPaymentWebhookInbox {
         [input.providerPaymentReference]
       );
       if (capture.rowCount !== 1) {
-        await this.quarantineRefundReceipt(client,receiptId,"ORIGINAL_PAYMENT_CAPTURE_NOT_FOUND",now);
+        await this.quarantineRefundReceipt(client,receiptId,"ORIGINAL_PAYMENT_CAPTURE_NOT_FOUND");
         await client.query("COMMIT");
         return "reconciliation_required";
       }
@@ -124,7 +124,7 @@ export class PostgresPaymentWebhookInbox {
       if (original.currency !== input.currency ||
           Number(original.amount_minor) !== input.refundableBaseMinor ||
           input.refundedMinor > Number(original.amount_minor)) {
-        await this.quarantineRefundReceipt(client,receiptId,"REFUND_CAPTURE_SNAPSHOT_MISMATCH",now);
+        await this.quarantineRefundReceipt(client,receiptId,"REFUND_CAPTURE_SNAPSHOT_MISMATCH");
         await client.query("COMMIT");
         return "reconciliation_required";
       }
@@ -155,7 +155,7 @@ export class PostgresPaymentWebhookInbox {
       );
       const confirmedMinor = Number(consumed.rows[0]?.total_minor ?? "0");
       if (!Number.isSafeInteger(confirmedMinor) || confirmedMinor < 0) {
-        await this.quarantineRefundReceipt(client,receiptId,"CONFIRMED_REFUND_TOTAL_INVALID",now);
+        await this.quarantineRefundReceipt(client,receiptId,"CONFIRMED_REFUND_TOTAL_INVALID");
         await client.query("COMMIT");
         return "reconciliation_required";
       }
@@ -169,12 +169,12 @@ export class PostgresPaymentWebhookInbox {
           await client.query("COMMIT");
           return "ignored";
         }
-        await this.quarantineRefundReceipt(client,receiptId,"NO_ACTIVE_REFUND_RESERVATION_MATCH",now);
+        await this.quarantineRefundReceipt(client,receiptId,"NO_ACTIVE_REFUND_RESERVATION_MATCH");
         await client.query("COMMIT");
         return "reconciliation_required";
       }
       if (active.rowCount !== 1) {
-        await this.quarantineRefundReceipt(client,receiptId,"MULTIPLE_ACTIVE_REFUND_RESERVATIONS",now);
+        await this.quarantineRefundReceipt(client,receiptId,"MULTIPLE_ACTIVE_REFUND_RESERVATIONS");
         await client.query("COMMIT");
         return "reconciliation_required";
       }
@@ -192,7 +192,7 @@ export class PostgresPaymentWebhookInbox {
           "UPDATE payment_provider_webhook_events SET adjustment_id=$2 WHERE id=$1",
           [receiptId,refund.adjustment_id]
         );
-        await this.quarantineRefundReceipt(client,receiptId,"REFUND_CUMULATIVE_TOTAL_OR_BINDING_MISMATCH",now);
+        await this.quarantineRefundReceipt(client,receiptId,"REFUND_CUMULATIVE_TOTAL_OR_BINDING_MISMATCH");
         await client.query("COMMIT");
         return "reconciliation_required";
       }
@@ -210,7 +210,7 @@ export class PostgresPaymentWebhookInbox {
           "UPDATE payment_provider_webhook_events SET adjustment_id=$2 WHERE id=$1",
           [receiptId,refund.adjustment_id]
         );
-        await this.quarantineRefundReceipt(client,receiptId,"REFUND_ORDER_TOTAL_CONFLICT",now);
+        await this.quarantineRefundReceipt(client,receiptId,"REFUND_ORDER_TOTAL_CONFLICT");
         await client.query("COMMIT");
         return "reconciliation_required";
       }
@@ -242,14 +242,14 @@ export class PostgresPaymentWebhookInbox {
   }
 
   private async quarantineRefundReceipt(
-    client: PostgresClient, receiptId: string, failureCode: string, now: string
+    client: PostgresClient, receiptId: string, failureCode: string
   ): Promise<void> {
     await client.query(
       `UPDATE payment_provider_webhook_events
        SET status='reconciliation_required',failure_code=$2,
            processed_at=NULL,lease_owner=NULL,lease_expires_at=NULL
        WHERE id=$1 AND status='received'`,
-      [receiptId,failureCode,now]
+      [receiptId,failureCode]
     );
   }
 
