@@ -32,13 +32,15 @@ describe("Postgres payment adjustment submission outbox",()=>{
     query.mockResolvedValueOnce({rows:[{
       id:"submission-1",tenant_id:"tenant-1",adjustment_id:"adjustment-1",provider_key:"moyasar",
       idempotency_key:"stable-refund-key-123",attempt_count:1,order_id:"order-1",
-      customer_id:"customer-1",adjustment_direction:"refund",amount_minor:"2500",currency:"SAR"
+      customer_id:"customer-1",adjustment_direction:"refund",amount_minor:"2500",currency:"SAR",
+      original_payment_reference:"3fa85f64-5717-4562-b3fc-2c963f66afa6",expected_refunded_minor:"1250"
     }],rowCount:1} as never);
     const job=await store.claimNext("worker-1","moyasar",60);
     expect(job).toMatchObject({
       submissionId:"submission-1",providerKey:"moyasar",idempotencyKey:"stable-refund-key-123",
       command:{orderId:"order-1",amountMinor:2500,direction:"refund",currency:"SAR",
-        idempotencyKey:"stable-refund-key-123"}
+        idempotencyKey:"stable-refund-key-123",expectedRefundedMinor:1250,
+        originalPaymentReference:"3fa85f64-5717-4562-b3fc-2c963f66afa6"}
     });
     expect(query.mock.calls[0]?.[1]).toEqual(["worker-1",60,"moyasar"]);
     expect(query.mock.calls[0]?.[0]).toContain("FOR UPDATE OF o SKIP LOCKED");
@@ -56,11 +58,22 @@ describe("Postgres payment adjustment submission outbox",()=>{
       submissionId:"submission-1",workerId:"worker-1",providerReference:"refund-ref-123",
       actorId:"payment-adjustment-worker"
     })).resolves.toBe("submitted");
-    expect(calls.some(c=>c.sql.includes("SET provider_reference=$3"))).toBe(true);
+    expect(calls.some(c=>c.sql.includes("provider_reference=COALESCE(provider_reference,$3)"))).toBe(true);
     expect(calls.some(c=>c.sql.includes("'provider_submitted'"))).toBe(true);
     expect(calls.some(c=>c.sql.includes("SET status='submitted'"))).toBe(true);
     expect(calls.some(c=>c.sql==="COMMIT")).toBe(true);
     expect(calls.some(c=>c.sql==="ROLLBACK")).toBe(false);
+  });
+
+  it("records accepted provider operations that do not expose a unique refund reference",async()=>{
+    const {store,calls}=fixture();
+    await expect(store.recordAccepted({
+      submissionId:"submission-1",workerId:"worker-1",
+      actorId:"payment-adjustment-worker"
+    })).resolves.toBe("submitted");
+    expect(calls.some(c=>c.sql.includes("provider_reference=COALESCE(provider_reference,$3)"))).toBe(true);
+    expect(calls.some(c=>c.sql.includes("'provider_submitted'"))).toBe(true);
+    expect(calls.some(c=>c.sql==="COMMIT")).toBe(true);
   });
 
   it("does not persist provider acceptance after its lease expires",async()=>{
@@ -69,7 +82,7 @@ describe("Postgres payment adjustment submission outbox",()=>{
       submissionId:"submission-1",workerId:"worker-1",providerReference:"refund-ref-123",
       actorId:"payment-adjustment-worker"
     })).resolves.toBe("lease_lost");
-    expect(calls.some(c=>c.sql.includes("SET provider_reference=$3"))).toBe(false);
+    expect(calls.some(c=>c.sql.includes("provider_reference=COALESCE(provider_reference,$3)"))).toBe(false);
     expect(calls.some(c=>c.sql==="ROLLBACK")).toBe(true);
   });
 
