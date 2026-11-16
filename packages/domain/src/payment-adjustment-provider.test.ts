@@ -34,12 +34,22 @@ describe("payment adjustment provider adapter", () => {
     expect(JSON.parse(String(request?.body))).toMatchObject({ amountMinor: 2500, currency: "SAR" });
   });
 
+  it("quarantines network failures because provider execution may already have occurred", async () => {
+    const provider = createHttpPaymentAdjustmentProvider({
+      endpoint: "https://gateway.example/payments/adjust", bearerToken: "secret-token",
+      fetchImpl: async () => { throw new Error("socket closed after request write"); }
+    });
+    await expect(provider.submit(command)).resolves.toEqual({
+      status: "unknown", code: "PAYMENT_PROVIDER_OUTCOME_UNKNOWN"
+    });
+  });
+
   it("does not treat malformed or non-success provider responses as confirmed", async () => {
     const malformed = createHttpPaymentAdjustmentProvider({
       endpoint: "https://gateway.example/payments/adjust", bearerToken: "secret-token",
       fetchImpl: async () => new Response(JSON.stringify({ status: "accepted" }), { status: 200 })
     });
-    await expect(malformed.submit(command)).resolves.toMatchObject({ status: "retry" });
+    await expect(malformed.submit(command)).resolves.toMatchObject({ status: "unknown", code: "PAYMENT_PROVIDER_OUTCOME_UNKNOWN" });
     const rejected = createHttpPaymentAdjustmentProvider({
       endpoint: "https://gateway.example/payments/adjust", bearerToken: "secret-token",
       fetchImpl: async () => new Response("{}", { status: 402 })
