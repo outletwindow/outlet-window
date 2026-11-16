@@ -70,7 +70,8 @@ async function main(): Promise<void> {
       { version: "0051_inventory_provider_reservation_release_intents", file: "0051_inventory_provider_reservation_release_intents.sql" },
       { version: "0052_payment_adjustment_provider_binding", file: "0052_payment_adjustment_provider_binding.sql" },
       { version: "0053_merchant_settlement_journal_uniqueness", file: "0053_merchant_settlement_journal_uniqueness.sql" },
-      { version: "0054_payment_adjustment_provider_reference_uniqueness", file: "0054_payment_adjustment_provider_reference_uniqueness.sql" }
+      { version: "0054_payment_adjustment_provider_reference_uniqueness", file: "0054_payment_adjustment_provider_reference_uniqueness.sql" },
+      { version: "0055_payment_adjustment_submission_outbox", file: "0055_payment_adjustment_submission_outbox.sql" }
     ].map(async migration => ({
       version: migration.version,
       sql: await readFile(resolve(process.cwd(), `../../database/migrations/${migration.file}`), "utf8")
