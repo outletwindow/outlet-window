@@ -83,10 +83,10 @@ export class PostgresPaymentWebhookInbox {
     try {
       await client.query("BEGIN");
       const receipt = await client.query<{ id: string; adjustment_id: string | null; status: string; lease_owner: string | null }>(
-        "SELECT id,adjustment_id,status,lease_owner FROM payment_provider_webhook_events WHERE id=$1 FOR UPDATE",
+        "SELECT id,adjustment_id,status,lease_owner,(lease_expires_at > now()) AS lease_valid FROM payment_provider_webhook_events WHERE id=$1 FOR UPDATE",
         [input.receiptId]
       );
-      if (receipt.rowCount !== 1 || receipt.rows[0]!.status !== "processing" || receipt.rows[0]!.lease_owner !== input.workerId) {
+      if (receipt.rowCount !== 1 || receipt.rows[0]!.status !== "processing" || receipt.rows[0]!.lease_owner !== input.workerId || !receipt.rows[0]!.lease_valid) {
         await client.query("ROLLBACK");
         return "not_processing";
       }
@@ -206,7 +206,7 @@ export class PostgresPaymentWebhookInbox {
            processed_at=CASE WHEN attempt_count >= 20 THEN now() ELSE NULL END,
            next_attempt_at=CASE WHEN attempt_count >= 20 THEN next_attempt_at ELSE now()+($3 * interval '1 second') END,
            lease_owner=NULL, lease_expires_at=NULL, failure_code=$4
-       WHERE id=$1 AND status='processing' AND lease_owner=$2
+       WHERE id=$1 AND status='processing' AND lease_owner=$2 AND lease_expires_at > now()
        RETURNING id,attempt_count`,
       [input.receiptId, input.workerId, input.delaySeconds, input.failureCode]
     );
@@ -242,7 +242,7 @@ export class PostgresPaymentWebhookInbox {
       `UPDATE payment_provider_webhook_events
        SET status=$2, processed_at=now(),
            adjustment_id=COALESCE($3, adjustment_id), failure_code=$4, lease_owner=NULL, lease_expires_at=NULL
-       WHERE id=$1 AND status='processing' AND ($5::text IS NULL OR lease_owner=$5)
+       WHERE id=$1 AND status='processing' AND ($5::text IS NULL OR (lease_owner=$5 AND lease_expires_at > now()))
        RETURNING id`,
       [input.receiptId, input.status, input.adjustmentId ?? null, input.failureCode ?? null, input.workerId ?? null]
     );
