@@ -133,11 +133,13 @@ Implemented in migration 0050:
 - Approval requires a matching posted journal that debits CUSTOMER_FUNDS_HELD for gross proceeds, credits MERCHANT_PAYABLE for net proceeds, and allocates deductions to other credit accounts.
 - Approved batches and their lines are immutable.
 - Migration 0053 requires draft batches to have no journal reference and enforces one settlement batch per posted journal, preventing a journal from being reused to approve multiple batches.
+- Migration 0054 enforces single-use provider references for payment adjustments within a tenant and provider namespace; legacy rows without a provider key share a guarded legacy namespace.
 
 Not implemented or enabled:
 - Contract/commission/tax policy calculation or independent verification of the supplied contract reference and deduction amounts.
 - An authenticated approval API or dual-control workflow.
 - Provider payout execution, bank transfer, wallet transfer, payout confirmation, or settlement reconciliation against bank/provider statements.
 - Refund execution or production money custody.
+- A provider-specific payment-adjustment submission flow wired into the production API. The current generic HTTPS adapter is an integration primitive only; customer consent and webhook reconciliation records do not themselves submit or refund funds.
 
 The database approval transition is an accounting-record control, not evidence that a merchant was paid. No live payment, payout, bank account or money movement is claimed. Legal, regulatory, payment-provider and accounting review remains required before activation.
