@@ -46,7 +46,8 @@ describe("PostgreSQL API readiness migration gate", () => {
     "0049_double_entry_financial_journal",
     "0050_merchant_settlement_batches",
     "0051_inventory_provider_reservation_release_intents",
-    "0052_payment_adjustment_provider_binding"
+    "0052_payment_adjustment_provider_binding",
+    "0061_moyasar_submission_reference_optional"
 
   ])("keeps the API unready when migration %s is missing", async missing => {
     const app = buildPostgresApp({
