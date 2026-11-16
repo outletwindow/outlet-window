@@ -168,6 +168,22 @@ BEGIN
     RAISE EXCEPTION 'payment_refund_reservation_transition_invalid'
       USING ERRCODE='23514';
   END IF;
+  IF NEW.status='confirmed' AND NOT EXISTS (
+    SELECT 1 FROM customer_payment_adjustments
+    WHERE tenant_id=OLD.tenant_id AND id=OLD.adjustment_id
+      AND status='provider_confirmed'
+  ) THEN
+    RAISE EXCEPTION 'refund_reservation_confirmation_requires_confirmed_adjustment'
+      USING ERRCODE='23514';
+  END IF;
+  IF NEW.status='released' AND NOT EXISTS (
+    SELECT 1 FROM customer_payment_adjustments
+    WHERE tenant_id=OLD.tenant_id AND id=OLD.adjustment_id
+      AND status='provider_failed'
+  ) THEN
+    RAISE EXCEPTION 'refund_reservation_release_requires_definitive_provider_failure'
+      USING ERRCODE='23514';
+  END IF;
   RETURN NEW;
 END
 $function$;
