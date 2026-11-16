@@ -200,7 +200,8 @@ export function buildPostgresApp(options: PostgresApiOptions) {
         "0055_payment_adjustment_submission_outbox",
         "0056_payment_adjustment_submission_outbox_guards",
         "0057_payment_adjustment_outcome_reconciliation",
-        "0058_payment_adjustment_original_capture_binding"
+        "0058_payment_adjustment_original_capture_binding",
+        "0059_payment_refund_balance_reservations"
       ];
       const result = await options.pool.query<{ version: string }>(
         "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",
