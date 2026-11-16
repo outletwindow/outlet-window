@@ -119,6 +119,32 @@ export class PostgresPaymentAdjustmentStore {
     }catch(error){await client.query("ROLLBACK").catch(()=>undefined);throw error;}finally{client.release();}
   }
 
+  async queueProviderSubmission(input:{tenantId:string;adjustmentId:string;actorId:string;providerKey:string;idempotencyKey:string}):Promise<PaymentAdjustmentOutcome & { submissionId?:string }>{
+    if(!/^[a-zA-Z0-9._-]{1,100}$/.test(input.providerKey)||
+       !/^[a-zA-Z0-9._:-]{8,200}$/.test(input.idempotencyKey)||
+       !input.actorId.trim()) throw new Error("invalid_payment_provider_submission");
+    const client=await this.pool.connect();const now=this.now().toISOString();const submissionId=randomUUID();
+    try{
+      await client.query("BEGIN");
+      const found=await client.query<AdjustmentRow>(
+        "SELECT * FROM customer_payment_adjustments WHERE tenant_id=$1 AND id=$2 FOR UPDATE",
+        [input.tenantId,input.adjustmentId]);
+      if(found.rowCount!==1){await client.query("ROLLBACK");return{outcome:"not_found"};}
+      const row=found.rows[0]!;
+      if(row.status!=="consented"){await client.query("ROLLBACK");return{outcome:"conflict"};}
+      const updated=await client.query(
+        "UPDATE customer_payment_adjustments SET status='provider_pending',provider_key=$3,updated_at=$4 WHERE tenant_id=$1 AND id=$2 AND status='consented'",
+        [input.tenantId,input.adjustmentId,input.providerKey,now]);
+      if(updated.rowCount!==1){await client.query("ROLLBACK");return{outcome:"conflict"};}
+      await client.query(
+        "INSERT INTO payment_adjustment_submission_outbox (id,tenant_id,adjustment_id,provider_key,idempotency_key,status,available_at,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,'queued',$6,$6,$6)",
+        [submissionId,input.tenantId,input.adjustmentId,input.providerKey,input.idempotencyKey,now]);
+      await this.appendEvent(client,row,input.actorId,"provider_submission_queued",now);
+      await client.query("COMMIT");
+      return{outcome:"provider_pending",submissionId};
+    }catch(error){await client.query("ROLLBACK").catch(()=>undefined);throw error;}finally{client.release();}
+  }
+
   async markProviderPending(input:{tenantId:string;adjustmentId:string;actorId:string;providerKey:string;providerReference:string}):Promise<PaymentAdjustmentOutcome>{
     if(!/^[a-zA-Z0-9._-]{1,100}$/.test(input.providerKey)||!input.providerReference.trim()||input.providerReference.length>240) throw new Error("invalid_payment_provider_submission");
     const client=await this.pool.connect();const now=this.now().toISOString();
