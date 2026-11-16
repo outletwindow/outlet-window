@@ -9,12 +9,15 @@ const databaseUrl=process.env.DATABASE_URL;
 if(!databaseUrl)throw new Error("DATABASE_URL is required; payment adjustment worker will not start");
 if(process.env.PAYMENT_ADJUSTMENT_ENVIRONMENT!=="sandbox")
   throw new Error("PAYMENT_ADJUSTMENT_WORKER_SANDBOX_ONLY");
-const providerKey=process.env.PAYMENT_ADJUSTMENT_PROVIDER_KEY;
-if(!providerKey||!/^[a-zA-Z0-9._-]{1,100}$/.test(providerKey))
+const providerKey: string = process.env.PAYMENT_ADJUSTMENT_PROVIDER_KEY ?? "";
+if(!/^[a-zA-Z0-9._-]{1,100}$/.test(providerKey))
   throw new Error("PAYMENT_ADJUSTMENT_PROVIDER_KEY_REQUIRED");
+const sandboxEndpoint=process.env.PAYMENT_ADJUSTMENT_SANDBOX_ENDPOINT;
+const sandboxToken=process.env.PAYMENT_ADJUSTMENT_SANDBOX_TOKEN;
+if(!sandboxEndpoint||!sandboxToken)throw new Error("PAYMENT_ADJUSTMENT_SANDBOX_CREDENTIALS_REQUIRED");
 const provider=createHttpPaymentAdjustmentProvider({
-  endpoint:process.env.PAYMENT_ADJUSTMENT_SANDBOX_ENDPOINT,
-  bearerToken:process.env.PAYMENT_ADJUSTMENT_SANDBOX_TOKEN
+  endpoint:sandboxEndpoint,
+  bearerToken:sandboxToken
 });
 const pollMs=Number.parseInt(process.env.PAYMENT_ADJUSTMENT_WORKER_POLL_MS??"1000",10);
 const batchSize=Number.parseInt(process.env.PAYMENT_ADJUSTMENT_WORKER_BATCH_SIZE??"5",10);
