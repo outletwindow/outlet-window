@@ -78,6 +78,37 @@ describe("Postgres payment adjustment provider result", () => {
   });
 
 
+  it("queues a consented adjustment with a durable idempotency key before provider submission", async () => {
+    const { store, calls } = makeStore({ status: "consented" });
+    await expect(store.queueProviderSubmission({
+      tenantId: "tenant-1", adjustmentId: "adjustment-1", actorId: "service-1",
+      providerKey: "moyasar", idempotencyKey: "refund-idempotency-123"
+    })).resolves.toMatchObject({ outcome: "provider_pending", submissionId: expect.any(String) });
+
+    const queued = calls.find(call => call.sql.includes("INSERT INTO payment_adjustment_submission_outbox"));
+    expect(queued?.params).toEqual([
+      expect.any(String), "tenant-1", "adjustment-1", "moyasar",
+      "refund-idempotency-123", "2026-11-16T17:00:00.000Z"
+    ]);
+    const transition = calls.find(call => call.sql.includes("SET status='provider_pending'"));
+    expect(transition?.params).toEqual([
+      "tenant-1", "adjustment-1", "moyasar", "2026-11-16T17:00:00.000Z"
+    ]);
+    expect(calls.some(call => call.sql.includes("customer_payment_adjustment_events") && call.params?.[4] === "provider_submission_queued")).toBe(true);
+    expect(calls.some(call => call.sql === "COMMIT")).toBe(true);
+  });
+
+  it("does not enqueue a second provider submission for an adjustment already pending", async () => {
+    const { store, calls } = makeStore({ status: "provider_pending" });
+    await expect(store.queueProviderSubmission({
+      tenantId: "tenant-1", adjustmentId: "adjustment-1", actorId: "service-1",
+      providerKey: "moyasar", idempotencyKey: "refund-idempotency-456"
+    })).resolves.toEqual({ outcome: "conflict" });
+
+    expect(calls.some(call => call.sql.includes("INSERT INTO payment_adjustment_submission_outbox"))).toBe(false);
+    expect(calls.some(call => call.sql === "ROLLBACK")).toBe(true);
+  });
+
   it("persists the provider identity only after customer consent", async () => {
     const { store, calls } = makeStore({ status: "consented" });
     await expect(store.markProviderPending({
