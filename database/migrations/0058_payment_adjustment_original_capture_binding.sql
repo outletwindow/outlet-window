@@ -6,6 +6,18 @@ ALTER TABLE payment_adjustment_submission_outbox
   CHECK (original_payment_reference IS NULL OR
     length(trim(original_payment_reference)) BETWEEN 1 AND 240);
 
+-- Backfill references for previously queued/submitted refund jobs where the trusted
+-- capture evidence exists. Missing evidence is quarantined below, never guessed.
+UPDATE payment_adjustment_submission_outbox AS o
+SET original_payment_reference = c.provider_payment_reference
+FROM customer_payment_adjustments AS a
+JOIN verified_order_payment_captures AS c
+  ON c.tenant_id=a.tenant_id AND c.order_id=a.order_id AND c.provider_key=a.provider_key
+WHERE a.tenant_id=o.tenant_id AND a.id=o.adjustment_id
+  AND a.adjustment_direction='refund'
+  AND o.original_payment_reference IS NULL
+  AND c.amount_minor >= a.amount_minor AND c.currency=a.currency;
+
 CREATE OR REPLACE FUNCTION enforce_payment_adjustment_submission_outbox()
 RETURNS trigger LANGUAGE plpgsql AS $function$
 DECLARE
@@ -92,9 +104,9 @@ BEGIN
      AND NEW.attempt_count = OLD.attempt_count
      AND NEW.provider_reference IS NULL AND NEW.completed_at IS NULL THEN
     RETURN NEW;
-  ELSIF NEW.status = 'reconciliation_required' AND OLD.status = 'processing'
+  ELSIF NEW.status = 'reconciliation_required' AND OLD.status IN ('queued','processing','submitted')
      AND NEW.attempt_count = OLD.attempt_count
-     AND NEW.provider_reference IS NULL AND NEW.completed_at IS NULL
+     AND NEW.completed_at IS NULL
      AND NEW.lease_owner IS NULL AND NEW.lease_expires_at IS NULL THEN
     RETURN NEW;
   ELSIF NEW.status IN ('submitted','failed','dead_letter') AND OLD.status = 'processing'
@@ -105,3 +117,15 @@ BEGIN
     USING ERRCODE = '23514';
 END
 $function$;
+
+-- Legacy refund jobs without matching verified capture evidence cannot be safely sent
+-- or reconciled automatically. Preserve any provider reference and quarantine them.
+UPDATE payment_adjustment_submission_outbox AS o
+SET status='reconciliation_required',completed_at=NULL,
+    lease_owner=NULL,lease_expires_at=NULL,
+    last_error_code='ORIGINAL_PAYMENT_CAPTURE_NOT_FOUND',updated_at=now()
+FROM customer_payment_adjustments AS a
+WHERE a.tenant_id=o.tenant_id AND a.id=o.adjustment_id
+  AND a.adjustment_direction='refund'
+  AND o.original_payment_reference IS NULL
+  AND o.status IN ('queued','processing','submitted');
