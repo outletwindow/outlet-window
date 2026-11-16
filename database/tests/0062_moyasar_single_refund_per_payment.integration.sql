@@ -67,4 +67,61 @@ BEGIN
 END
 $test$;
 
+
+-- The one-refund-per-payment rule is Moyasar-specific. Other providers may
+-- support sequential partial refunds, so their existing balance reservation
+-- behavior must remain unchanged.
+INSERT INTO customer_orders
+  (id,tenant_id,customer_id,idempotency_key,status,currency,total_minor)
+VALUES
+  ('other-psp-refund-order','platform','other-psp-refund-customer',
+   'other-psp-refund-order-key','awaiting_payment','SAR',10000);
+INSERT INTO verified_order_payment_captures
+  (id,tenant_id,order_id,provider_key,provider_event_id,provider_payment_reference,
+   amount_minor,currency,captured_at,idempotency_key)
+VALUES
+  ('other-psp-refund-capture','platform','other-psp-refund-order','other-psp',
+   'other-psp-refund-capture-event','other-psp-refund-payment',
+   10000,'SAR',now(),'other-psp-refund-capture-key');
+INSERT INTO customer_payment_adjustments
+  (id,tenant_id,order_id,customer_id,idempotency_key,quote_reference,currency,
+   adjustment_direction,amount_minor,previous_total_minor,proposed_total_minor,
+   status,consented_at,consent_actor_id,provider_key,expires_at)
+VALUES
+  ('other-psp-refund-a','platform','other-psp-refund-order','other-psp-refund-customer',
+   'other-psp-refund-key-a','other-psp-refund-quote-a','SAR','refund',
+   2500,10000,7500,'provider_pending',now(),'other-psp-refund-customer',
+   'other-psp',now()+interval '5 minutes'),
+  ('other-psp-refund-b','platform','other-psp-refund-order','other-psp-refund-customer',
+   'other-psp-refund-key-b','other-psp-refund-quote-b','SAR','refund',
+   1000,7500,6500,'provider_pending',now(),'other-psp-refund-customer',
+   'other-psp',now()+interval '5 minutes');
+INSERT INTO payment_adjustment_submission_outbox
+  (id,tenant_id,adjustment_id,provider_key,idempotency_key,status)
+VALUES
+  ('other-psp-refund-job-a','platform','other-psp-refund-a','other-psp',
+   'other-psp-refund-stable-key-a','queued');
+UPDATE customer_payment_adjustments
+SET status='provider_confirmed',provider_reference='other-psp-refund-provider-ref',
+    provider_confirmed_at=now(),updated_at=now()
+WHERE id='other-psp-refund-a';
+INSERT INTO payment_adjustment_submission_outbox
+  (id,tenant_id,adjustment_id,provider_key,idempotency_key,status)
+VALUES
+  ('other-psp-refund-job-b','platform','other-psp-refund-b','other-psp',
+   'other-psp-refund-stable-key-b','queued');
+DO $test$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM payment_refund_reservations
+    WHERE adjustment_id='other-psp-refund-a' AND status='confirmed'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM payment_refund_reservations
+    WHERE adjustment_id='other-psp-refund-b' AND status='reserved'
+  ) THEN
+    RAISE EXCEPTION 'Moyasar-specific refund guard incorrectly blocked another provider';
+  END IF;
+END
+$test$;
+
 ROLLBACK;
