@@ -57,7 +57,9 @@ async function tick():Promise<void>{
         const result=await provider.submit(job.command);
         if(result.status==="accepted"){
           const outcome=await store.recordAccepted({
-            submissionId:job.submissionId,workerId,providerReference:result.providerReference,
+            submissionId:job.submissionId,workerId,
+            ...("providerReference" in result && result.providerReference !== undefined
+              ? {providerReference:result.providerReference} : {}),
             actorId:"payment-adjustment-worker"
           });
           if(outcome==="conflict"){
