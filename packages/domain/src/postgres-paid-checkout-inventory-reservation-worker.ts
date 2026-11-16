@@ -111,30 +111,35 @@ export class PostgresPaidCheckoutInventoryReservationWorker {
         ? error.message : "PAID_CHECKOUT_RESERVATION_RETRY";
       const delaySeconds = Math.min(1800, 5 * 2 ** Math.min(Math.max(job.attempt_count - 1, 0), 8));
       const terminalFailure = job.attempt_count >= this.maxAttempts;
+      let escalationFailure = false;
       if (terminalFailure) {
         // A captured payment must not remain in the ordinary payment-waiting state
-        // after inventory processing is exhausted. Escalate to durable recovery and
-        // put every still-unconfirmed suborder on hold before closing the outbox job.
-        // If persistence itself is unavailable, the lease/job remains recoverable.
+        // after inventory processing is exhausted. Only close the outbox job after
+        // the durable recovery case and all safe on-hold transitions have succeeded.
         try {
           await this.escalateTerminalFailure(job);
         } catch {
-          // Keep the original provider/worker failure code; the job is marked for
-          // operator review below and can be reconciled from the immutable capture.
+          escalationFailure = true;
         }
       }
+      const failureCode = escalationFailure ? "PAID_CHECKOUT_ESCALATION_RETRY" : code;
       const retry = await this.pool.query(
         `UPDATE paid_checkout_inventory_reservation_jobs
-         SET status=CASE WHEN attempt_count >= $5 THEN 'needs_review' ELSE 'pending' END,
+         SET status=CASE
+               WHEN attempt_count >= $5 AND NOT $7 THEN 'needs_review'
+               ELSE 'pending'
+             END,
+             attempt_count=CASE WHEN $7 THEN LEAST(attempt_count,$5 - 1) ELSE attempt_count END,
              next_attempt_at=$3 + ($4::integer * interval '1 second'),
              failure_code=$6, lease_owner=NULL, lease_expires_at=NULL, updated_at=$3
          WHERE id=$1 AND status='processing' AND lease_owner=$2 AND lease_expires_at>$3`,
-        [job.id, this.options.workerId, this.now().toISOString(), delaySeconds, this.maxAttempts, code]
+        [job.id, this.options.workerId, this.now().toISOString(), delaySeconds,
+          this.maxAttempts, failureCode, escalationFailure]
       );
       if (retry.rowCount !== 1) return { outcome: "lease_lost", jobId: job.id, orderId: job.order_id };
-      return job.attempt_count >= this.maxAttempts
+      return terminalFailure && !escalationFailure
         ? { outcome: "dead_lettered", jobId: job.id, orderId: job.order_id, failureCode: code }
-        : { outcome: "retry_scheduled", jobId: job.id, orderId: job.order_id, failureCode: code };
+        : { outcome: "retry_scheduled", jobId: job.id, orderId: job.order_id, failureCode };
     }
   }
 
