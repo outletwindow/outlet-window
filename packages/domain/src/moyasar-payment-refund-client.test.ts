@@ -19,7 +19,7 @@ describe("Moyasar one-shot payment refund client", () => {
       fetchImpl: async (url, init) => {
         requests.push({ url: String(url), ...(init === undefined ? {} : { init }) });
         if (init?.method === "GET") return new Response(JSON.stringify(payment()), { status: 200 });
-        return new Response(JSON.stringify(payment({ status: "captured", refunded: 3_500 })), { status: 200 });
+        return new Response(JSON.stringify(payment({ status: "refunded", refunded: 3_500 })), { status: 200 });
       }
     });
 
@@ -28,7 +28,7 @@ describe("Moyasar one-shot payment refund client", () => {
     })).resolves.toMatchObject({
       outcome: "confirmed",
       refundedThisAttemptMinor: 2_500,
-      payment: { id: paymentId, refundedMinor: 3_500, currency: "SAR" }
+      payment: { id: paymentId, status: "refunded", refundedMinor: 3_500, currency: "SAR" }
     });
     expect(requests).toHaveLength(2);
     expect(requests[0]?.init?.method).toBe("GET");
@@ -134,6 +134,18 @@ describe("Moyasar one-shot payment refund client", () => {
       fetchImpl: async (_url, init) => init?.method === "GET"
         ? new Response(JSON.stringify(payment()), { status: 200 })
         : new Response(JSON.stringify(payment({ refunded: 3_499 })), { status: 200 })
+    });
+    await expect(client.refund({
+      paymentId, amountMinor: 2_500, currency: "SAR", expectedRefundedMinor: 1_000
+    })).resolves.toEqual({ outcome: "unknown", code: "MOYASAR_REFUND_RESPONSE_UNVERIFIABLE" });
+  });
+
+  it("does not confirm a partial refund when the provider response status is not refunded", async () => {
+    const client = new MoyasarPaymentRefundClient({
+      secretKey,
+      fetchImpl: async (_url, init) => init?.method === "GET"
+        ? new Response(JSON.stringify(payment()), { status: 200 })
+        : new Response(JSON.stringify(payment({ status: "captured", refunded: 3_500 })), { status: 200 })
     });
     await expect(client.refund({
       paymentId, amountMinor: 2_500, currency: "SAR", expectedRefundedMinor: 1_000
