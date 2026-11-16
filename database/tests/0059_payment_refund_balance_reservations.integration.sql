@@ -27,7 +27,7 @@ VALUES
    'moyasar',now()+interval '5 minutes'),
   ('refund-reservation-c','platform','refund-reservation-order','refund-reservation-customer',
    'refund-reservation-key-c','refund-reservation-quote-c','SAR','refund',
-   7000,10000,3000,'provider_pending',now(),'refund-reservation-customer',
+   1000,10000,9000,'provider_pending',now(),'refund-reservation-customer',
    'moyasar',now()+interval '5 minutes');
 
 INSERT INTO payment_adjustment_submission_outbox
