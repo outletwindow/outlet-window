@@ -64,7 +64,7 @@ BEGIN
           AND order_id=(SELECT order_id FROM customer_payment_adjustments
                         WHERE tenant_id=NEW.tenant_id AND id=NEW.adjustment_id)
           AND provider_key=NEW.provider_key
-        FOR KEY SHARE;
+        FOR UPDATE;
       IF NOT FOUND OR captured_reference IS NULL
          OR captured_amount < adjustment_amount
          OR captured_currency <> adjustment_currency THEN
