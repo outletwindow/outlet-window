@@ -10,8 +10,8 @@ export type ClaimedPaymentAdjustmentSubmission = {
 export class PostgresPaymentAdjustmentSubmissionOutbox {
   constructor(private readonly pool:PostgresPool,private readonly now:()=>Date=()=>new Date()){}
 
-  async claimNext(workerId:string,leaseSeconds=30):Promise<ClaimedPaymentAdjustmentSubmission|null>{
-    if(!/^[a-zA-Z0-9_-]{1,200}$/.test(workerId)||!Number.isSafeInteger(leaseSeconds)||leaseSeconds<5||leaseSeconds>300)
+  async claimNext(workerId:string,providerKey:string,leaseSeconds=30):Promise<ClaimedPaymentAdjustmentSubmission|null>{
+    if(!/^[a-zA-Z0-9_-]{1,200}$/.test(workerId)||!/^[a-zA-Z0-9._-]{1,100}$/.test(providerKey)||!Number.isSafeInteger(leaseSeconds)||leaseSeconds<5||leaseSeconds>300)
       throw new Error("INVALID_PAYMENT_ADJUSTMENT_OUTBOX_LEASE");
     const result=await this.pool.query<{
       id:string;tenant_id:string;adjustment_id:string;provider_key:string;idempotency_key:string;
@@ -20,7 +20,7 @@ export class PostgresPaymentAdjustmentSubmissionOutbox {
     }>(`WITH candidate AS (
         SELECT id FROM payment_adjustment_submission_outbox
         WHERE attempt_count < 10 AND available_at <= now()
-          AND (status='queued' OR (status='processing' AND lease_expires_at <= now()))
+          AND provider_key=$3 AND (status='queued' OR (status='processing' AND lease_expires_at <= now()))
         ORDER BY available_at,created_at,id
         FOR UPDATE SKIP LOCKED LIMIT 1
       )
@@ -33,7 +33,7 @@ export class PostgresPaymentAdjustmentSubmissionOutbox {
         AND a.provider_reference IS NULL
       RETURNING o.id,o.tenant_id,o.adjustment_id,o.provider_key,o.idempotency_key,o.attempt_count,
         a.order_id,a.customer_id,a.adjustment_direction,a.amount_minor,a.currency`,
-      [workerId,leaseSeconds]);
+      [workerId,leaseSeconds,providerKey]);
     if(result.rowCount!==1)return null;
     const row=result.rows[0]!;
     const amount=Number(row.amount_minor);
