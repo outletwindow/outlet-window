@@ -48,7 +48,7 @@ describe("atomic payment webhook reconciliation", () => {
     const mock = makePool();
     const inbox = new PostgresPaymentWebhookInbox(mock.pool);
     await expect(inbox.reconcileAdjustment({
-      receiptId: "receipt-1", adjustmentId: "adjustment-1", actorId: "payment-worker", workerId: "worker-1",
+      receiptId: "receipt-1", adjustmentId: "adjustment-1", providerKey: "psp-a", actorId: "payment-worker", workerId: "worker-1",
       confirmed: false, failureCode: "PAYMENT_DECLINED"
     })).resolves.toBe("failed");
     expect(mock.calls.some(call => call.sql.includes("UPDATE customer_orders"))).toBe(false);
@@ -61,7 +61,7 @@ describe("atomic payment webhook reconciliation", () => {
     const mock = makePool({ orderRowCount: 0 });
     const inbox = new PostgresPaymentWebhookInbox(mock.pool);
     await expect(inbox.reconcileAdjustment({
-      receiptId: "receipt-1", adjustmentId: "adjustment-1", actorId: "payment-worker", workerId: "worker-1",
+      receiptId: "receipt-1", adjustmentId: "adjustment-1", providerKey: "psp-a", actorId: "payment-worker", workerId: "worker-1",
       confirmed: true, providerReference: "psp-ref-123"
     })).resolves.toBe("conflict");
     expect(mock.calls.at(-1)?.sql).toBe("ROLLBACK");
@@ -72,7 +72,7 @@ describe("atomic payment webhook reconciliation", () => {
     const mock = makePool({ receiptStatus: "received" });
     const inbox = new PostgresPaymentWebhookInbox(mock.pool);
     await expect(inbox.reconcileAdjustment({
-      receiptId: "receipt-1", adjustmentId: "adjustment-1", actorId: "payment-worker", workerId: "worker-1",
+      receiptId: "receipt-1", adjustmentId: "adjustment-1", providerKey: "psp-a", actorId: "payment-worker", workerId: "worker-1",
       confirmed: true, providerReference: "psp-ref-123"
     })).resolves.toBe("not_processing");
     expect(mock.calls).toHaveLength(3);
@@ -83,7 +83,7 @@ describe("atomic payment webhook reconciliation", () => {
     const mock = makePool({ receiptAdjustmentId: "other-adjustment" });
     const inbox = new PostgresPaymentWebhookInbox(mock.pool);
     await expect(inbox.reconcileAdjustment({
-      receiptId: "receipt-1", adjustmentId: "adjustment-1", actorId: "payment-worker", workerId: "worker-1",
+      receiptId: "receipt-1", adjustmentId: "adjustment-1", providerKey: "psp-a", actorId: "payment-worker", workerId: "worker-1",
       confirmed: true, providerReference: "psp-ref-123"
     })).resolves.toBe("conflict");
     expect(mock.calls.some(call => call.sql.includes("SELECT id,tenant_id,order_id"))).toBe(false);
