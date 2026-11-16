@@ -127,7 +127,7 @@ export class PostgresPaymentAdjustmentStore {
          AND amount_minor >= $4 AND currency=$5
        FOR KEY SHARE`,
       [row.tenant_id,row.order_id,providerKey,row.amount_minor,row.currency]);
-    return capture.rowCount===1;
+    return capture.rowCount===1 && capture.rows.length===1;
   }
 
   async consentAndQueue(input:{adjustmentId:string;orderId:string;customerId:string;providerKey:string;nowUtc?:string}):Promise<PaymentAdjustmentOutcome & {submissionId?:string}>{
