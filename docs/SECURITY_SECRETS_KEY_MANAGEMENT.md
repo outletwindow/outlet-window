@@ -155,7 +155,14 @@ The company owner approves exceptional high-risk access.
 - Recovery procedures are tested.
 - Repository scanning is integrated into development workflows.
 
-## 16. Implementation Status
+## 16. Integration Authority Boundaries
+
+- Merchant-facing integration registration must resolve the merchant's tenant ID from trusted database ownership data; a merchant ID must never be assumed to equal a tenant ID.
+- Merchants may not self-assign `inventory.hard_reservation`. This capability is a platform-controlled grant and requires provider verification plus an explicit merchant/branch scope.
+- Provider secrets are referenced by opaque, tenant-authorized secret-manager references. Raw credentials must never be accepted in merchant API payloads or returned in API responses.
+- Integration connection state and capability labels are not proof of an external inventory hold. Only a provider adapter that verifies the exact branch and variant reservation response may authorize paid-order confirmation.
+
+## 17. Implementation Status
 This document defines required security controls. It does not claim that a secrets manager, KMS, automated rotation or repository scanning has already been deployed.
 
 Implementation requires engineering, configuration and security testing.
