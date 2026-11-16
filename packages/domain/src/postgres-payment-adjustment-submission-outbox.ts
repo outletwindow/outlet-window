@@ -76,8 +76,10 @@ export class PostgresPaymentAdjustmentSubmissionOutbox {
   }
 
   async recordAccepted(input:{submissionId:string;workerId:string;providerReference?:string;actorId:string}):Promise<"submitted"|"lease_lost"|"conflict">{
-    if(!/^[a-zA-Z0-9_-]{1,200}$/.test(input.submissionId)||!input.providerReference.trim()||
-       input.providerReference.length>240||!/^[a-zA-Z0-9_-]{1,200}$/.test(input.workerId)||
+    if(!/^[a-zA-Z0-9_-]{1,200}$/.test(input.submissionId)||
+       (input.providerReference !== undefined &&
+         (!input.providerReference.trim() || input.providerReference.length>240))||
+       !/^[a-zA-Z0-9_-]{1,200}$/.test(input.workerId)||
        !input.actorId.trim())throw new Error("INVALID_PAYMENT_ADJUSTMENT_PROVIDER_RESULT");
     const client=await this.pool.connect();const now=this.now().toISOString();
     try{
