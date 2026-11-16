@@ -60,6 +60,20 @@ BEGIN
 END
 $test$;
 
+-- A caller cannot release reserved funds while the adjustment is still pending.
+DO $test$
+BEGIN
+  BEGIN
+    UPDATE payment_refund_reservations
+    SET status='released'
+    WHERE adjustment_id='refund-reservation-a';
+    RAISE EXCEPTION 'pending refund reservation was manually released';
+  EXCEPTION WHEN check_violation THEN
+    NULL;
+  END;
+END
+$test$;
+
 -- A definitive provider rejection releases capacity; an ambiguous result does not.
 UPDATE customer_payment_adjustments
 SET status='provider_failed',updated_at=now()
