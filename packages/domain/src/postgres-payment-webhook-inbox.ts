@@ -228,6 +228,7 @@ export class PostgresPaymentWebhookInbox {
           refund.provider_key !== "moyasar" ||
           (refund.provider_reference !== null && refund.provider_reference !== input.providerPaymentReference) ||
           !["processing","submitted"].includes(refund.submission_status) ||
+          (refund.submission_status === "submitted" && refund.submission_provider_reference === null) ||
           (refund.submission_provider_reference !== null &&
             refund.submission_provider_reference !== input.providerPaymentReference) ||
           refund.currency !== input.currency || refund.order_id !== original.order_id ||
@@ -271,12 +272,9 @@ export class PostgresPaymentWebhookInbox {
       );
       await client.query(
         `UPDATE payment_adjustment_submission_outbox
-         SET status=CASE WHEN status='processing' THEN 'submitted' ELSE status END,
-             provider_reference=COALESCE(provider_reference,$3),
-             completed_at=COALESCE(completed_at,$4),
-             lease_owner=NULL,lease_expires_at=NULL,updated_at=$4
-         WHERE tenant_id=$1 AND adjustment_id=$2
-           AND status IN ('processing','submitted')
+         SET status='submitted',provider_reference=COALESCE(provider_reference,$3),
+             completed_at=$4,lease_owner=NULL,lease_expires_at=NULL,updated_at=$4
+         WHERE tenant_id=$1 AND adjustment_id=$2 AND status='processing'
            AND (provider_reference IS NULL OR provider_reference=$3)`,
         [original.tenant_id,refund.adjustment_id,input.providerPaymentReference,now]
       );
