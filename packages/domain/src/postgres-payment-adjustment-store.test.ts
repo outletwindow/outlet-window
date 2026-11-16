@@ -25,7 +25,10 @@ function makeStore(options: { providerKey?: string; providerReference?: string; 
         rowCount: 1
       };
     }
-    if (sql.includes("FROM verified_order_payment_captures")) {\n      return options.captureExists === false ? { rows: [], rowCount: 0 } : { rows: [{ ok: 1 }], rowCount: 1 };\n    }\n    if (sql.startsWith("UPDATE customer_orders")) {
+    if (sql.includes("FROM verified_order_payment_captures")) {
+      return options.captureExists === false ? { rows: [], rowCount: 0 } : { rows: [{ ok: 1 }], rowCount: 1 };
+    }
+    if (sql.startsWith("UPDATE customer_orders")) {
       return { rows: [], rowCount: options.orderRowCount ?? 1 };
     }
     return { rows: [], rowCount: 1 };
