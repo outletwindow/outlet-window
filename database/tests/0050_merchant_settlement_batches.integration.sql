@@ -32,6 +32,21 @@ VALUES ('settle-journal-line-1','settle-tenant','settle-journal','settle-held','
        ('settle-journal-line-2','settle-tenant','settle-journal','settle-payable','SAR',2,0,11000),
        ('settle-journal-line-3','settle-tenant','settle-journal','settle-fee','SAR',3,0,1000);
 UPDATE financial_journals SET status='posted' WHERE id='settle-journal';
+INSERT INTO identities
+(id,principal_type,status,display_name,primary_email,created_at,updated_at)
+VALUES
+('settle-finance-1','human','active','Finance Approver One','finance1@example.test',now(),now()),
+('settle-finance-2','human','active','Finance Approver Two','finance2@example.test',now(),now());
+INSERT INTO role_assignments
+(id,principal_id,role,scope,active,valid_from,assigned_by)
+VALUES
+('settle-finance-role-1','settle-finance-1','finance','{"merchantId":"settle-merchant"}'::jsonb,true,now()-interval '1 day','test-admin'),
+('settle-finance-role-2','settle-finance-2','finance','{"merchantId":"settle-merchant"}'::jsonb,true,now()-interval '1 day','test-admin');
+INSERT INTO merchant_settlement_approvals
+(id,tenant_id,batch_id,actor_id,decision)
+VALUES
+('settle-approval-1','settle-tenant','settle-batch','settle-finance-1','approved'),
+('settle-approval-2','settle-tenant','settle-batch','settle-finance-2','approved');
 UPDATE merchant_settlement_batches SET journal_id='settle-journal',status='approved' WHERE id='settle-batch';
 
 DO $$
@@ -102,8 +117,23 @@ VALUES ('settle-invalid-line-1','settle-tenant','settle-journal-invalid','settle
        ('settle-invalid-line-2','settle-tenant','settle-journal-invalid','settle-payable','SAR',2,0,10000),
        ('settle-invalid-line-3','settle-tenant','settle-journal-invalid','settle-fee','SAR',3,0,2000);
 UPDATE financial_journals SET status='posted' WHERE id='settle-journal-invalid';
+INSERT INTO merchant_settlement_approvals
+(id,tenant_id,batch_id,actor_id,decision)
+VALUES ('settle-approval-invalid-1','settle-tenant','settle-batch-invalid','settle-finance-1','approved');
 DO $settlement_batch_test$
 BEGIN
+  BEGIN
+    UPDATE merchant_settlement_batches
+    SET journal_id='settle-journal-invalid',status='approved'
+    WHERE id='settle-batch-invalid';
+    RAISE EXCEPTION 'settlement batch unexpectedly approved with only one approver';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  BEGIN
+    INSERT INTO merchant_settlement_approvals
+    (id,tenant_id,batch_id,actor_id,decision)
+    VALUES ('settle-approval-invalid-2','settle-tenant','settle-batch-invalid','settle-finance-2','approved');
+  END;
   BEGIN
     UPDATE merchant_settlement_batches
     SET journal_id='settle-journal-invalid',status='approved'
