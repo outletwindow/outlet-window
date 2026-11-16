@@ -13,7 +13,7 @@ const adjustment = {
 function makeStore(options: { providerKey?: string; providerReference?: string; orderRowCount?: number } = {}) {
   const calls: Array<{ sql: string; params?: unknown[] }> = [];
   const query = vi.fn(async (sql: string, params?: unknown[]) => {
-    calls.push({ sql, params });
+    calls.push({ sql, ...(params === undefined ? {} : { params }) });
     if (sql.startsWith("SELECT * FROM customer_payment_adjustments")) {
       return {
         rows: [{
