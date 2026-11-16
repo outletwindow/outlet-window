@@ -48,13 +48,31 @@ async function tick():Promise<void>{
             submissionId:job.submissionId,workerId,providerReference:result.providerReference,
             actorId:"payment-adjustment-worker"
           });
-          outcomes[outcome]=(outcomes[outcome]??0)+1;
+          if(outcome==="conflict"){
+            // Provider accepted the request but our durable state no longer matches.
+            // Do not retry a money-moving command; require operator reconciliation.
+            const quarantined=await store.recordUnknown({
+              submissionId:job.submissionId,workerId,
+              failureCode:"PAYMENT_ADJUSTMENT_ACCEPTANCE_CONFLICT"
+            });
+            outcomes[quarantined]=(outcomes[quarantined]??0)+1;
+          }else{
+            outcomes[outcome]=(outcomes[outcome]??0)+1;
+          }
         }else if(result.status==="rejected"){
           const outcome=await store.recordRejected({
             submissionId:job.submissionId,workerId,failureCode:result.code,
             actorId:"payment-adjustment-worker"
           });
-          outcomes[outcome]=(outcomes[outcome]??0)+1;
+          if(outcome==="conflict"){
+            const quarantined=await store.recordUnknown({
+              submissionId:job.submissionId,workerId,
+              failureCode:"PAYMENT_ADJUSTMENT_REJECTION_CONFLICT"
+            });
+            outcomes[quarantined]=(outcomes[quarantined]??0)+1;
+          }else{
+            outcomes[outcome]=(outcomes[outcome]??0)+1;
+          }
         }else if(result.status==="unknown"){
           const outcome=await store.recordUnknown({
             submissionId:job.submissionId,workerId,failureCode:result.code
