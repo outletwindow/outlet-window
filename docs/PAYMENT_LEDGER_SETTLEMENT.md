@@ -132,7 +132,7 @@ Implemented in migration 0050:
 - A suborder can appear in at most one settlement line.
 - Approval requires a matching posted journal that debits CUSTOMER_FUNDS_HELD for gross proceeds, credits MERCHANT_PAYABLE for net proceeds, and allocates deductions to other credit accounts.
 - Approved batches and their lines are immutable.
-- Migration 0062 requires two distinct active human approvers with a current finance, platform-admin or platform-owner role scoped to the merchant (or explicitly platform-wide); approval records are append-only. This is a database guard only, not yet an authenticated approval API or a maker-versus-checker control.
+- Migration 0062 requires two distinct active human approvers with a current finance, platform-admin or platform-owner role scoped to the merchant (or explicitly platform-wide). Approval timestamps are database-generated, approval records are append-only, role rows are locked during authorization, and each approval writes an append-only audit event. This remains a database guard, not an authenticated approval API or a maker-versus-checker control.
 - Migration 0053 requires draft batches to have no journal reference and enforces one settlement batch per posted journal, preventing a journal from being reused to approve multiple batches.
 - Migration 0054 enforces single-use provider references for payment adjustments within a tenant and provider namespace; legacy rows without a provider key share a guarded legacy namespace.
 - Migration 0055 adds a tenant-scoped durable payment-adjustment submission outbox with a stable provider idempotency key, leased processing state, retry scheduling and dead-letter state. Queue creation is transactionally coupled to the adjustment's transition into provider-pending.
@@ -142,7 +142,7 @@ Implemented in migration 0050:
 
 Not implemented or enabled:
 - Contract/commission/tax policy calculation or independent verification of the supplied contract reference and deduction amounts.
-- An authenticated approval API, maker-versus-checker enforcement, and end-to-end approval audit integration.
+- An authenticated approval API and maker-versus-checker enforcement (the batch schema does not yet identify its creator).
 - Provider payout execution, bank transfer, wallet transfer, payout confirmation, or settlement reconciliation against bank/provider statements.
 - Refund execution or production money custody.
 - Provider-specific Moyasar, HyperPay, Tap Payments and Stripe adjustment adapters, provider-specific webhook/reconciliation contract tests, and production activation. When `PAYMENT_ADJUSTMENT_PROVIDER_KEY` is configured, the customer consent endpoint now atomically records consent and queues the durable outbox; without that setting it records consent only. The generic HTTPS adapter/worker remains sandbox-only and is not a certified integration for any named provider.
