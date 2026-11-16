@@ -110,6 +110,8 @@ describe("PostgresPlatformCheckoutReadinessStore", () => {
   it("moves every merchant suborder and the platform parent atomically", async () => {
     const db = database();
     const result = await new PostgresPlatformCheckoutReadinessStore(db.pool).transitionToAwaitingPayment(baseInput);
+    const lineTotalsQuery = db.statements.find(sql => sql.includes("COUNT(i.id)::int AS item_count"));
+    expect(lineTotalsQuery).toContain("i.quantity::numeric * i.unit_price_minor::numeric");
     expect(result).toEqual({ outcome: "ready", orderId: "order-1", suborderIds: ["sub-1"], parentVersion: 5 });
     expect(db.statements[0]).toBe("BEGIN");
     expect(db.statements.some(sql => sql.includes("tenant_id = 'platform'"))).toBe(true);
