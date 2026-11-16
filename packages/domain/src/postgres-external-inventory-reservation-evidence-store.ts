@@ -133,7 +133,7 @@ export class PostgresExternalInventoryReservationEvidenceStore implements Extern
       merchantId: request.merchantId,
       branchId: request.branchId,
       reservationId: input.reservationId,
-      nowUtc: input.releasedAtUtc,
+      nowUtc: stableReleasedAtUtc,
       reason: "external_provider_reservation_released"
     });
     if (local.outcome === "not_found") return { outcome: "unsupported" };
