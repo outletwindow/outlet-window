@@ -33,7 +33,7 @@ function createPool(rows: {
     if (sql.includes("verified_order_payment_captures")) {
       return { rows: rows.payment === null ? [] : [rows.payment ?? payment] as Row[], rowCount: rows.payment === null ? 0 : 1 };
     }
-    if (sql.includes("FROM inventory_provider_reservation_evidence")) {
+    if (sql.includes("inventory_provider_reservation_evidence")) {
       const found = rows.reservationEvidence ?? [];
       return { rows: found as Row[], rowCount: found.length };
     }
