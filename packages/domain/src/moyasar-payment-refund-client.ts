@@ -127,7 +127,8 @@ export class MoyasarPaymentRefundClient {
     }
 
     if (payload.id !== input.paymentId ||
-        typeof payload.status !== "string" || !paymentStatuses.includes(payload.status as typeof paymentStatuses[number]) ||
+        // Moyasar documents that a successful full or partial refund moves the payment to `refunded`.
+        payload.status !== "refunded" || !paymentStatuses.includes(payload.status) ||
         !Number.isSafeInteger(payload.amount) || payload.amount !== before.amountMinor ||
         !Number.isSafeInteger(payload.captured) || payload.captured !== before.capturedMinor ||
         !Number.isSafeInteger(payload.refunded) ||
