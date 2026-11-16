@@ -48,10 +48,12 @@ describe("Moyasar payment adjustment provider", () => {
     await expect(provider.submit({ ...command, direction: "additional_charge" })).resolves.toMatchObject({
       status: "rejected", code: "MOYASAR_ADDITIONAL_CHARGE_NOT_SUPPORTED_BY_REFUND_ADAPTER"
     });
-    await expect(provider.submit({ ...command, originalPaymentReference: undefined })).resolves.toMatchObject({
+    const { originalPaymentReference: _originalPaymentReference, ...withoutCapture } = command;
+    const { expectedRefundedMinor: _expectedRefundedMinor, ...withoutBaseline } = command;
+    await expect(provider.submit(withoutCapture)).resolves.toMatchObject({
       status: "rejected", code: "MOYASAR_REFUND_CAPTURE_BINDING_REQUIRED"
     });
-    await expect(provider.submit({ ...command, expectedRefundedMinor: undefined })).resolves.toMatchObject({
+    await expect(provider.submit(withoutBaseline)).resolves.toMatchObject({
       status: "rejected", code: "MOYASAR_REFUND_CAPTURE_BINDING_REQUIRED"
     });
     expect(refund).not.toHaveBeenCalled();
