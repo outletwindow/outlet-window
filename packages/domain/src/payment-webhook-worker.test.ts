@@ -25,7 +25,7 @@ describe("payment webhook worker", () => {
     const worker = new PaymentWebhookWorker(store, "worker-1");
     await expect(worker.runOnce()).resolves.toEqual({ outcome: "applied", receiptId: "receipt-1" });
     expect(store.reconcileAdjustment).toHaveBeenCalledWith({
-      receiptId: "receipt-1", adjustmentId: "adjustment-1",
+      receiptId: "receipt-1", adjustmentId: "adjustment-1", providerKey: "psp-a",
       actorId: "worker-1", workerId: "worker-1",
       confirmed: true, providerReference: "psp-ref-1"
     });
