@@ -33,7 +33,15 @@ export class PostgresPaymentAdjustmentSubmissionOutbox {
           AND o.provider_key=$3
           AND a.status='provider_pending' AND a.provider_key=o.provider_key
           AND a.provider_reference IS NULL
-          AND (a.adjustment_direction <> 'refund' OR o.original_payment_reference IS NOT NULL)
+          AND (a.adjustment_direction <> 'refund' OR (
+            o.original_payment_reference IS NOT NULL AND EXISTS (
+              SELECT 1 FROM payment_refund_reservations AS r
+              WHERE r.tenant_id=o.tenant_id AND r.adjustment_id=o.adjustment_id
+                AND r.provider_key=o.provider_key
+                AND r.original_payment_reference=o.original_payment_reference
+                AND r.status='reserved'
+            )
+          ))
         ORDER BY o.available_at,o.created_at,o.id
         FOR UPDATE OF o SKIP LOCKED LIMIT 1
       )
