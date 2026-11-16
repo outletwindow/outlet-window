@@ -304,7 +304,29 @@ export class PostgresPaidCheckoutInventoryReservationWorker {
       throw new Error("PAID_CHECKOUT_CAPTURE_EVIDENCE_MISMATCH");
     }
 
-    await this.recordRecovery(job, payment, "INVENTORY_UNGUARANTEED", undefined, []);
+    // A worker may crash or exhaust retries after one branch hold was persisted
+    // but before the in-memory reservation list can be handed to recovery. Recover
+    // exact local reservation IDs from immutable provider evidence, scoped to this
+    // parent order (merchant tenants differ from the platform order tenant).
+    const heldReservations = await this.pool.query<{
+      suborder_id: string; reservation_reference: string;
+    }>(
+      `SELECT r.suborder_id,r.id AS reservation_reference
+       FROM inventory_reservations r
+       JOIN inventory_provider_reservation_evidence e
+         ON e.tenant_id=r.tenant_id AND e.reservation_id=r.id
+       JOIN merchant_suborders s
+         ON s.order_id=r.order_id AND s.id=r.suborder_id AND s.tenant_id=r.tenant_id
+       WHERE r.order_id=$1
+       ORDER BY r.suborder_id,r.id`,
+      [job.order_id]
+    );
+    await this.recordRecovery(
+      job, payment, "INVENTORY_UNGUARANTEED", undefined,
+      heldReservations.rows.map(row => ({
+        suborderId: row.suborder_id, reservationReference: row.reservation_reference
+      }))
+    );
     const suborders = await this.pool.query<SuborderRow>(
       `SELECT s.id,s.tenant_id,s.merchant_id,s.branch_id,s.status,s.version
        FROM merchant_suborders s
