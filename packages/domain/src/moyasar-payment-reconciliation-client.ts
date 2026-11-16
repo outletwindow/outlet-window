@@ -1,3 +1,5 @@
+import type { PaymentFetchLike } from "./payment-adjustment-provider.js";
+
 export type MoyasarPaymentStatus =
   | "initiated" | "paid" | "authorized" | "failed" | "refunded"
   | "captured" | "voided" | "verified" | "expired";
@@ -13,7 +15,7 @@ export interface MoyasarPaymentSnapshot {
 
 export interface MoyasarPaymentReconciliationOptions {
   secretKey: string;
-  fetchImpl?: typeof fetch;
+  fetchImpl?: PaymentFetchLike;
   timeoutMs?: number;
 }
 
@@ -31,7 +33,7 @@ type MoyasarPaymentPayload = {
  * This client never submits or retries a refund.
  */
 export class MoyasarPaymentReconciliationClient {
-  private readonly fetchImpl: typeof fetch;
+  private readonly fetchImpl: PaymentFetchLike;
   private readonly timeoutMs: number;
 
   constructor(private readonly options: MoyasarPaymentReconciliationOptions) {
