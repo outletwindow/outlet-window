@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import {
   PostgresPaymentAdjustmentSubmissionOutbox,
+  MoyasarPaymentRefundClient,
+  MoyasarPaymentAdjustmentProvider,
   createHttpPaymentAdjustmentProvider
 } from "../../../packages/domain/src/index.js";
 
@@ -12,13 +14,23 @@ if(process.env.PAYMENT_ADJUSTMENT_ENVIRONMENT!=="sandbox")
 const providerKey: string = process.env.PAYMENT_ADJUSTMENT_PROVIDER_KEY ?? "";
 if(!/^[a-zA-Z0-9._-]{1,100}$/.test(providerKey))
   throw new Error("PAYMENT_ADJUSTMENT_PROVIDER_KEY_REQUIRED");
-const sandboxEndpoint=process.env.PAYMENT_ADJUSTMENT_SANDBOX_ENDPOINT;
-const sandboxToken=process.env.PAYMENT_ADJUSTMENT_SANDBOX_TOKEN;
-if(!sandboxEndpoint||!sandboxToken)throw new Error("PAYMENT_ADJUSTMENT_SANDBOX_CREDENTIALS_REQUIRED");
-const provider=createHttpPaymentAdjustmentProvider({
-  endpoint:sandboxEndpoint,
-  bearerToken:sandboxToken
-});
+let provider: ReturnType<typeof createHttpPaymentAdjustmentProvider> | MoyasarPaymentAdjustmentProvider;
+if(providerKey==="moyasar"){
+  const moyasarSecretKey=process.env.MOYASAR_SECRET_KEY ?? "";
+  if(!/^sk_test_[A-Za-z0-9]+$/.test(moyasarSecretKey))
+    throw new Error("MOYASAR_TEST_SECRET_KEY_REQUIRED_FOR_SANDBOX_REFUNDS");
+  provider=new MoyasarPaymentAdjustmentProvider(
+    new MoyasarPaymentRefundClient({secretKey:moyasarSecretKey})
+  );
+}else{
+  const sandboxEndpoint=process.env.PAYMENT_ADJUSTMENT_SANDBOX_ENDPOINT;
+  const sandboxToken=process.env.PAYMENT_ADJUSTMENT_SANDBOX_TOKEN;
+  if(!sandboxEndpoint||!sandboxToken)throw new Error("PAYMENT_ADJUSTMENT_SANDBOX_CREDENTIALS_REQUIRED");
+  provider=createHttpPaymentAdjustmentProvider({
+    endpoint:sandboxEndpoint,
+    bearerToken:sandboxToken
+  });
+}
 const pollMs=Number.parseInt(process.env.PAYMENT_ADJUSTMENT_WORKER_POLL_MS??"1000",10);
 const batchSize=Number.parseInt(process.env.PAYMENT_ADJUSTMENT_WORKER_BATCH_SIZE??"5",10);
 const leaseSeconds=Number.parseInt(process.env.PAYMENT_ADJUSTMENT_WORKER_LEASE_SECONDS??"60",10);
@@ -126,6 +138,7 @@ try{
   if(migrations.rowCount!==required.length)throw new Error("payment_adjustment_submission_worker_migration_required");
   process.stdout.write(JSON.stringify({
     event:"payment_adjustment_submission_worker_started",workerId,providerKey,
+    providerMode:providerKey==="moyasar"?"moyasar_refund_sandbox":"http_sandbox",
     environment:"sandbox",pollMs,batchSize,leaseSeconds
   })+"\n");
   await tick();interval=setInterval(()=>void tick(),pollMs);
