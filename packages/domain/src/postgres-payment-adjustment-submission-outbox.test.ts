@@ -45,6 +45,8 @@ describe("Postgres payment adjustment submission outbox",()=>{
     expect(query.mock.calls[0]?.[0]).toContain("status='reconciliation_required'");
     expect(query.mock.calls[0]?.[0]).toContain("PAYMENT_ADJUSTMENT_LEASE_EXPIRED_REQUIRES_RECONCILIATION");
     expect(query.mock.calls[0]?.[0]).toContain("WHERE o.status='queued'");
+    expect(query.mock.calls[0]?.[0]).toContain("FROM payment_refund_reservations AS r");
+    expect(query.mock.calls[0]?.[0]).toContain("r.status='reserved'");
     expect(query.mock.calls[0]?.[0]).not.toContain("o.status='processing' AND o.lease_expires_at <= now()");
   });
 
