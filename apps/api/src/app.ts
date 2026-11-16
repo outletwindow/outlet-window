@@ -469,7 +469,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     const body = request.body;
     if (typeof body !== "object" || body === null ||
         typeof (body as { id?: unknown }).id !== "string" ||
-        !(body as { id: string }).id.trim() ||
+        !/^[a-zA-Z0-9._:-]{1,240}$/.test((body as { id: string }).id) ||
         (body as { id: string }).id.length > 240) {
       return reply.code(400).send({ error: "invalid_webhook_event" });
     }
