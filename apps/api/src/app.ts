@@ -75,7 +75,7 @@ export interface CustomerCheckoutService {
   create(input: CreateCustomerCheckoutInput): Promise<CustomerCheckoutResult>;
 }
 export interface CustomerPaymentAdjustmentActions {
-  consent(input: { orderId: string; adjustmentId: string; customerId: string }): Promise<{ outcome: string }>;
+  consent(input: { orderId: string; adjustmentId: string; customerId: string }): Promise<{ outcome: string; submissionId?: string }>;
   consentAndQueue?(input: { orderId: string; adjustmentId: string; customerId: string }): Promise<{ outcome: string; submissionId?: string }>;
   decline(input: { orderId: string; adjustmentId: string; customerId: string }): Promise<{ outcome: string }>;
 }
