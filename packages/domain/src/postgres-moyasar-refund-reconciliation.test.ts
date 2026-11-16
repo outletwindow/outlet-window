@@ -36,7 +36,8 @@ function makePool(options: {
     if (sql.includes("SELECT r.id,r.adjustment_id")) {
       return options.activeCount === 0 ? { rows: [], rowCount: 0 } : { rows: [{
         id: "reservation-1", adjustment_id: "adjustment-1", amount_minor: "2500", status: "reserved",
-        provider_key: "moyasar", provider_reference: paymentId, adjustment_status: "provider_pending",
+        provider_key: "moyasar", provider_reference: null, adjustment_status: "provider_pending",
+        submission_status: "processing", submission_provider_reference: null,
         currency: "SAR", previous_total_minor: "10000", proposed_total_minor: "7500",
         order_id: "order-1", customer_id: "customer-1"
       }], rowCount: options.activeCount ?? 1 };
@@ -72,6 +73,7 @@ describe("atomic Moyasar cumulative refund reconciliation", () => {
     expect(captureLock).toBeGreaterThan(adjustmentLock);
     expect(mock.calls.some(x => x.sql.includes("UPDATE customer_orders"))).toBe(true);
     expect(mock.calls.some(x => x.sql.includes("SET status='provider_confirmed'"))).toBe(true);
+    expect(mock.calls.some(x => x.sql.includes("UPDATE payment_adjustment_submission_outbox") && x.sql.includes("status='submitted'"))).toBe(true);
     expect(mock.calls.some(x => x.sql.includes("SET status='applied'"))).toBe(true);
     expect(mock.calls.at(-1)?.sql).toBe("COMMIT");
     expect(mock.client.release).toHaveBeenCalledOnce();
