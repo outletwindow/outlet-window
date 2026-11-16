@@ -118,6 +118,11 @@ BEGIN
     RAISE EXCEPTION 'draft settlement batch unexpectedly reserved a journal';
   EXCEPTION WHEN check_violation THEN NULL;
   END;
+  IF position('FOR UPDATE' IN upper(pg_get_functiondef(
+       'guard_merchant_settlement_line_mutation()'::regprocedure
+     ))) = 0 THEN
+    RAISE EXCEPTION 'settlement line mutations must lock the parent batch before checking draft status';
+  END IF;
   IF NOT EXISTS (
     SELECT 1 FROM pg_indexes
     WHERE schemaname=current_schema()
