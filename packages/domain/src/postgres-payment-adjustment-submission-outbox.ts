@@ -16,7 +16,7 @@ export class PostgresPaymentAdjustmentSubmissionOutbox {
     const result=await this.pool.query<{
       id:string;tenant_id:string;adjustment_id:string;provider_key:string;idempotency_key:string;
       attempt_count:number;order_id:string;customer_id:string;adjustment_direction:"additional_charge"|"refund";
-      amount_minor:string;currency:string;
+      amount_minor:string;currency:string;original_payment_reference:string|null;
     }>(`WITH exhausted AS (
         UPDATE payment_adjustment_submission_outbox
         SET status='dead_letter',lease_owner=NULL,lease_expires_at=NULL,
@@ -41,7 +41,7 @@ export class PostgresPaymentAdjustmentSubmissionOutbox {
       FROM candidate,customer_payment_adjustments AS a
       WHERE o.id=candidate.id AND a.tenant_id=o.tenant_id AND a.id=o.adjustment_id
       RETURNING o.id,o.tenant_id,o.adjustment_id,o.provider_key,o.idempotency_key,o.attempt_count,
-        a.order_id,a.customer_id,a.adjustment_direction,a.amount_minor,a.currency`,
+        a.order_id,a.customer_id,a.adjustment_direction,a.amount_minor,a.currency,o.original_payment_reference`,
       [workerId,leaseSeconds,providerKey]);
     if(result.rowCount!==1)return null;
     const row=result.rows[0]!;
@@ -51,7 +51,8 @@ export class PostgresPaymentAdjustmentSubmissionOutbox {
       submissionId:row.id,tenantId:row.tenant_id,adjustmentId:row.adjustment_id,
       providerKey:row.provider_key,idempotencyKey:row.idempotency_key,attemptCount:Number(row.attempt_count),
       command:{adjustmentId:row.adjustment_id,orderId:row.order_id,idempotencyKey:row.idempotency_key,
-        direction:row.adjustment_direction,amountMinor:amount,currency:row.currency,customerId:row.customer_id}
+        direction:row.adjustment_direction,amountMinor:amount,currency:row.currency,customerId:row.customer_id,
+        ...(row.original_payment_reference===null?{}:{originalPaymentReference:row.original_payment_reference})}
     };
   }
 
