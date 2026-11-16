@@ -80,12 +80,11 @@ export class MoyasarPaymentRefundClient {
     }
 
     if (before.currency !== input.currency ||
-        (before.status !== "paid" && before.status !== "captured" && before.status !== "refunded") ||
+        (before.status !== "paid" && before.status !== "captured") ||
         before.refundedMinor !== input.expectedRefundedMinor) {
       return { outcome: "rejected", code: "MOYASAR_REFUND_PRECONDITION_CONFLICT" };
     }
-    const refundableBase = before.status === "paid" || (before.status === "refunded" && before.capturedMinor === 0)
-      ? before.amountMinor : before.capturedMinor;
+    const refundableBase = before.status === "paid" ? before.amountMinor : before.capturedMinor;
     const remaining = refundableBase - before.refundedMinor;
     if (!Number.isSafeInteger(remaining) || input.amountMinor > remaining) {
       return { outcome: "rejected", code: "MOYASAR_REFUND_EXCEEDS_REMAINING_AMOUNT" };
