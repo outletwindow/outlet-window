@@ -64,6 +64,7 @@ export class PostgresPaymentWebhookInbox {
   async reconcileAdjustment(input: {
     receiptId: string;
     adjustmentId: string;
+    providerKey: string;
     actorId: string;
     workerId: string;
     confirmed: boolean;
@@ -72,6 +73,7 @@ export class PostgresPaymentWebhookInbox {
   }): Promise<"applied" | "failed" | "not_processing" | "conflict"> {
     if (!/^[a-zA-Z0-9_-]{1,200}$/.test(input.receiptId) ||
         !/^[a-zA-Z0-9_-]{1,200}$/.test(input.adjustmentId) ||
+        !/^[a-zA-Z0-9._-]{1,100}$/.test(input.providerKey) ||
         !/^[a-zA-Z0-9_-]{1,200}$/.test(input.actorId) ||
         !/^[a-zA-Z0-9_-]{1,200}$/.test(input.workerId) ||
         (input.confirmed && (!input.providerReference?.trim() || input.providerReference.length > 240)) ||
@@ -82,24 +84,24 @@ export class PostgresPaymentWebhookInbox {
     const now = new Date().toISOString();
     try {
       await client.query("BEGIN");
-      const receipt = await client.query<{ id: string; adjustment_id: string | null; status: string; lease_owner: string | null; lease_valid: boolean }>(
-        "SELECT id,adjustment_id,status,lease_owner,(lease_expires_at > now()) AS lease_valid FROM payment_provider_webhook_events WHERE id=$1 FOR UPDATE",
+      const receipt = await client.query<{ id: string; adjustment_id: string | null; provider_key: string; provider_reference: string | null; status: string; lease_owner: string | null; lease_valid: boolean }>(
+        "SELECT id,adjustment_id,provider_key,provider_reference,status,lease_owner,(lease_expires_at > now()) AS lease_valid FROM payment_provider_webhook_events WHERE id=$1 FOR UPDATE",
         [input.receiptId]
       );
       if (receipt.rowCount !== 1 || receipt.rows[0]!.status !== "processing" || receipt.rows[0]!.lease_owner !== input.workerId || !receipt.rows[0]!.lease_valid) {
         await client.query("ROLLBACK");
         return "not_processing";
       }
-      if (receipt.rows[0]!.adjustment_id !== input.adjustmentId) {
+      if (receipt.rows[0]!.adjustment_id !== input.adjustmentId || receipt.rows[0]!.provider_key !== input.providerKey) {
         await client.query("ROLLBACK");
         return "conflict";
       }
       const found = await client.query<{
         id: string; tenant_id: string; order_id: string; customer_id: string;
         currency: string; previous_total_minor: string; proposed_total_minor: string;
-        status: string;
+        provider_key: string | null; provider_reference: string | null; status: string;
       }>(
-        "SELECT id,tenant_id,order_id,customer_id,currency,previous_total_minor,proposed_total_minor,status FROM customer_payment_adjustments WHERE id=$1 FOR UPDATE",
+        "SELECT id,tenant_id,order_id,customer_id,currency,previous_total_minor,proposed_total_minor,provider_key,provider_reference,status FROM customer_payment_adjustments WHERE id=$1 FOR UPDATE",
         [input.adjustmentId]
       );
       if (found.rowCount !== 1 || found.rows[0]!.status !== "provider_pending") {
@@ -107,6 +109,13 @@ export class PostgresPaymentWebhookInbox {
         return "conflict";
       }
       const adjustment = found.rows[0]!;
+      if (adjustment.provider_key !== input.providerKey || !adjustment.provider_reference ||
+          (input.providerReference !== undefined && input.providerReference !== adjustment.provider_reference) ||
+          (input.confirmed && input.providerReference !== adjustment.provider_reference) ||
+          (receipt.rows[0]!.provider_reference !== null && receipt.rows[0]!.provider_reference !== adjustment.provider_reference)) {
+        await client.query("ROLLBACK");
+        return "conflict";
+      }
       if (input.confirmed) {
         const order = await client.query(
           "UPDATE customer_orders SET total_minor=$4,version=version+1,updated_at=$5 WHERE tenant_id=$1 AND id=$2 AND customer_id=$3 AND total_minor=$6 AND currency=$7",
