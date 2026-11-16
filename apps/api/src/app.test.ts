@@ -1109,3 +1109,71 @@ describe("customer payment adjustment consent submission", () => {
     }
   });
 });
+
+
+describe("Moyasar refund webhook route", () => {
+  const rawBody = JSON.stringify({
+    id: "evt-refund-route", type: "payment_refunded",
+    created_at: "2026-11-16T18:00:00.000Z", live: false,
+    account_name: "Outlet Window Test", secret_token: "test-secret",
+    data: {
+      id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", status: "refunded",
+      amount: 10000, captured: 10000, refunded: 2500, currency: "SAR"
+    }
+  });
+
+  it("routes native payment_refunded events only to the dedicated refund reconciler", async () => {
+    const process = vi.fn(async () => ({ outcome: "applied" as const }));
+    const app = buildApp({ paymentRefundWebhookHandler: { process } });
+    await app.ready();
+    try {
+      const response = await app.inject({
+        method: "POST", url: "/api/v1/webhooks/payments/moyasar",
+        headers: { "content-type": "application/json" }, payload: rawBody
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ outcome: "applied" });
+      expect(process).toHaveBeenCalledWith({ providerKey: "moyasar", rawBody });
+    } finally { await app.close(); }
+  });
+
+  it("returns accepted while mismatched refund events are quarantined", async () => {
+    const process = vi.fn(async () => ({ outcome: "reconciliation_required" as const }));
+    const app = buildApp({ paymentRefundWebhookHandler: { process } });
+    await app.ready();
+    try {
+      const response = await app.inject({
+        method: "POST", url: "/api/v1/webhooks/payments/moyasar",
+        headers: { "content-type": "application/json" }, payload: rawBody
+      });
+      expect(response.statusCode).toBe(202);
+      expect(response.json()).toEqual({ outcome: "reconciliation_required" });
+    } finally { await app.close(); }
+  });
+
+  it("does not acknowledge invalid signatures or event identity collisions", async () => {
+    const invalid = buildApp({
+      paymentRefundWebhookHandler: { process: vi.fn(async () => ({ outcome: "invalid_signature_or_event" as const })) }
+    });
+    await invalid.ready();
+    try {
+      const response = await invalid.inject({
+        method: "POST", url: "/api/v1/webhooks/payments/moyasar",
+        headers: { "content-type": "application/json" }, payload: rawBody
+      });
+      expect(response.statusCode).toBe(401);
+    } finally { await invalid.close(); }
+
+    const collision = buildApp({
+      paymentRefundWebhookHandler: { process: vi.fn(async () => ({ outcome: "event_id_collision" as const })) }
+    });
+    await collision.ready();
+    try {
+      const response = await collision.inject({
+        method: "POST", url: "/api/v1/webhooks/payments/moyasar",
+        headers: { "content-type": "application/json" }, payload: rawBody
+      });
+      expect(response.statusCode).toBe(409);
+    } finally { await collision.close(); }
+  });
+});
