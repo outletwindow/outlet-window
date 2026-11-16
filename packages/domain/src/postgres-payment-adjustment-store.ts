@@ -119,6 +119,42 @@ export class PostgresPaymentAdjustmentStore {
     }catch(error){await client.query("ROLLBACK").catch(()=>undefined);throw error;}finally{client.release();}
   }
 
+  async consentAndQueue(input:{tenantId:string;adjustmentId:string;orderId:string;customerId:string;providerKey:string;nowUtc?:string}):Promise<PaymentAdjustmentOutcome & {submissionId?:string}>{
+    if(!/^[a-zA-Z0-9._-]{1,100}$/.test(input.providerKey))
+      throw new Error("invalid_payment_provider");
+    const client=await this.pool.connect();
+    const now=input.nowUtc??this.now().toISOString();
+    const submissionId=randomUUID();
+    const idempotencyKey="adjustment-"+randomUUID();
+    try{
+      await client.query("BEGIN");
+      const found=await client.query<AdjustmentRow>(
+        "SELECT * FROM customer_payment_adjustments WHERE tenant_id=$1 AND id=$2 AND order_id=$3 AND customer_id=$4 FOR UPDATE",
+        [input.tenantId,input.adjustmentId,input.orderId,input.customerId]);
+      if(found.rowCount!==1){await client.query("ROLLBACK");return{outcome:"not_found"};}
+      const row=found.rows[0]!;
+      if(row.status!=="awaiting_customer_consent"){await client.query("ROLLBACK");return{outcome:"conflict"};}
+      if(Date.parse(String(row.expires_at))<=Date.parse(now)){
+        await client.query("UPDATE customer_payment_adjustments SET status='expired',updated_at=$2 WHERE tenant_id=$1 AND id=$3",
+          [input.tenantId,now,input.adjustmentId]);
+        await this.appendEvent(client,row,input.customerId,"expired",now);
+        await client.query("COMMIT");return{outcome:"expired"};
+      }
+      const consented=await client.query(
+        "UPDATE customer_payment_adjustments SET status='provider_pending',consented_at=$4,consent_actor_id=$5,provider_key=$6,updated_at=$4 WHERE tenant_id=$1 AND id=$2 AND order_id=$3 AND status='awaiting_customer_consent'",
+        [input.tenantId,input.adjustmentId,input.orderId,now,input.customerId,input.providerKey]);
+      if(consented.rowCount!==1){await client.query("ROLLBACK");return{outcome:"conflict"};}
+      await this.appendEvent(client,row,input.customerId,"customer_consented",now);
+      await client.query(
+        "INSERT INTO payment_adjustment_submission_outbox (id,tenant_id,adjustment_id,provider_key,idempotency_key,status,available_at,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,'queued',$6,$6,$6)",
+        [submissionId,input.tenantId,input.adjustmentId,input.providerKey,idempotencyKey,now]);
+      await this.appendEvent(client,row,input.customerId,"provider_submission_queued",now);
+      await client.query("COMMIT");
+      return{outcome:"provider_pending",submissionId};
+    }catch(error){await client.query("ROLLBACK").catch(()=>undefined);throw error;}
+    finally{client.release();}
+  }
+
   async queueProviderSubmission(input:{tenantId:string;adjustmentId:string;actorId:string;providerKey:string;idempotencyKey:string}):Promise<PaymentAdjustmentOutcome & { submissionId?:string }>{
     if(!/^[a-zA-Z0-9._-]{1,100}$/.test(input.providerKey)||
        !/^[a-zA-Z0-9._:-]{8,200}$/.test(input.idempotencyKey)||
