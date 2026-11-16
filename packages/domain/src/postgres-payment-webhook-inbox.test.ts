@@ -73,7 +73,7 @@ describe("PostgreSQL payment webhook inbox", () => {
     const pool = { query: vi.fn(), connect: vi.fn(async () => client) } as unknown as PostgresPool;
     const inbox = new PostgresPaymentWebhookInbox(pool);
     await expect(inbox.reconcileAdjustment({
-      receiptId: "receipt-1", adjustmentId: "adjustment-1", actorId: "worker-1",
+      receiptId: "receipt-1", adjustmentId: "adjustment-1", providerKey: "psp-a", actorId: "worker-1",
       workerId: "worker-1", confirmed: false
     })).resolves.toBe("not_processing");
     expect(clientQuery.mock.calls[1]?.[0]).toContain("lease_expires_at > now()");
