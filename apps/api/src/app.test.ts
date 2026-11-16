@@ -798,6 +798,29 @@ describe("signed payment provider webhook intake", () => {
     } finally { await app.close(); }
   });
 
+  it("rejects malformed provider event identifiers before webhook persistence", async () => {
+    const malformedBody = JSON.stringify({
+      id: "evt api/1", type: "payment.adjustment", adjustmentId: "adjustment-1",
+      status: "succeeded", providerReference: "psp-ref-api-1"
+    });
+    const record = vi.fn(async () => ({ outcome: "received" as const, receiptId: "unused" }));
+    const app = buildApp({
+      paymentWebhookSecretResolver: async () => secret,
+      paymentWebhookInbox: { record }
+    });
+    await app.ready();
+    try {
+      const response = await app.inject({
+        method: "POST", url: "/api/v1/webhooks/payments/psp-a",
+        headers: { "content-type": "application/json", "x-payment-signature": makeSignature(malformedBody) },
+        payload: malformedBody
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toEqual({ error: "invalid_webhook_event" });
+      expect(record).not.toHaveBeenCalled();
+    } finally { await app.close(); }
+  });
+
   it("rejects invalid signatures without persisting the event", async () => {
     const record = vi.fn(async () => ({ outcome: "received" as const, receiptId: "unused" }));
     const app = buildApp({
