@@ -86,7 +86,7 @@ export class MoyasarPaymentReconciliationClient {
         !Number.isSafeInteger(payload.amount) || (payload.amount as number) <= 0 ||
         !Number.isSafeInteger(payload.captured) || (payload.captured as number) < 0 ||
         !Number.isSafeInteger(payload.refunded) || (payload.refunded as number) < 0 ||
-        (payload.refunded as number) > (payload.status === "paid" ? (payload.amount as number) : (payload.captured as number)) ||
+        (payload.refunded as number) > (payload.status === "paid" || (payload.status === "refunded" && payload.captured === 0) ? (payload.amount as number) : (payload.captured as number)) ||
         (payload.captured as number) > (payload.amount as number) ||
         typeof payload.currency !== "string" || !/^[A-Z]{3}$/.test(payload.currency)) {
       throw new Error("MOYASAR_PAYMENT_RECONCILIATION_INVALID_RESPONSE");
