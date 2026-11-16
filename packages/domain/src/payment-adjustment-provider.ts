@@ -8,6 +8,7 @@ export interface PaymentAdjustmentCommand {
   amountMinor: number;
   currency: string;
   customerId: string;
+  originalPaymentReference?: string;
 }
 export type PaymentAdjustmentSubmission =
   | { status: "accepted"; providerReference: string }
