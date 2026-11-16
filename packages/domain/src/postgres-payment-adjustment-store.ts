@@ -125,7 +125,7 @@ export class PostgresPaymentAdjustmentStore {
       `SELECT 1 FROM verified_order_payment_captures
        WHERE tenant_id=$1 AND order_id=$2 AND provider_key=$3
          AND amount_minor >= $4 AND currency=$5
-       FOR KEY SHARE`,
+       FOR UPDATE`,
       [row.tenant_id,row.order_id,providerKey,row.amount_minor,row.currency]);
     return capture.rowCount===1 && capture.rows.length===1;
   }
