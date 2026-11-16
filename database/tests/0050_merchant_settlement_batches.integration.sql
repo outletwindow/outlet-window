@@ -59,6 +59,11 @@ BEGIN
   IF (SELECT approved_at IS NULL FROM merchant_settlement_batches WHERE id='settle-batch') THEN
     RAISE EXCEPTION 'settlement approval timestamp missing';
   END IF;
+  IF (SELECT COUNT(*) FROM audit_events
+      WHERE event_type='merchant_settlement.approved'
+        AND resource_id='settle-batch') <> 2 THEN
+    RAISE EXCEPTION 'each finance approval must create immutable audit evidence';
+  END IF;
   BEGIN
     INSERT INTO merchant_settlement_lines
     (id,tenant_id,batch_id,merchant_id,currency,order_id,suborder_id,branch_id,
