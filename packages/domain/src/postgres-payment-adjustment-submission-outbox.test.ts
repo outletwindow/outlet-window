@@ -10,6 +10,10 @@ function fixture(options:{leaseValid?:boolean;adjustmentStatus?:string;adjustmen
       return {rows:[{tenant_id:"tenant-1",adjustment_id:"adjustment-1",provider_key:"moyasar",
         status:"processing",lease_owner:"worker-1",lease_valid:options.leaseValid??true}],rowCount:1};
     }
+    if(sql.includes("SELECT id,tenant_id,status,provider_key,provider_reference FROM customer_payment_adjustments")){
+      return {rows:[{id:"adjustment-1",tenant_id:"tenant-1",status:options.adjustmentStatus??"provider_pending",
+        provider_key:options.adjustmentProviderKey??"moyasar",provider_reference:null}],rowCount:1};
+    }
     if(sql.includes("SELECT id,status,provider_key FROM customer_payment_adjustments")){
       return {rows:[{id:"adjustment-1",status:options.adjustmentStatus??"provider_pending",
         provider_key:options.adjustmentProviderKey??"moyasar"}],rowCount:1};
@@ -37,7 +41,7 @@ describe("Postgres payment adjustment submission outbox",()=>{
         idempotencyKey:"stable-refund-key-123"}
     });
     expect(query.mock.calls[0]?.[1]).toEqual(["worker-1",60,"moyasar"]);
-    expect(query.mock.calls[0]?.[0]).toContain("FOR UPDATE SKIP LOCKED");
+    expect(query.mock.calls[0]?.[0]).toContain("FOR UPDATE OF o SKIP LOCKED");
   });
 
   it("records provider acceptance and adjustment event in one transaction",async()=>{
