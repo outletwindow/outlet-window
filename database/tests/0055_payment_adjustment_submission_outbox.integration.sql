@@ -5,7 +5,15 @@ INSERT INTO customer_orders
   (id,tenant_id,customer_id,idempotency_key,status,currency,total_minor)
 VALUES
   ('adjustment-outbox-order','platform','adjustment-outbox-customer',
-   'adjustment-outbox-order-key','confirmed','SAR',10000);
+   'adjustment-outbox-order-key','awaiting_payment','SAR',10000);
+
+INSERT INTO verified_order_payment_captures
+  (id,tenant_id,order_id,provider_key,provider_event_id,provider_payment_reference,
+   amount_minor,currency,captured_at,idempotency_key)
+VALUES
+  ('adjustment-outbox-capture','platform','adjustment-outbox-order','moyasar','evt-adjustment-outbox-capture','pay-adjustment-outbox-capture',
+   10000,'SAR',now(),'capture-key-adjustment-outbox-capture');
+
 
 INSERT INTO customer_payment_adjustments
   (id,tenant_id,order_id,customer_id,idempotency_key,quote_reference,currency,
