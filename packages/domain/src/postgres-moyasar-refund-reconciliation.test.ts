@@ -1,9 +1,11 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import type { PostgresClient, PostgresPool } from "./postgres-iam-store.js";
 import { PostgresPaymentWebhookInbox } from "./postgres-payment-webhook-inbox.js";
 
 const paymentId = "3fa85f64-5717-4562-b3fc-2c963f66afa6";
 const rawBody = JSON.stringify({ id: "evt-refund-1", type: "payment_refunded" });
+const rawDigest = createHash("sha256").update(rawBody, "utf8").digest("hex");
 
 function makePool(options: {
   insertCount?: number;
@@ -94,7 +96,7 @@ describe("atomic Moyasar cumulative refund reconciliation", () => {
   });
 
   it("deduplicates identical events and detects event-id payload collisions", async () => {
-    const duplicate = makePool({ insertCount: 0, existingDigest: "same-digest" });
+    const duplicate = makePool({ insertCount: 0, existingDigest: rawDigest });
     await expect(new PostgresPaymentWebhookInbox(duplicate.pool).recordAndReconcileMoyasarRefund(command))
       .resolves.toBe("duplicate");
     expect(duplicate.calls.some(x => x.sql.includes("verified_order_payment_captures"))).toBe(false);
