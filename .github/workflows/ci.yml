@@ -118,6 +118,10 @@ jobs:
         env:
           PGPASSWORD: ci_only_password
         run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0057_payment_adjustment_outcome_reconciliation.integration.sql
+      - name: Verify refund submissions bind to the original verified capture
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0058_payment_adjustment_original_capture_binding.integration.sql
       - name: Verify durable payment provider webhook deduplication
         env:
           PGPASSWORD: ci_only_password
