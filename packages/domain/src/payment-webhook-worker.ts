@@ -15,6 +15,7 @@ export interface PaymentWebhookWorkerStore {
   reconcileAdjustment(input: {
     receiptId: string;
     adjustmentId: string;
+    providerKey: string;
     actorId: string;
     workerId: string;
     confirmed: boolean;
@@ -89,6 +90,7 @@ export class PaymentWebhookWorker {
       const result = await this.store.reconcileAdjustment({
         receiptId: event.receiptId,
         adjustmentId: event.adjustmentId,
+        providerKey: event.providerKey,
         actorId: this.workerId,
         workerId: this.workerId,
         confirmed,
