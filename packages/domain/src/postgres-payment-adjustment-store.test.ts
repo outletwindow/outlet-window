@@ -78,6 +78,38 @@ describe("Postgres payment adjustment provider result", () => {
   });
 
 
+  it("atomically records customer consent and queues the provider submission", async () => {
+    const { store, calls } = makeStore({ status: "awaiting_customer_consent" });
+    await expect(store.consentAndQueue({
+      adjustmentId: "adjustment-1", orderId: "order-1", customerId: "customer-1",
+      providerKey: "moyasar"
+    })).resolves.toMatchObject({ outcome: "provider_pending", submissionId: expect.any(String) });
+
+    const transition = calls.find(call => call.sql.includes("SET status='provider_pending'"));
+    expect(transition?.params).toEqual([
+      "tenant-1", "adjustment-1", "2026-11-16T17:00:00.000Z", "customer-1", "moyasar"
+    ]);
+    const queued = calls.find(call => call.sql.includes("INSERT INTO payment_adjustment_submission_outbox"));
+    expect(queued?.params).toEqual([
+      expect.any(String), "tenant-1", "adjustment-1", "moyasar",
+      expect.stringMatching(/^adjustment-[0-9a-f-]{36}$/), "2026-11-16T17:00:00.000Z"
+    ]);
+    expect(calls.some(call => call.sql.includes("customer_payment_adjustment_events") && call.params?.[4] === "customer_consented")).toBe(true);
+    expect(calls.some(call => call.sql.includes("customer_payment_adjustment_events") && call.params?.[4] === "provider_submission_queued")).toBe(true);
+    expect(calls.some(call => call.sql === "COMMIT")).toBe(true);
+    expect(calls.some(call => call.sql === "ROLLBACK")).toBe(false);
+  });
+
+  it("does not queue when customer consent has already been recorded", async () => {
+    const { store, calls } = makeStore({ status: "consented" });
+    await expect(store.consentAndQueue({
+      adjustmentId: "adjustment-1", orderId: "order-1", customerId: "customer-1",
+      providerKey: "moyasar"
+    })).resolves.toEqual({ outcome: "conflict" });
+    expect(calls.some(call => call.sql.includes("INSERT INTO payment_adjustment_submission_outbox"))).toBe(false);
+    expect(calls.some(call => call.sql === "ROLLBACK")).toBe(true);
+  });
+
   it("queues a consented adjustment with a durable idempotency key before provider submission", async () => {
     const { store, calls } = makeStore({ status: "consented" });
     await expect(store.queueProviderSubmission({
