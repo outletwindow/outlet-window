@@ -93,7 +93,7 @@ describe("atomic Moyasar cumulative refund reconciliation", () => {
     const inbox = new PostgresPaymentWebhookInbox(mock.pool);
     await expect(inbox.recordAndReconcileMoyasarRefund(command)).resolves.toBe("reconciliation_required");
     expect(mock.calls.some(x => x.sql.includes("status='reconciliation_required'") &&
-      x.sql.includes("REFUND_SUBMISSION_NOT_ACTIVE"))).toBe(true);
+      x.params?.includes("REFUND_SUBMISSION_NOT_ACTIVE"))).toBe(true);
     expect(mock.calls.some(x => x.sql.includes("SELECT id FROM customer_payment_adjustments"))).toBe(false);
     expect(mock.calls.some(x => x.sql.includes("FOR UPDATE") &&
       x.sql.includes("verified_order_payment_captures"))).toBe(false);
