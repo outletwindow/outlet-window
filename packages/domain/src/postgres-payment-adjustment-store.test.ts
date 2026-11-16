@@ -10,7 +10,7 @@ const adjustment = {
   provider_key: "moyasar", provider_reference: "pay_ref_123"
 };
 
-function makeStore(options: { providerKey?: string; providerReference?: string; orderRowCount?: number; status?: string } = {}) {
+function makeStore(options: { providerKey?: string; providerReference?: string; orderRowCount?: number; status?: string; captureExists?: boolean } = {}) {
   const calls: Array<{ sql: string; params?: unknown[] }> = [];
   const query = vi.fn(async (sql: string, params?: unknown[]) => {
     calls.push({ sql, ...(params === undefined ? {} : { params }) });
@@ -25,7 +25,7 @@ function makeStore(options: { providerKey?: string; providerReference?: string; 
         rowCount: 1
       };
     }
-    if (sql.startsWith("UPDATE customer_orders")) {
+    if (sql.includes("FROM verified_order_payment_captures")) {\n      return options.captureExists === false ? { rows: [], rowCount: 0 } : { rows: [{ ok: 1 }], rowCount: 1 };\n    }\n    if (sql.startsWith("UPDATE customer_orders")) {
       return { rows: [], rowCount: options.orderRowCount ?? 1 };
     }
     return { rows: [], rowCount: 1 };
@@ -98,6 +98,16 @@ describe("Postgres payment adjustment provider result", () => {
     expect(calls.some(call => call.sql.includes("customer_payment_adjustment_events") && call.params?.[4] === "provider_submission_queued")).toBe(true);
     expect(calls.some(call => call.sql === "COMMIT")).toBe(true);
     expect(calls.some(call => call.sql === "ROLLBACK")).toBe(false);
+  });
+
+  it("refuses to queue a refund without a verified original capture from the same provider", async () => {
+    const { store, calls } = makeStore({ status: "awaiting_customer_consent", captureExists: false });
+    await expect(store.consentAndQueue({
+      adjustmentId: "adjustment-1", orderId: "order-1", customerId: "customer-1",
+      providerKey: "moyasar"
+    })).resolves.toEqual({ outcome: "conflict" });
+    expect(calls.some(call => call.sql.includes("INSERT INTO payment_adjustment_submission_outbox"))).toBe(false);
+    expect(calls.some(call => call.sql === "ROLLBACK")).toBe(true);
   });
 
   it("does not queue when customer consent has already been recorded", async () => {
