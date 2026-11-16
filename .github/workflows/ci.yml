@@ -134,7 +134,7 @@ jobs:
         env:
           PGPASSWORD: ci_only_password
         run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0061_payment_adjustment_reference_optional.integration.sql
-      - name: Verify Moyasar allows only one refund operation per original payment
+      - name: Verify Moyasar permits only one refund operation per payment
         env:
           PGPASSWORD: ci_only_password
         run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0062_moyasar_single_refund_per_payment.integration.sql
