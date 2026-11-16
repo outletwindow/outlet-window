@@ -128,12 +128,12 @@ export class PostgresPaymentWebhookInbox {
          LIMIT 2`,
         [original.tenant_id,input.providerPaymentReference]
       );
-      if (candidate.rowCount > 1) {
+      if (candidate.rows.length > 1) {
         await this.quarantineRefundReceipt(client,receiptId,"MULTIPLE_ACTIVE_REFUND_RESERVATIONS");
         await client.query("COMMIT");
         return "reconciliation_required";
       }
-      if (candidate.rowCount === 1) {
+      if (candidate.rows.length === 1) {
         const lockedAdjustment = await client.query(
           "SELECT id FROM customer_payment_adjustments WHERE tenant_id=$1 AND id=$2 FOR UPDATE",
           [original.tenant_id,candidate.rows[0]!.adjustment_id]
