@@ -9,9 +9,11 @@ export interface PaymentAdjustmentCommand {
   currency: string;
   customerId: string;
   originalPaymentReference?: string;
+  /** Cumulative confirmed refunds on the original payment before this reservation. */
+  expectedRefundedMinor?: number;
 }
 export type PaymentAdjustmentSubmission =
-  | { status: "accepted"; providerReference: string }
+  | { status: "accepted"; providerReference?: string }
   | { status: "retry"; code: string }
   | { status: "unknown"; code: string }
   | { status: "rejected"; code: string };
