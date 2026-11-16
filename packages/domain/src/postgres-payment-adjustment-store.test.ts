@@ -90,7 +90,7 @@ describe("Postgres payment adjustment provider result", () => {
       "tenant-1", "adjustment-1", "moyasar", "refund_ref_456",
       "2026-11-16T17:00:00.000Z"
     ]);
-    expect(calls.some(call => call.sql.includes("'provider_submitted'"))).toBe(true);
+    expect(calls.some(call => call.sql.includes("customer_payment_adjustment_events") && call.params?.[4] === "provider_submitted")).toBe(true);
     expect(calls.some(call => call.sql === "COMMIT")).toBe(true);
   });
 
