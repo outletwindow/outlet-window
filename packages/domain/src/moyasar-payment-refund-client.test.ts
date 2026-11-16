@@ -151,28 +151,22 @@ describe("Moyasar one-shot payment refund client", () => {
     expect(calls).toBe(0);
   });
 
-  it("allows a later partial refund when Moyasar keeps the payment in refunded status", async () => {
+  it("does not submit another refund when Moyasar reports refunded status", async () => {
     let postCount = 0;
     const client = new MoyasarPaymentRefundClient({
       secretKey,
       fetchImpl: async (_url, init) => {
-        if (init?.method === "GET") {
-          return new Response(JSON.stringify(payment({
-            status: "refunded", captured: 10_000, refunded: 3_500
-          })), { status: 200 });
-        }
-        postCount += 1;
+        if (init?.method === "POST") postCount += 1;
         return new Response(JSON.stringify(payment({
-          status: "refunded", captured: 10_000, refunded: 6_000
+          status: "refunded", captured: 10_000, refunded: 3_500
         })), { status: 200 });
       }
     });
     await expect(client.refund({
       paymentId, amountMinor: 2_500, currency: "SAR", expectedRefundedMinor: 3_500
-    })).resolves.toMatchObject({
-      outcome: "confirmed", refundedThisAttemptMinor: 2_500,
-      payment: { status: "refunded", refundedMinor: 6_000 }
+    })).resolves.toEqual({
+      outcome: "rejected", code: "MOYASAR_REFUND_PRECONDITION_CONFLICT"
     });
-    expect(postCount).toBe(1);
+    expect(postCount).toBe(0);
   });
 });
