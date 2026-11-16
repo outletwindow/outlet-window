@@ -67,6 +67,21 @@ describe("Postgres payment adjustment submission outbox",()=>{
     expect(calls.some(c=>c.sql==="ROLLBACK")).toBe(true);
   });
 
+  it("moves ambiguous provider outcomes to reconciliation without requeueing",async()=>{
+    const {store,pool}=fixture();
+    const query=vi.mocked(pool.query);
+    query.mockResolvedValueOnce({rows:[],rowCount:1} as never);
+    await expect(store.recordUnknown({
+      submissionId:"submission-1",workerId:"worker-1",
+      failureCode:"PAYMENT_PROVIDER_OUTCOME_UNKNOWN"
+    })).resolves.toBe("reconciliation_required");
+    expect(query.mock.calls[0]?.[0]).toContain("status='reconciliation_required'");
+    expect(query.mock.calls[0]?.[0]).toContain("lease_owner=NULL");
+    expect(query.mock.calls[0]?.[1]).toEqual([
+      "submission-1","worker-1","PAYMENT_PROVIDER_OUTCOME_UNKNOWN"
+    ]);
+  });
+
   it("reschedules transient provider errors using the same durable submission",async()=>{
     const {store,calls}=fixture();
     const query=vi.mocked((store as unknown as {pool:PostgresPool}).pool.query);
