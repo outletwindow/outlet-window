@@ -1071,3 +1071,41 @@ describe("signed payment provider webhook intake", () => {
   });
 
 });
+
+
+describe("customer payment adjustment consent submission", () => {
+  it("returns accepted-for-processing only after consent and provider submission are durably queued", async () => {
+    const customer: Actor = {
+      id: "payment-customer-1", role: "customer", active: true,
+      grants: [{
+        resource: "customer.order", actions: ["update"], scope: { orderId: "payment-order-1" }
+      }]
+    };
+    const consentAndQueue = vi.fn(async () => ({
+      outcome: "provider_pending" as const, submissionId: "submission-1"
+    }));
+    const consent = vi.fn(async () => ({ outcome: "consented" as const }));
+    const api = buildApp({
+      resolveActor: async () => customer,
+      customerPaymentAdjustments: { consent, consentAndQueue, decline: vi.fn(async () => ({ outcome: "declined" })) }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "POST",
+        url: "/api/v1/customer/orders/payment-order-1/payment-adjustments/adjustment-1/consent"
+      });
+      expect(response.statusCode).toBe(202);
+      expect(response.json()).toMatchObject({
+        outcome: "provider_pending", submissionId: "submission-1",
+        message: expect.stringContaining("provider confirmation is still pending")
+      });
+      expect(consentAndQueue).toHaveBeenCalledWith({
+        orderId: "payment-order-1", adjustmentId: "adjustment-1", customerId: "payment-customer-1"
+      });
+      expect(consent).not.toHaveBeenCalled();
+    } finally {
+      await api.close();
+    }
+  });
+});
