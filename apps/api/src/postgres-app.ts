@@ -127,8 +127,15 @@ export function buildPostgresApp(options: PostgresApiOptions) {
     orderTransitions: new PostgresOrderTransitionStore(options.pool),
     customerPaymentAdjustments: options.customerPaymentAdjustments ?? (() => {
       const store = new PostgresPaymentAdjustmentStore(options.pool, options.now);
+      const providerKey = process.env.PAYMENT_ADJUSTMENT_PROVIDER_KEY;
+      const canQueueProviderSubmission = typeof providerKey === "string" &&
+        /^[a-zA-Z0-9._-]{1,100}$/.test(providerKey);
       return {
         consent: (input: { orderId: string; adjustmentId: string; customerId: string }) => store.consent(input),
+        ...(canQueueProviderSubmission ? {
+          consentAndQueue: (input: { orderId: string; adjustmentId: string; customerId: string }) =>
+            store.consentAndQueue({ ...input, providerKey: providerKey! })
+        } : {}),
         decline: (input: { orderId: string; adjustmentId: string; customerId: string }) => store.decline(input)
       };
     })(),
