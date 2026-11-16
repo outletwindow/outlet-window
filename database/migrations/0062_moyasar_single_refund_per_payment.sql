@@ -1,6 +1,8 @@
 -- Moyasar accepts refunds only while a payment is paid/captured. A successful
 -- partial or full refund changes the payment status to refunded, so a second
 -- refund operation against that same payment cannot be submitted.
+-- This restriction is provider-specific; other PSP adapters retain their own
+-- documented refund lifecycle and may support multiple partial refund operations.
 -- Re-check after locking the original capture to serialize against webhook
 -- confirmation and concurrent refund reservations.
 CREATE OR REPLACE FUNCTION reserve_payment_adjustment_refund()
