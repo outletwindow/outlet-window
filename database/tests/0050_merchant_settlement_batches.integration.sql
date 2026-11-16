@@ -102,7 +102,7 @@ VALUES ('settle-invalid-line-1','settle-tenant','settle-journal-invalid','settle
        ('settle-invalid-line-2','settle-tenant','settle-journal-invalid','settle-payable','SAR',2,0,10000),
        ('settle-invalid-line-3','settle-tenant','settle-journal-invalid','settle-fee','SAR',3,0,2000);
 UPDATE financial_journals SET status='posted' WHERE id='settle-journal-invalid';
-DO $$
+DO $settlement_batch_test$
 BEGIN
   BEGIN
     UPDATE merchant_settlement_batches
@@ -132,5 +132,5 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'settlement journal status constraint missing';
   END IF;
-END $;
+END $settlement_batch_test$;
 ROLLBACK;
