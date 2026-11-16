@@ -82,7 +82,7 @@ describe("LedgerBackedInventoryProviderReservationAdapter", () => {
       const providerResult = await releaseProvider({
         providerKey: "pos-acme",
         providerReservationReference: "external-hold-1"
-      });
+      }, input.releasedAtUtc);
       return providerResult;
     });
     const ledger = {
