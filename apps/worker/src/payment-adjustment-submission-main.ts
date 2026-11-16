@@ -4,7 +4,8 @@ import {
   PostgresPaymentAdjustmentSubmissionOutbox,
   MoyasarPaymentRefundClient,
   MoyasarPaymentAdjustmentProvider,
-  createHttpPaymentAdjustmentProvider
+  createHttpPaymentAdjustmentProvider,
+  type PaymentAdjustmentProvider
 } from "../../../packages/domain/src/index.js";
 
 const databaseUrl=process.env.DATABASE_URL;
@@ -14,7 +15,7 @@ if(process.env.PAYMENT_ADJUSTMENT_ENVIRONMENT!=="sandbox")
 const providerKey: string = process.env.PAYMENT_ADJUSTMENT_PROVIDER_KEY ?? "";
 if(!/^[a-zA-Z0-9._-]{1,100}$/.test(providerKey))
   throw new Error("PAYMENT_ADJUSTMENT_PROVIDER_KEY_REQUIRED");
-let provider: ReturnType<typeof createHttpPaymentAdjustmentProvider> | MoyasarPaymentAdjustmentProvider;
+let provider: PaymentAdjustmentProvider;
 if(providerKey==="moyasar"){
   const moyasarSecretKey=process.env.MOYASAR_SANDBOX_SECRET_KEY ?? "";
   if(!/^sk_test_[A-Za-z0-9]+$/.test(moyasarSecretKey))
