@@ -31,7 +31,7 @@ RETURNS trigger LANGUAGE plpgsql AS $function$
 DECLARE
   adjustment_status text;
   adjustment_provider_key text;
-  adjustment_direction text;
+  v_adjustment_direction text;
   adjustment_amount bigint;
   adjustment_currency char(3);
   captured_reference text;
@@ -40,7 +40,7 @@ DECLARE
 BEGIN
   IF TG_OP = 'INSERT' THEN
     SELECT status, provider_key, adjustment_direction, amount_minor, currency
-      INTO adjustment_status, adjustment_provider_key, adjustment_direction,
+      INTO adjustment_status, adjustment_provider_key, v_adjustment_direction,
            adjustment_amount, adjustment_currency
       FROM customer_payment_adjustments
       WHERE tenant_id = NEW.tenant_id AND id = NEW.adjustment_id
@@ -56,7 +56,7 @@ BEGIN
       RAISE EXCEPTION 'payment_adjustment_submission_must_start_queued'
         USING ERRCODE = '23514';
     END IF;
-    IF adjustment_direction = 'refund' THEN
+    IF v_adjustment_direction = 'refund' THEN
       SELECT provider_payment_reference, amount_minor, currency
         INTO captured_reference, captured_amount, captured_currency
         FROM verified_order_payment_captures
