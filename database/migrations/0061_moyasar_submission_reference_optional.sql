@@ -28,3 +28,35 @@ ALTER TABLE payment_adjustment_submission_outbox
       AND (provider_reference IS NOT NULL OR provider_key='moyasar'))
     OR (status<>'submitted' AND completed_at IS NULL)
   );
+
+-- A missing provider operation reference is valid only for a Moyasar refund
+-- backed by the exact original captured payment. Moyasar additional charges
+-- and every other provider must retain a concrete provider reference.
+CREATE OR REPLACE FUNCTION enforce_moyasar_reference_exception()
+RETURNS trigger LANGUAGE plpgsql AS $function$
+DECLARE
+  adjustment_direction text;
+BEGIN
+  IF NEW.status='submitted' AND NEW.provider_reference IS NULL THEN
+    SELECT adjustment_direction
+      INTO adjustment_direction
+      FROM customer_payment_adjustments
+      WHERE tenant_id=NEW.tenant_id AND id=NEW.adjustment_id
+      FOR KEY SHARE;
+
+    IF NEW.provider_key <> 'moyasar'
+       OR adjustment_direction IS DISTINCT FROM 'refund'
+       OR NEW.original_payment_reference IS NULL THEN
+      RAISE EXCEPTION 'missing_provider_reference_allowed_only_for_bound_moyasar_refunds'
+        USING ERRCODE='23514';
+    END IF;
+  END IF;
+  RETURN NEW;
+END
+$function$;
+
+DROP TRIGGER IF EXISTS payment_adjustment_moyasar_reference_exception
+  ON payment_adjustment_submission_outbox;
+CREATE TRIGGER payment_adjustment_moyasar_reference_exception
+BEFORE INSERT OR UPDATE ON payment_adjustment_submission_outbox
+FOR EACH ROW EXECUTE FUNCTION enforce_moyasar_reference_exception();
