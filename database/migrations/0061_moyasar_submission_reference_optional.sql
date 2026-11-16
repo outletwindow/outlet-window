@@ -35,17 +35,17 @@ ALTER TABLE payment_adjustment_submission_outbox
 CREATE OR REPLACE FUNCTION enforce_moyasar_reference_exception()
 RETURNS trigger LANGUAGE plpgsql AS $function$
 DECLARE
-  adjustment_direction text;
+  v_adjustment_direction text;
 BEGIN
   IF NEW.status='submitted' AND NEW.provider_reference IS NULL THEN
-    SELECT adjustment_direction
-      INTO adjustment_direction
-      FROM customer_payment_adjustments
-      WHERE tenant_id=NEW.tenant_id AND id=NEW.adjustment_id
+    SELECT a.adjustment_direction
+      INTO v_adjustment_direction
+      FROM customer_payment_adjustments AS a
+      WHERE a.tenant_id=NEW.tenant_id AND a.id=NEW.adjustment_id
       FOR KEY SHARE;
 
     IF NEW.provider_key <> 'moyasar'
-       OR adjustment_direction IS DISTINCT FROM 'refund'
+       OR v_adjustment_direction IS DISTINCT FROM 'refund'
        OR NEW.original_payment_reference IS NULL THEN
       RAISE EXCEPTION 'missing_provider_reference_allowed_only_for_bound_moyasar_refunds'
         USING ERRCODE='23514';
