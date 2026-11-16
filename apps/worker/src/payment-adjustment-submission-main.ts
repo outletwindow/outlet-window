@@ -55,6 +55,11 @@ async function tick():Promise<void>{
             actorId:"payment-adjustment-worker"
           });
           outcomes[outcome]=(outcomes[outcome]??0)+1;
+        }else if(result.status==="unknown"){
+          const outcome=await store.recordUnknown({
+            submissionId:job.submissionId,workerId,failureCode:result.code
+          });
+          outcomes[outcome]=(outcomes[outcome]??0)+1;
         }else{
           const delaySeconds=Math.min(3600,Math.max(5,2**Math.min(job.attemptCount,10)));
           const outcome=await store.retry({
@@ -63,9 +68,10 @@ async function tick():Promise<void>{
           outcomes[outcome]=(outcomes[outcome]??0)+1;
         }
       }catch{
-        const delaySeconds=Math.min(3600,Math.max(5,2**Math.min(job.attemptCount,10)));
-        const outcome=await store.retry({
-          submissionId:job.submissionId,workerId,failureCode:"PAYMENT_ADJUSTMENT_WORKER_ERROR",delaySeconds
+        // An unexpected exception after submit() may occur after the provider accepted
+        // the request. Quarantine it for reconciliation rather than resubmitting.
+        const outcome=await store.recordUnknown({
+          submissionId:job.submissionId,workerId,failureCode:"PAYMENT_ADJUSTMENT_OUTCOME_UNKNOWN"
         }).catch(()=> "lease_lost" as const);
         outcomes[outcome]=(outcomes[outcome]??0)+1;
       }
