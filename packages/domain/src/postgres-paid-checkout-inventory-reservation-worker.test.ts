@@ -309,4 +309,30 @@ describe("PostgresPaidCheckoutInventoryReservationWorker", () => {
     expect(transition.mock.calls.every(call => call[0].nextStatus === "on_hold")).toBe(true);
   });
 
+  it("creates a recovery case and holds unpaid suborders when paid inventory retries are exhausted", async () => {
+    const db = createPool();
+    const inventory: InventoryReservationPort = {
+      reserveExactVariants: vi.fn().mockRejectedValue(new Error("INVENTORY_PROVIDER_OUTCOME_UNKNOWN"))
+    };
+    const transition = vi.fn().mockResolvedValue({
+      outcome: "updated", parentStatus: "on_hold",
+      transition: { ok: true, previousStatus: "pending_validation", order: { status: "on_hold" } }
+    });
+    const { worker, recovery } = createWorker({
+      pool: db.pool, inventory, transition, maxAttempts: 1
+    });
+    await expect(worker.runOnce()).resolves.toMatchObject({
+      outcome: "dead_lettered", failureCode: "INVENTORY_PROVIDER_OUTCOME_UNKNOWN"
+    });
+    expect(recovery).toHaveBeenCalledWith(expect.objectContaining({
+      failureCode: "INVENTORY_UNGUARANTEED",
+      failedSuborderId: undefined,
+      reservationReferences: []
+    }));
+    expect(transition).toHaveBeenCalledWith(expect.objectContaining({
+      nextStatus: "on_hold",
+      context: expect.objectContaining({ reason: "Merchant inventory hard reservation is not guaranteed" })
+    }));
+  });
+
 });
