@@ -217,7 +217,8 @@ export function buildPostgresApp(options: PostgresApiOptions) {
         "0057_payment_adjustment_outcome_reconciliation",
         "0058_payment_adjustment_original_capture_binding",
         "0059_payment_refund_balance_reservations",
-        "0060_payment_refund_webhook_reconciliation_state"
+        "0060_payment_refund_webhook_reconciliation_state",
+        "0061_moyasar_submission_reference_optional"
       ];
       const result = await options.pool.query<{ version: string }>(
         "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",
