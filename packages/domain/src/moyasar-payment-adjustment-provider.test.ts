@@ -2,6 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import { MoyasarPaymentAdjustmentProvider } from "./moyasar-payment-adjustment-provider.js";
 import type { PaymentAdjustmentCommand } from "./payment-adjustment-provider.js";
 
+function omitField<T extends object>(value: T, field: string): T {
+  const copy = { ...value };
+  delete (copy as unknown as Record<string, unknown>)[field];
+  return copy;
+}
+
 const command: PaymentAdjustmentCommand = {
   adjustmentId: "adjustment-1", orderId: "order-1", idempotencyKey: "refund-idempotency-1",
   direction: "refund", amountMinor: 2500, currency: "SAR", customerId: "customer-1",
@@ -48,10 +54,10 @@ describe("Moyasar payment adjustment provider", () => {
     await expect(provider.submit({ ...command, direction: "additional_charge" })).resolves.toMatchObject({
       status: "rejected", code: "MOYASAR_ADDITIONAL_CHARGE_NOT_SUPPORTED_BY_REFUND_ADAPTER"
     });
-    await expect(provider.submit({ ...command, originalPaymentReference: undefined })).resolves.toMatchObject({
+    await expect(provider.submit(omitField(command, "originalPaymentReference"))).resolves.toMatchObject({
       status: "rejected", code: "MOYASAR_REFUND_CAPTURE_BINDING_REQUIRED"
     });
-    await expect(provider.submit({ ...command, expectedRefundedMinor: undefined })).resolves.toMatchObject({
+    await expect(provider.submit(omitField(command, "expectedRefundedMinor"))).resolves.toMatchObject({
       status: "rejected", code: "MOYASAR_REFUND_CAPTURE_BINDING_REQUIRED"
     });
     expect(refund).not.toHaveBeenCalled();
