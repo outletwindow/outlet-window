@@ -57,6 +57,202 @@ export class PostgresPaymentWebhookInbox {
   }
 
   /**
+   * Atomically deduplicates and reconciles a Moyasar cumulative refund snapshot.
+   * The provider event has no local adjustment id; it is correlated through the
+   * verified original capture and the single in-flight reservation.
+   */
+  async recordAndReconcileMoyasarRefund(input: {
+    providerEventId: string;
+    rawBody: string;
+    providerPaymentReference: string;
+    refundedMinor: number;
+    refundableBaseMinor: number;
+    currency: string;
+    refundedAtUtc: string;
+  }): Promise<"applied" | "ignored" | "reconciliation_required" | "duplicate" | "event_id_collision"> {
+    if (!/^[a-zA-Z0-9._:-]{1,240}$/.test(input.providerEventId) ||
+        typeof input.rawBody !== "string" || !input.rawBody ||
+        Buffer.byteLength(input.rawBody, "utf8") > 65_536 ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.providerPaymentReference) ||
+        !Number.isSafeInteger(input.refundedMinor) || input.refundedMinor <= 0 ||
+        !Number.isSafeInteger(input.refundableBaseMinor) || input.refundableBaseMinor <= 0 ||
+        input.refundedMinor > input.refundableBaseMinor ||
+        !/^[A-Z]{3}$/.test(input.currency) ||
+        !Number.isFinite(Date.parse(input.refundedAtUtc))) {
+      throw new Error("INVALID_MOYASAR_REFUND_RECONCILIATION");
+    }
+
+    const client = await this.pool.connect();
+    const digest = createSha256(input.rawBody);
+    const receiptId = randomUUID();
+    const now = new Date().toISOString();
+    try {
+      await client.query("BEGIN");
+      const inserted = await client.query<{ id: string }>(
+        `INSERT INTO payment_provider_webhook_events
+         (id,provider_key,provider_event_id,payload_sha256,status,event_type,provider_reference)
+         VALUES ($1,'moyasar',$2,$3,'received','payment_refunded',$4)
+         ON CONFLICT (provider_key,provider_event_id) DO NOTHING
+         RETURNING id`,
+        [receiptId,input.providerEventId,digest,input.providerPaymentReference]
+      );
+      if (inserted.rowCount !== 1) {
+        const existing = await client.query<{ id: string; payload_sha256: string }>(
+          "SELECT id,payload_sha256 FROM payment_provider_webhook_events WHERE provider_key='moyasar' AND provider_event_id=$1",
+          [input.providerEventId]
+        );
+        await client.query("COMMIT");
+        if (existing.rowCount !== 1) throw new Error("MOYASAR_REFUND_RECEIPT_LOOKUP_FAILED");
+        return existing.rows[0]!.payload_sha256 === digest ? "duplicate" : "event_id_collision";
+      }
+
+      const capture = await client.query<{
+        tenant_id: string; order_id: string; amount_minor: string; currency: string;
+      }>(
+        `SELECT tenant_id,order_id,amount_minor,currency
+         FROM verified_order_payment_captures
+         WHERE provider_key='moyasar' AND provider_payment_reference=$1
+         FOR UPDATE`,
+        [input.providerPaymentReference]
+      );
+      if (capture.rowCount !== 1) {
+        await this.quarantineRefundReceipt(client,receiptId,"ORIGINAL_PAYMENT_CAPTURE_NOT_FOUND",now);
+        await client.query("COMMIT");
+        return "reconciliation_required";
+      }
+      const original = capture.rows[0]!;
+      if (original.currency !== input.currency ||
+          Number(original.amount_minor) !== input.refundableBaseMinor ||
+          input.refundedMinor > Number(original.amount_minor)) {
+        await this.quarantineRefundReceipt(client,receiptId,"REFUND_CAPTURE_SNAPSHOT_MISMATCH",now);
+        await client.query("COMMIT");
+        return "reconciliation_required";
+      }
+
+      const active = await client.query<{
+        id: string; adjustment_id: string; amount_minor: string; status: string;
+        provider_key: string | null; provider_reference: string | null;
+        currency: string; previous_total_minor: string; proposed_total_minor: string;
+        order_id: string; customer_id: string;
+      }>(
+        `SELECT r.id,r.adjustment_id,r.amount_minor,r.status,
+                a.provider_key,a.provider_reference,a.currency,
+                a.previous_total_minor,a.proposed_total_minor,a.order_id,a.customer_id
+         FROM payment_refund_reservations r
+         JOIN customer_payment_adjustments a
+           ON a.tenant_id=r.tenant_id AND a.id=r.adjustment_id
+         WHERE r.tenant_id=$1 AND r.provider_key='moyasar'
+           AND r.original_payment_reference=$2 AND r.status='reserved'
+         FOR UPDATE OF r,a`,
+        [original.tenant_id,input.providerPaymentReference]
+      );
+      const consumed = await client.query<{ total_minor: string }>(
+        `SELECT COALESCE(SUM(amount_minor),0)::text AS total_minor
+         FROM payment_refund_reservations
+         WHERE tenant_id=$1 AND provider_key='moyasar'
+           AND original_payment_reference=$2 AND status='confirmed'`,
+        [original.tenant_id,input.providerPaymentReference]
+      );
+      const confirmedMinor = Number(consumed.rows[0]?.total_minor ?? "0");
+      if (!Number.isSafeInteger(confirmedMinor) || confirmedMinor < 0) {
+        await this.quarantineRefundReceipt(client,receiptId,"CONFIRMED_REFUND_TOTAL_INVALID",now);
+        await client.query("COMMIT");
+        return "reconciliation_required";
+      }
+
+      if (active.rowCount === 0) {
+        if (input.refundedMinor === confirmedMinor && confirmedMinor > 0) {
+          await client.query(
+            "UPDATE payment_provider_webhook_events SET status='ignored',processed_at=$2,failure_code=NULL WHERE id=$1",
+            [receiptId,now]
+          );
+          await client.query("COMMIT");
+          return "ignored";
+        }
+        await this.quarantineRefundReceipt(client,receiptId,"NO_ACTIVE_REFUND_RESERVATION_MATCH",now);
+        await client.query("COMMIT");
+        return "reconciliation_required";
+      }
+      if (active.rowCount !== 1) {
+        await this.quarantineRefundReceipt(client,receiptId,"MULTIPLE_ACTIVE_REFUND_RESERVATIONS",now);
+        await client.query("COMMIT");
+        return "reconciliation_required";
+      }
+
+      const refund = active.rows[0]!;
+      const expectedCumulative = confirmedMinor + Number(refund.amount_minor);
+      if (refund.status !== "reserved" || refund.provider_key !== "moyasar" ||
+          refund.provider_reference !== input.providerPaymentReference ||
+          refund.currency !== input.currency || refund.order_id !== original.order_id ||
+          !Number.isSafeInteger(expectedCumulative) ||
+          input.refundedMinor !== expectedCumulative ||
+          expectedCumulative > input.refundableBaseMinor) {
+        await client.query(
+          "UPDATE payment_provider_webhook_events SET adjustment_id=$2 WHERE id=$1",
+          [receiptId,refund.adjustment_id]
+        );
+        await this.quarantineRefundReceipt(client,receiptId,"REFUND_CUMULATIVE_TOTAL_OR_BINDING_MISMATCH",now);
+        await client.query("COMMIT");
+        return "reconciliation_required";
+      }
+
+      const order = await client.query(
+        `UPDATE customer_orders SET total_minor=$4,version=version+1,updated_at=$5
+         WHERE tenant_id=$1 AND id=$2 AND customer_id=$3
+           AND total_minor=$6 AND currency=$7`,
+        [original.tenant_id,refund.order_id,refund.customer_id,
+          refund.proposed_total_minor,input.refundedAtUtc,
+          refund.previous_total_minor,refund.currency]
+      );
+      if (order.rowCount !== 1) {
+        await client.query(
+          "UPDATE payment_provider_webhook_events SET adjustment_id=$2 WHERE id=$1",
+          [receiptId,refund.adjustment_id]
+        );
+        await this.quarantineRefundReceipt(client,receiptId,"REFUND_ORDER_TOTAL_CONFLICT",now);
+        await client.query("COMMIT");
+        return "reconciliation_required";
+      }
+
+      await client.query(
+        `UPDATE customer_payment_adjustments
+         SET status='provider_confirmed',provider_confirmed_at=$3,updated_at=$3
+         WHERE tenant_id=$1 AND id=$2 AND status='provider_pending'`,
+        [original.tenant_id,refund.adjustment_id,input.refundedAtUtc]
+      );
+      await appendAdjustmentEvent(client,
+        {id:refund.adjustment_id,tenant_id:original.tenant_id},
+        "payment-webhook-worker","provider_confirmed",input.refundedAtUtc);
+      await client.query(
+        `UPDATE payment_provider_webhook_events
+         SET status='applied',adjustment_id=$2,processed_at=$3,
+             failure_code=NULL,lease_owner=NULL,lease_expires_at=NULL
+         WHERE id=$1 AND status='received'`,
+        [receiptId,refund.adjustment_id,now]
+      );
+      await client.query("COMMIT");
+      return "applied";
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async quarantineRefundReceipt(
+    client: PostgresClient, receiptId: string, failureCode: string, now: string
+  ): Promise<void> {
+    await client.query(
+      `UPDATE payment_provider_webhook_events
+       SET status='reconciliation_required',failure_code=$2,
+           processed_at=NULL,lease_owner=NULL,lease_expires_at=NULL
+       WHERE id=$1 AND status='received'`,
+      [receiptId,failureCode,now]
+    );
+  }
+
+  /**
    * Applies a normalized provider result and finalizes its inbox receipt in one DB transaction.
    * Call only after signature verification, durable receipt creation, and provider-specific
    * event normalization. The caller must pass the authenticated service actor identity.
