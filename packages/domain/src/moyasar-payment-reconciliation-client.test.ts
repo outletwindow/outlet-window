@@ -24,6 +24,7 @@ describe("Moyasar read-only payment reconciliation client", () => {
     });
     expect(requestUrl).toBe("https://api.moyasar.com/v1/payments/" + paymentId);
     expect(request?.method).toBe("GET");
+    expect(request?.redirect).toBe("error");
     expect(new Headers(request?.headers).get("authorization")).toBe(
       "Basic " + Buffer.from("sk_test_reconciliation123:", "utf8").toString("base64")
     );
