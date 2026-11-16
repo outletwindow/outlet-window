@@ -17,20 +17,29 @@ export class PostgresPaymentAdjustmentSubmissionOutbox {
       id:string;tenant_id:string;adjustment_id:string;provider_key:string;idempotency_key:string;
       attempt_count:number;order_id:string;customer_id:string;adjustment_direction:"additional_charge"|"refund";
       amount_minor:string;currency:string;
-    }>(`WITH candidate AS (
-        SELECT id FROM payment_adjustment_submission_outbox
-        WHERE attempt_count < 10 AND available_at <= now()
-          AND provider_key=$3 AND (status='queued' OR (status='processing' AND lease_expires_at <= now()))
-        ORDER BY available_at,created_at,id
-        FOR UPDATE SKIP LOCKED LIMIT 1
+    }>(`WITH exhausted AS (
+        UPDATE payment_adjustment_submission_outbox
+        SET status='dead_letter',lease_owner=NULL,lease_expires_at=NULL,
+            last_error_code='PAYMENT_ADJUSTMENT_ATTEMPTS_EXHAUSTED',updated_at=now()
+        WHERE status='processing' AND attempt_count >= 10 AND lease_expires_at <= now()
+        RETURNING id
+      ), candidate AS (
+        SELECT o.id FROM payment_adjustment_submission_outbox AS o
+        JOIN customer_payment_adjustments AS a
+          ON a.tenant_id=o.tenant_id AND a.id=o.adjustment_id
+        WHERE o.attempt_count < 10 AND o.available_at <= now()
+          AND o.provider_key=$3
+          AND (o.status='queued' OR (o.status='processing' AND o.lease_expires_at <= now()))
+          AND a.status='provider_pending' AND a.provider_key=o.provider_key
+          AND a.provider_reference IS NULL
+        ORDER BY o.available_at,o.created_at,o.id
+        FOR UPDATE OF o SKIP LOCKED LIMIT 1
       )
       UPDATE payment_adjustment_submission_outbox AS o
       SET status='processing',lease_owner=$1,lease_expires_at=now()+($2 * interval '1 second'),
           attempt_count=o.attempt_count+1,updated_at=now()
       FROM candidate,customer_payment_adjustments AS a
       WHERE o.id=candidate.id AND a.tenant_id=o.tenant_id AND a.id=o.adjustment_id
-        AND a.status='provider_pending' AND a.provider_key=o.provider_key
-        AND a.provider_reference IS NULL
       RETURNING o.id,o.tenant_id,o.adjustment_id,o.provider_key,o.idempotency_key,o.attempt_count,
         a.order_id,a.customer_id,a.adjustment_direction,a.amount_minor,a.currency`,
       [workerId,leaseSeconds,providerKey]);
