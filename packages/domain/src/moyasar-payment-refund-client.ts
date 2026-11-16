@@ -25,8 +25,6 @@ type RefundPayload = {
 };
 
 const paymentIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const paymentStatuses = ["initiated", "paid", "authorized", "failed", "refunded", "captured", "voided", "verified", "expired"] as const;
-
 /**
  * One-shot Moyasar refund client.
  *
@@ -127,7 +125,7 @@ export class MoyasarPaymentRefundClient {
     }
 
     if (payload.id !== input.paymentId ||
-        typeof payload.status !== "string" || !paymentStatuses.includes(payload.status as typeof paymentStatuses[number]) ||
+        payload.status !== "refunded" ||
         !Number.isSafeInteger(payload.amount) || payload.amount !== before.amountMinor ||
         !Number.isSafeInteger(payload.captured) || payload.captured !== before.capturedMinor ||
         !Number.isSafeInteger(payload.refunded) ||
