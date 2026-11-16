@@ -19,7 +19,7 @@ describe("Moyasar one-shot payment refund client", () => {
       fetchImpl: async (url, init) => {
         requests.push({ url: String(url), ...(init === undefined ? {} : { init }) });
         if (init?.method === "GET") return new Response(JSON.stringify(payment()), { status: 200 });
-        return new Response(JSON.stringify(payment({ status: "captured", refunded: 3_500 })), { status: 200 });
+        return new Response(JSON.stringify(payment({ status: "refunded", refunded: 3_500 })), { status: 200 });
       }
     });
 
