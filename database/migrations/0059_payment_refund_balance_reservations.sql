@@ -35,6 +35,7 @@ BEGIN
     FROM (
       SELECT o.tenant_id,o.provider_key,o.original_payment_reference,
              SUM(a.amount_minor) AS reserved_minor,
+             COUNT(*) AS active_refunds,
              MAX(c.amount_minor) AS captured_minor
       FROM payment_adjustment_submission_outbox o
       JOIN customer_payment_adjustments a
@@ -48,12 +49,7 @@ BEGIN
         AND o.status <> 'failed'
       GROUP BY o.tenant_id,o.provider_key,o.original_payment_reference
     ) totals
-    WHERE reserved_minor > captured_minor OR (
-      SELECT COUNT(*) FROM payment_refund_reservations r
-      WHERE r.tenant_id=totals.tenant_id AND r.provider_key=totals.provider_key
-        AND r.original_payment_reference=totals.original_payment_reference
-        AND r.status <> 'released'
-    ) > 1
+    WHERE reserved_minor > captured_minor OR active_refunds > 1
   ) THEN
     RAISE EXCEPTION 'existing_refund_submissions_exceed_verified_capture_balance';
   END IF;
