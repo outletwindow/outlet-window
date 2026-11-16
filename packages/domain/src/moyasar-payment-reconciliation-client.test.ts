@@ -76,4 +76,17 @@ describe("Moyasar read-only payment reconciliation client", () => {
     await expect(client.fetchPayment(paymentId))
       .rejects.toThrow("MOYASAR_PAYMENT_RECONCILIATION_INVALID_RESPONSE");
   });
+
+  it("can read a fully refunded paid payment when the provider reports zero captured", async () => {
+    const client = new MoyasarPaymentReconciliationClient({
+      secretKey: "sk_test_reconciliation123",
+      fetchImpl: async () => new Response(JSON.stringify({
+        id: paymentId, status: "refunded", amount: 10000,
+        captured: 0, refunded: 10000, currency: "SAR"
+      }), { status: 200 })
+    });
+    await expect(client.fetchPayment(paymentId)).resolves.toMatchObject({
+      status: "refunded", amountMinor: 10000, capturedMinor: 0, refundedMinor: 10000
+    });
+  });
 });
