@@ -5,7 +5,7 @@ type AdjustmentRow = {
   id: string; tenant_id: string; order_id: string; customer_id: string;
   currency: string; adjustment_direction: "additional_charge" | "refund";
   amount_minor: string; previous_total_minor: string; proposed_total_minor: string;
-  status: string; expires_at: Date | string;
+  status: string; expires_at: Date | string; provider_key?: string | null; provider_reference?: string | null;
 };
 
 export type PaymentAdjustmentOutcome =
@@ -134,7 +134,8 @@ export class PostgresPaymentAdjustmentStore {
     }catch(error){await client.query("ROLLBACK").catch(()=>undefined);throw error;}finally{client.release();}
   }
 
-  async recordProviderResult(input:{tenantId:string;adjustmentId:string;actorId:string;confirmed:boolean;providerReference?:string}):Promise<PaymentAdjustmentOutcome>{
+  async recordProviderResult(input:{tenantId:string;adjustmentId:string;actorId:string;providerKey:string;confirmed:boolean;providerReference?:string}):Promise<PaymentAdjustmentOutcome>{
+    if(!/^[a-zA-Z0-9._-]{1,100}$/.test(input.providerKey)) throw new Error("invalid_payment_provider");
     if(input.confirmed&&(!input.providerReference?.trim()||input.providerReference.length>240))throw new Error("provider_reference_required");
     const client=await this.pool.connect();const now=this.now().toISOString();
     try{
@@ -142,7 +143,9 @@ export class PostgresPaymentAdjustmentStore {
       const found=await client.query<AdjustmentRow>("SELECT * FROM customer_payment_adjustments WHERE tenant_id=$1 AND id=$2 FOR UPDATE",[input.tenantId,input.adjustmentId]);
       if(found.rowCount!==1){await client.query("ROLLBACK");return{outcome:"not_found"};}
       const row=found.rows[0]!;
-      if(row.status!=="provider_pending"){await client.query("ROLLBACK");return{outcome:"conflict"};}
+      if(row.status!=="provider_pending" || row.provider_key !== input.providerKey ||
+         !row.provider_reference || (input.providerReference !== undefined && input.providerReference !== row.provider_reference) ||
+         (input.confirmed && input.providerReference !== row.provider_reference)){await client.query("ROLLBACK");return{outcome:"conflict"};}
       if(input.confirmed){
         const updated=await client.query(
           "UPDATE customer_orders SET total_minor=$4,version=version+1,updated_at=$5 WHERE tenant_id=$1 AND id=$2 AND customer_id=$3 AND total_minor=$6 AND currency=$7",
