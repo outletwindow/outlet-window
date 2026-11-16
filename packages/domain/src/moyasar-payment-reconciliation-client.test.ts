@@ -52,6 +52,17 @@ describe("Moyasar read-only payment reconciliation client", () => {
       .rejects.toThrow("MOYASAR_PAYMENT_RECONCILIATION_OUTCOME_UNKNOWN");
   });
 
+  it("treats transient lookup responses as unknown rather than permanent rejection", async () => {
+    for (const status of [408, 425, 429, 500, 503]) {
+      const client = new MoyasarPaymentReconciliationClient({
+        secretKey: "sk_test_reconciliation123",
+        fetchImpl: async () => new Response("{}", { status })
+      });
+      await expect(client.fetchPayment(paymentId))
+        .rejects.toThrow("MOYASAR_PAYMENT_RECONCILIATION_OUTCOME_UNKNOWN");
+    }
+  });
+
   it("allows a paid payment's refunded total to be bounded by its original amount", async () => {
     const client = new MoyasarPaymentReconciliationClient({
       secretKey: "sk_test_reconciliation123",
