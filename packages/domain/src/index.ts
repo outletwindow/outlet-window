@@ -57,6 +57,7 @@ export * from "./payment-adjustment-provider.js";
 export * from "./moyasar-payment-reconciliation-client.js";
 export * from "./moyasar-payment-refund-client.js";
 export * from "./moyasar-payment-refund-event-decoder.js";
+export * from "./moyasar-payment-refund-webhook.js";
 export * from "./integration-hub.js";
 
 export * from "./postgres-integration-registry-store.js";
