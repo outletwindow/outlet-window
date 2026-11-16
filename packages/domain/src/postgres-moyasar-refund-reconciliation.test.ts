@@ -74,6 +74,10 @@ describe("atomic Moyasar cumulative refund reconciliation", () => {
     expect(mock.calls.some(x => x.sql.includes("UPDATE customer_orders"))).toBe(true);
     expect(mock.calls.some(x => x.sql.includes("SET status='provider_confirmed'"))).toBe(true);
     expect(mock.calls.some(x => x.sql.includes("UPDATE payment_adjustment_submission_outbox") && x.sql.includes("status='submitted'"))).toBe(true);
+    const reservationQuery = mock.calls.find(x => x.sql.includes("SELECT r.id,r.adjustment_id"));
+    expect(reservationQuery?.sql).toContain("JOIN payment_adjustment_submission_outbox o");
+    expect(reservationQuery?.sql).toContain("o.status AS submission_status");
+    expect(reservationQuery?.sql).toContain("FOR UPDATE OF r,a,o");
     expect(mock.calls.some(x => x.sql.includes("SET status='applied'"))).toBe(true);
     expect(mock.calls.at(-1)?.sql).toBe("COMMIT");
     expect(mock.client.release).toHaveBeenCalledOnce();
