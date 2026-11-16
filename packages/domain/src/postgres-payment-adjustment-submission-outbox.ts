@@ -16,7 +16,7 @@ export class PostgresPaymentAdjustmentSubmissionOutbox {
     const result=await this.pool.query<{
       id:string;tenant_id:string;adjustment_id:string;provider_key:string;idempotency_key:string;
       attempt_count:number;order_id:string;customer_id:string;adjustment_direction:"additional_charge"|"refund";
-      amount_minor:string;currency:string;original_payment_reference:string|null;
+      amount_minor:string;currency:string;original_payment_reference:string|null;expected_refunded_minor:string;
     }>(`WITH expired AS (
         -- A worker may have reached the PSP before its lease expired or process died.
         -- The outcome is therefore ambiguous: quarantine, never submit it a second time.
@@ -51,7 +51,10 @@ export class PostgresPaymentAdjustmentSubmissionOutbox {
       FROM candidate,customer_payment_adjustments AS a
       WHERE o.id=candidate.id AND a.tenant_id=o.tenant_id AND a.id=o.adjustment_id
       RETURNING o.id,o.tenant_id,o.adjustment_id,o.provider_key,o.idempotency_key,o.attempt_count,
-        a.order_id,a.customer_id,a.adjustment_direction,a.amount_minor,a.currency,o.original_payment_reference`,
+        a.order_id,a.customer_id,a.adjustment_direction,a.amount_minor,a.currency,o.original_payment_reference,
+        (SELECT COALESCE(SUM(r.amount_minor),0)::text FROM payment_refund_reservations r
+         WHERE r.tenant_id=o.tenant_id AND r.provider_key=o.provider_key
+           AND r.original_payment_reference=o.original_payment_reference AND r.status='confirmed') AS expected_refunded_minor`,
       [workerId,leaseSeconds,providerKey]);
     if(result.rowCount!==1)return null;
     const row=result.rows[0]!;
@@ -62,7 +65,10 @@ export class PostgresPaymentAdjustmentSubmissionOutbox {
       providerKey:row.provider_key,idempotencyKey:row.idempotency_key,attemptCount:Number(row.attempt_count),
       command:{adjustmentId:row.adjustment_id,orderId:row.order_id,idempotencyKey:row.idempotency_key,
         direction:row.adjustment_direction,amountMinor:amount,currency:row.currency,customerId:row.customer_id,
-        ...(row.original_payment_reference===null?{}:{originalPaymentReference:row.original_payment_reference})}
+        ...(row.original_payment_reference===null?{}:{
+          originalPaymentReference:row.original_payment_reference,
+          expectedRefundedMinor:Number(row.expected_refunded_minor)
+        })}
     };
   }
 
