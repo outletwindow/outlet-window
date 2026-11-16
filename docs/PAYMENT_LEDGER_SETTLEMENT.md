@@ -143,6 +143,6 @@ Not implemented or enabled:
 - An authenticated approval API or dual-control workflow.
 - Provider payout execution, bank transfer, wallet transfer, payout confirmation, or settlement reconciliation against bank/provider statements.
 - Refund execution or production money custody.
-- A provider-specific payment-adjustment adapter wired into the production API. The generic HTTPS adapter and sandbox-only worker are integration primitives; the current customer consent route still records consent without automatically enqueueing a provider submission. A trusted, configured orchestration path must enqueue the durable outbox, and a verified provider adapter plus webhook/reconciliation contract tests are still required before real refunds or charges.
+- Provider-specific Moyasar, HyperPay, Tap Payments and Stripe adjustment adapters, provider-specific webhook/reconciliation contract tests, and production activation. When `PAYMENT_ADJUSTMENT_PROVIDER_KEY` is configured, the customer consent endpoint now atomically records consent and queues the durable outbox; without that setting it records consent only. The generic HTTPS adapter/worker remains sandbox-only and is not a certified integration for any named provider.
 
 The database approval transition is an accounting-record control, not evidence that a merchant was paid. No live payment, payout, bank account or money movement is claimed. Legal, regulatory, payment-provider and accounting review remains required before activation.
