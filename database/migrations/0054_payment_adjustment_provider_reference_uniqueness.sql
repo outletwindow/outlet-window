@@ -7,7 +7,7 @@ BEGIN
     SELECT 1
     FROM customer_payment_adjustments
     WHERE provider_reference IS NOT NULL
-    GROUP BY tenant_id, provider_key, provider_reference
+    GROUP BY tenant_id, COALESCE(provider_key, ''), provider_reference
     HAVING count(*) > 1
   ) THEN
     RAISE EXCEPTION 'duplicate_payment_adjustment_provider_reference_exists';
@@ -16,5 +16,5 @@ END
 $migration$;
 
 CREATE UNIQUE INDEX customer_payment_adjustments_provider_reference_once_idx
-  ON customer_payment_adjustments (tenant_id, provider_key, provider_reference)
+  ON customer_payment_adjustments (tenant_id, COALESCE(provider_key, ''), provider_reference)
   WHERE provider_reference IS NOT NULL;
