@@ -146,4 +146,29 @@ BEGIN
   END;
 END
 $test$;
+
+-- Once a prior partial refund is confirmed, a new sequential partial refund may
+-- reserve the remaining balance; confirmed amounts remain counted, but do not
+-- occupy the single in-flight operation slot.
+INSERT INTO payment_adjustment_submission_outbox
+  (id,tenant_id,adjustment_id,provider_key,idempotency_key,status)
+VALUES
+  ('refund-reservation-job-c','platform','refund-reservation-c','moyasar',
+   'refund-reservation-stable-key-c','queued');
+DO $test$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM payment_refund_reservations
+    WHERE adjustment_id='refund-reservation-c' AND status='reserved'
+      AND amount_minor=1000
+  ) THEN
+    RAISE EXCEPTION 'sequential partial refund could not reserve after prior confirmation';
+  END IF;
+  IF (SELECT SUM(amount_minor) FROM payment_refund_reservations
+      WHERE original_payment_reference='moyasar-refund-reservation-payment'
+        AND status <> 'released') <> 5000 THEN
+    RAISE EXCEPTION 'confirmed and pending refunds were not aggregated against capture balance';
+  END IF;
+END
+$test$;
 ROLLBACK;
