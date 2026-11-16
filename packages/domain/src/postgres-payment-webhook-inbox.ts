@@ -170,12 +170,12 @@ export class PostgresPaymentWebhookInbox {
 
       const active = await client.query<{
         id: string; adjustment_id: string; amount_minor: string; status: string;
-        provider_key: string | null; provider_reference: string | null; adjustment_status: string;
+        provider_key: string | null; adjustment_status: string;
         currency: string; previous_total_minor: string; proposed_total_minor: string;
         order_id: string; customer_id: string;
       }>(
         `SELECT r.id,r.adjustment_id,r.amount_minor,r.status,
-                a.provider_key,a.provider_reference,a.status AS adjustment_status,a.currency,
+                a.provider_key,a.status AS adjustment_status,a.currency,
                 a.previous_total_minor,a.proposed_total_minor,a.order_id,a.customer_id
          FROM payment_refund_reservations r
          JOIN customer_payment_adjustments a
@@ -222,7 +222,6 @@ export class PostgresPaymentWebhookInbox {
       const expectedCumulative = confirmedMinor + Number(refund.amount_minor);
       if (refund.status !== "reserved" || refund.adjustment_status !== "provider_pending" ||
           refund.provider_key !== "moyasar" ||
-          refund.provider_reference !== input.providerPaymentReference ||
           refund.currency !== input.currency || refund.order_id !== original.order_id ||
           !Number.isSafeInteger(expectedCumulative) ||
           input.refundedMinor !== expectedCumulative ||
