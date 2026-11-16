@@ -6,6 +6,11 @@ ALTER TABLE payment_adjustment_submission_outbox
   CHECK (original_payment_reference IS NULL OR
     length(trim(original_payment_reference)) BETWEEN 1 AND 240);
 
+-- Backfill is a one-time migration-only enrichment; the previous trigger correctly
+-- rejects ordinary same-state updates, so suspend it only for this verified backfill.
+ALTER TABLE payment_adjustment_submission_outbox
+  DISABLE TRIGGER payment_adjustment_submission_outbox_guard;
+
 -- Backfill references for previously queued/submitted refund jobs where the trusted
 -- capture evidence exists. Missing evidence is quarantined below, never guessed.
 UPDATE payment_adjustment_submission_outbox AS o
@@ -17,6 +22,9 @@ WHERE a.tenant_id=o.tenant_id AND a.id=o.adjustment_id
   AND a.adjustment_direction='refund'
   AND o.original_payment_reference IS NULL
   AND c.amount_minor >= a.amount_minor AND c.currency=a.currency;
+
+ALTER TABLE payment_adjustment_submission_outbox
+  ENABLE TRIGGER payment_adjustment_submission_outbox_guard;
 
 CREATE OR REPLACE FUNCTION enforce_payment_adjustment_submission_outbox()
 RETURNS trigger LANGUAGE plpgsql AS $function$
