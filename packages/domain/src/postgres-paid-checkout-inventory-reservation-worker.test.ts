@@ -309,6 +309,28 @@ describe("PostgresPaidCheckoutInventoryReservationWorker", () => {
     expect(transition.mock.calls.every(call => call[0].nextStatus === "on_hold")).toBe(true);
   });
 
+  it("retries terminal escalation when the durable recovery case cannot be persisted", async () => {
+    const db = createPool();
+    const inventory: InventoryReservationPort = {
+      reserveExactVariants: vi.fn().mockRejectedValue(new Error("INVENTORY_PROVIDER_OUTCOME_UNKNOWN"))
+    };
+    const recovery = vi.fn().mockRejectedValue(new Error("RECOVERY_DATABASE_UNAVAILABLE"));
+    const { worker, transition } = createWorker({
+      pool: db.pool, inventory, recovery, maxAttempts: 1
+    });
+    await expect(worker.runOnce()).resolves.toMatchObject({
+      outcome: "retry_scheduled", failureCode: "PAID_CHECKOUT_ESCALATION_RETRY"
+    });
+    expect(recovery).toHaveBeenCalledTimes(1);
+    expect(transition).not.toHaveBeenCalled();
+    const jobUpdate = db.query.mock.calls.find(call =>
+      String(call[0]).includes("UPDATE paid_checkout_inventory_reservation_jobs")
+    );
+    expect(jobUpdate?.[0]).toContain("attempt_count=CASE WHEN $7 THEN LEAST(attempt_count,$5 - 1)");
+    expect(jobUpdate?.[1]?.[5]).toBe("PAID_CHECKOUT_ESCALATION_RETRY");
+    expect(jobUpdate?.[1]?.[6]).toBe(true);
+  });
+
   it("creates a recovery case and holds unpaid suborders when paid inventory retries are exhausted", async () => {
     const db = createPool();
     const inventory: InventoryReservationPort = {
