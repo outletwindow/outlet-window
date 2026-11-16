@@ -12,6 +12,7 @@ export interface PaymentAdjustmentCommand {
 export type PaymentAdjustmentSubmission =
   | { status: "accepted"; providerReference: string }
   | { status: "retry"; code: string }
+  | { status: "unknown"; code: string }
   | { status: "rejected"; code: string };
 
 export interface PaymentAdjustmentProvider {
@@ -66,27 +67,31 @@ export function createHttpPaymentAdjustmentProvider(options: {
           signal: AbortSignal.timeout(timeoutMs)
         });
       } catch {
-        return { status: "retry", code: "PAYMENT_PROVIDER_NETWORK_ERROR" };
+        // The request may have reached the provider before the connection failed.
+        // Never blindly retry a potentially money-moving command.
+        return { status: "unknown", code: "PAYMENT_PROVIDER_OUTCOME_UNKNOWN" };
       }
-      if (response.status === 408 || response.status === 425 ||
-          response.status === 429 || response.status >= 500) {
-        return { status: "retry", code: "PAYMENT_PROVIDER_TEMPORARY_FAILURE" };
+      if (response.status === 408 || response.status === 425 || response.status >= 500) {
+        return { status: "unknown", code: "PAYMENT_PROVIDER_OUTCOME_UNKNOWN" };
+      }
+      if (response.status === 429) {
+        return { status: "retry", code: "PAYMENT_PROVIDER_RATE_LIMITED" };
       }
       if (!response.ok) return { status: "rejected", code: "PAYMENT_PROVIDER_HTTP_" + response.status };
       let payload: unknown;
       try {
         const raw = await response.text();
-        if (raw.length > 16_384) return { status: "retry", code: "PAYMENT_PROVIDER_INVALID_RESPONSE" };
+        if (raw.length > 16_384) return { status: "unknown", code: "PAYMENT_PROVIDER_OUTCOME_UNKNOWN" };
         payload = JSON.parse(raw) as unknown;
       } catch {
-        return { status: "retry", code: "PAYMENT_PROVIDER_INVALID_RESPONSE" };
+        return { status: "unknown", code: "PAYMENT_PROVIDER_OUTCOME_UNKNOWN" };
       }
       if (typeof payload !== "object" || payload === null ||
           (payload as { status?: unknown }).status !== "accepted" ||
           typeof (payload as { providerReference?: unknown }).providerReference !== "string" ||
           !(payload as { providerReference: string }).providerReference.trim() ||
           (payload as { providerReference: string }).providerReference.length > 240) {
-        return { status: "retry", code: "PAYMENT_PROVIDER_INVALID_RESPONSE" };
+        return { status: "unknown", code: "PAYMENT_PROVIDER_OUTCOME_UNKNOWN" };
       }
       return { status: "accepted", providerReference: (payload as { providerReference: string }).providerReference };
     }
