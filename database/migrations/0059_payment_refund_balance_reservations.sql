@@ -24,7 +24,7 @@ CREATE INDEX payment_refund_reservations_capture_idx
 -- operation per original payment until a definitive rejection releases it.
 CREATE UNIQUE INDEX payment_refund_reservations_one_active_per_capture_idx
   ON payment_refund_reservations(tenant_id,provider_key,original_payment_reference)
-  WHERE status <> 'released';
+  WHERE status = 'reserved';
 
 -- Existing jobs are included in the reserved balance. A failed provider rejection
 -- is released; submitted, queued and ambiguous jobs continue consuming capacity.
@@ -110,7 +110,7 @@ BEGIN
   IF EXISTS (
     SELECT 1 FROM payment_refund_reservations
     WHERE tenant_id=NEW.tenant_id AND provider_key=NEW.provider_key
-      AND original_payment_reference=v_reference AND status <> 'released'
+      AND original_payment_reference=v_reference AND status = 'reserved'
   ) THEN
     RAISE EXCEPTION 'original_payment_already_has_active_refund_operation'
       USING ERRCODE='23514';
