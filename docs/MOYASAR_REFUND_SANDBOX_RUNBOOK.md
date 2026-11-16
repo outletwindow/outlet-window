@@ -74,6 +74,15 @@ Use a disposable sandbox order and a payment created in the same Moyasar sandbox
    - Send a sandbox webhook to an API configured for live mode, and vice versa, in an isolated test environment.
    - Expect signature/event rejection and no ledger mutation.
 
+## Webhook delivery and acknowledgement
+
+Moyasar retries webhook deliveries when the endpoint does not return a 2xx response, for up to five retries after the initial attempt. The platform's refund route acknowledges a durably recorded event with:
+- `200` for applied, ignored, or duplicate events.
+- `202` when the event is durably quarantined for reconciliation; this acknowledges receipt, not successful financial reconciliation.
+- Non-2xx responses for invalid signatures/events, provider configuration failures, and event-ID collisions. Monitor these responses because Moyasar may retry them and eventually drop the delivery.
+
+An HTTP 2xx response is not proof that the refund was applied to the platform ledger. Operators must inspect the durable event and reconciliation outcome. Never issue another refund POST merely because the platform returned `202`, a webhook was retried, or an event is quarantined.
+
 ## Evidence to retain
 
 - Commit SHA and successful CI run URL.
