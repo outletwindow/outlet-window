@@ -43,6 +43,44 @@ describe("PostgreSQL payment webhook inbox", () => {
     expect(mock.query.mock.calls[1]?.[0]).toContain("status='processing'");
   });
 
+  it("does not finalize a receipt after its worker lease expires", async () => {
+    const mock = poolWithQuery(() => ({ rows: [], rowCount: 0 }));
+    const inbox = new PostgresPaymentWebhookInbox(mock.pool);
+    await expect(inbox.finalize({
+      receiptId: "receipt-1", status: "applied", workerId: "worker-1"
+    })).resolves.toBe("not_processing");
+    expect(mock.query.mock.calls[0]?.[0]).toContain("lease_expires_at > now()");
+  });
+
+  it("does not reschedule a receipt after its worker lease expires", async () => {
+    const mock = poolWithQuery(() => ({ rows: [], rowCount: 0 }));
+    const inbox = new PostgresPaymentWebhookInbox(mock.pool);
+    await expect(inbox.releaseForRetry({
+      receiptId: "receipt-1", workerId: "worker-1", delaySeconds: 5, failureCode: "RETRY"
+    })).resolves.toBe("lease_lost");
+    expect(mock.query.mock.calls[0]?.[0]).toContain("lease_expires_at > now()");
+  });
+
+  it("rejects adjustment reconciliation when the worker lease has expired", async () => {
+    const clientQuery = vi.fn(async (sql: string) => {
+      if (sql === "BEGIN" || sql === "ROLLBACK") return { rows: [], rowCount: 0 };
+      return { rows: [{
+        id: "receipt-1", adjustment_id: "adjustment-1", status: "processing",
+        lease_owner: "worker-1", lease_valid: false
+      }], rowCount: 1 };
+    });
+    const client = { query: clientQuery, release: vi.fn() };
+    const pool = { query: vi.fn(), connect: vi.fn(async () => client) } as unknown as PostgresPool;
+    const inbox = new PostgresPaymentWebhookInbox(pool);
+    await expect(inbox.reconcileAdjustment({
+      receiptId: "receipt-1", adjustmentId: "adjustment-1", actorId: "worker-1",
+      workerId: "worker-1", confirmed: false
+    })).resolves.toBe("not_processing");
+    expect(clientQuery.mock.calls[1]?.[0]).toContain("lease_expires_at > now()");
+    expect(clientQuery).toHaveBeenCalledWith("ROLLBACK");
+    expect(client.release).toHaveBeenCalledOnce();
+  });
+
   it("rejects malformed identifiers and oversized payloads", async () => {
     const mock = poolWithQuery(() => ({ rows: [], rowCount: 0 }));
     const inbox = new PostgresPaymentWebhookInbox(mock.pool);
