@@ -227,6 +227,8 @@ describe("PostgresExternalInventoryReservationEvidenceStore",()=>{
       providerKey:"pos-acme",providerReservationReference:"external-hold-1"
     },"2026-11-14T12:05:00.000Z");
     expect(db.calls.filter(c=>c.sql.startsWith("INSERT INTO inventory_provider_reservation_release_intents"))).toHaveLength(2);
+    const localFinalize = db.calls.find(c => c.sql.startsWith("UPDATE inventory_reservations SET status"));
+    expect(localFinalize?.values[5]).toBe("2026-11-14T12:05:00.000Z");
   });
 
   it("does not change the local ledger when provider release is unsupported",async()=>{
