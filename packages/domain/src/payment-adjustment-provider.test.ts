@@ -34,6 +34,21 @@ describe("payment adjustment provider adapter", () => {
     expect(JSON.parse(String(request?.body))).toMatchObject({ amountMinor: 2500, currency: "SAR" });
   });
 
+  it("passes the verified original payment reference for refund commands", async () => {
+    let body: Record<string, unknown> | undefined;
+    const provider = createHttpPaymentAdjustmentProvider({
+      endpoint: "https://gateway.example/payments/adjust", bearerToken: "secret-token",
+      fetchImpl: async (_url, init) => {
+        body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return new Response(JSON.stringify({ status: "accepted", providerReference: "refund-ref-1" }), { status: 200 });
+      }
+    });
+    await expect(provider.submit({
+      ...command, direction: "refund", originalPaymentReference: "moyasar-original-payment-1"
+    })).resolves.toMatchObject({ status: "accepted" });
+    expect(body?.originalPaymentReference).toBe("moyasar-original-payment-1");
+  });
+
   it("quarantines network failures because provider execution may already have occurred", async () => {
     const provider = createHttpPaymentAdjustmentProvider({
       endpoint: "https://gateway.example/payments/adjust", bearerToken: "secret-token",
