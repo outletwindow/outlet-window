@@ -59,7 +59,9 @@ VALUES ('provider-evidence-reservation','provider-evidence-merchant','provider-e
 INSERT INTO inventory_provider_reservation_evidence
 (tenant_id,reservation_id,integration_id,provider_key,provider_reservation_reference,expires_at)
 VALUES ('provider-evidence-tenant','provider-evidence-reservation','provider-evidence-pos',
-        'pos-evidence','external-hold-1',now()+interval '15 minutes');
+        'pos-evidence','external-hold-1',
+        (SELECT expires_at FROM inventory_reservations
+         WHERE tenant_id='provider-evidence-tenant' AND id='provider-evidence-reservation'));
 
 DO $$
 BEGIN
