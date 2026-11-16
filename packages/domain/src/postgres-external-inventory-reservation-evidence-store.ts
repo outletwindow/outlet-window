@@ -43,7 +43,7 @@ export class PostgresExternalInventoryReservationEvidenceStore implements Extern
       reservationId: string;
       releasedAtUtc: string;
     },
-    releaseProvider: (evidence: { providerKey: string; providerReservationReference: string }) =>
+    releaseProvider: (evidence: { providerKey: string; providerReservationReference: string }, releasedAtUtc: string) =>
       Promise<InventoryReservationReleaseResult>
   ): Promise<InventoryReservationReleaseResult> {
     const request = input.request;
