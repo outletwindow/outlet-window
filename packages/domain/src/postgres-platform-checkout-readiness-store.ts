@@ -233,7 +233,7 @@ export class PostgresPlatformCheckoutReadinessStore {
 
       const totals = await client.query<ItemTotals>(
         `SELECT s.id AS suborder_id, COUNT(i.id)::int AS item_count,
-                COALESCE(SUM(i.quantity::bigint * i.unit_price_minor), 0)::text AS subtotal_minor
+                COALESCE(SUM(i.quantity::numeric * i.unit_price_minor::numeric), 0)::text AS subtotal_minor
          FROM merchant_suborders s
          LEFT JOIN customer_order_items i
            ON i.order_id = s.order_id AND i.suborder_id = s.id
