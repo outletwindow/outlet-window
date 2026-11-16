@@ -16,9 +16,9 @@ if(!/^[a-zA-Z0-9._-]{1,100}$/.test(providerKey))
   throw new Error("PAYMENT_ADJUSTMENT_PROVIDER_KEY_REQUIRED");
 let provider: ReturnType<typeof createHttpPaymentAdjustmentProvider> | MoyasarPaymentAdjustmentProvider;
 if(providerKey==="moyasar"){
-  const moyasarSecretKey=process.env.MOYASAR_SECRET_KEY ?? "";
+  const moyasarSecretKey=process.env.MOYASAR_SANDBOX_SECRET_KEY ?? "";
   if(!/^sk_test_[A-Za-z0-9]+$/.test(moyasarSecretKey))
-    throw new Error("MOYASAR_TEST_SECRET_KEY_REQUIRED_FOR_SANDBOX_REFUNDS");
+    throw new Error("MOYASAR_SANDBOX_SECRET_KEY_REQUIRED");
   provider=new MoyasarPaymentAdjustmentProvider(
     new MoyasarPaymentRefundClient({secretKey:moyasarSecretKey})
   );
