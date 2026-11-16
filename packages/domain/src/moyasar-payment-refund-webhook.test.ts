@@ -17,14 +17,15 @@ const rawBody = JSON.stringify({
 
 function makeProcessor(options: { verified?: boolean; secret?: string | null; outcome?: string } = {}) {
   const verify = vi.fn(() => options.verified ?? true);
+  const secretResolver = vi.fn(async () => options.secret === undefined ? "test-webhook-secret" : options.secret);
   const recordAndReconcileMoyasarRefund = vi.fn(async () =>
     (options.outcome ?? "applied") as "applied");
   const processor = new MoyasarPaymentRefundWebhookProcessor({
-    secretResolver: vi.fn(async () => options.secret === undefined ? "test-webhook-secret" : options.secret),
+    secretResolver,
     verifier: { verify },
     inbox: { recordAndReconcileMoyasarRefund }
   });
-  return { processor, verify, recordAndReconcileMoyasarRefund };
+  return { processor, verify, secretResolver, recordAndReconcileMoyasarRefund };
 }
 
 describe("Moyasar payment refund webhook processor", () => {
@@ -60,6 +61,16 @@ describe("Moyasar payment refund webhook processor", () => {
     await expect(malformed.processor.process({ providerKey: "moyasar", rawBody: "{" }))
       .resolves.toEqual({ outcome: "invalid_signature_or_event" });
     expect(malformed.recordAndReconcileMoyasarRefund).not.toHaveBeenCalled();
+  });
+
+  it("rejects oversized webhook bodies before secret lookup or persistence", async () => {
+    const mock = makeProcessor();
+    await expect(mock.processor.process({
+      providerKey: "moyasar", rawBody: "x".repeat(65_537)
+    })).resolves.toEqual({ outcome: "invalid_signature_or_event" });
+    expect(mock.secretResolver).not.toHaveBeenCalled();
+    expect(mock.verify).not.toHaveBeenCalled();
+    expect(mock.recordAndReconcileMoyasarRefund).not.toHaveBeenCalled();
   });
 
   it("preserves reconciliation quarantine and idempotent duplicate outcomes", async () => {
