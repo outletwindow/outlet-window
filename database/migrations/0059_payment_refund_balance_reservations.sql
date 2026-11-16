@@ -19,6 +19,12 @@ CREATE TABLE payment_refund_reservations (
 CREATE INDEX payment_refund_reservations_capture_idx
   ON payment_refund_reservations(tenant_id,provider_key,original_payment_reference)
   WHERE status <> 'released';
+-- Moyasar moves a successfully partially refunded payment to "refunded"; its
+-- refund endpoint accepts only paid/captured states. Permit one active refund
+-- operation per original payment until a definitive rejection releases it.
+CREATE UNIQUE INDEX payment_refund_reservations_one_active_per_capture_idx
+  ON payment_refund_reservations(tenant_id,provider_key,original_payment_reference)
+  WHERE status <> 'released';
 
 -- Existing jobs are included in the reserved balance. A failed provider rejection
 -- is released; submitted, queued and ambiguous jobs continue consuming capacity.
@@ -42,7 +48,12 @@ BEGIN
         AND o.status <> 'failed'
       GROUP BY o.tenant_id,o.provider_key,o.original_payment_reference
     ) totals
-    WHERE reserved_minor > captured_minor
+    WHERE reserved_minor > captured_minor OR (
+      SELECT COUNT(*) FROM payment_refund_reservations r
+      WHERE r.tenant_id=totals.tenant_id AND r.provider_key=totals.provider_key
+        AND r.original_payment_reference=totals.original_payment_reference
+        AND r.status <> 'released'
+    ) > 1
   ) THEN
     RAISE EXCEPTION 'existing_refund_submissions_exceed_verified_capture_balance';
   END IF;
@@ -97,6 +108,15 @@ BEGIN
      OR NEW.original_payment_reference IS DISTINCT FROM v_reference
      OR v_currency <> v_capture_currency THEN
     RAISE EXCEPTION 'refund_reservation_requires_exact_verified_capture'
+      USING ERRCODE='23514';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM payment_refund_reservations
+    WHERE tenant_id=NEW.tenant_id AND provider_key=NEW.provider_key
+      AND original_payment_reference=v_reference AND status <> 'released'
+  ) THEN
+    RAISE EXCEPTION 'original_payment_already_has_active_refund_operation'
       USING ERRCODE='23514';
   END IF;
 
