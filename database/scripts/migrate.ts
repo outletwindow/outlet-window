@@ -74,7 +74,8 @@ async function main(): Promise<void> {
       { version: "0055_payment_adjustment_submission_outbox", file: "0055_payment_adjustment_submission_outbox.sql" },
       { version: "0056_payment_adjustment_submission_outbox_guards", file: "0056_payment_adjustment_submission_outbox_guards.sql" },
       { version: "0057_payment_adjustment_outcome_reconciliation", file: "0057_payment_adjustment_outcome_reconciliation.sql" },
-      { version: "0058_payment_adjustment_original_capture_binding", file: "0058_payment_adjustment_original_capture_binding.sql" }
+      { version: "0058_payment_adjustment_original_capture_binding", file: "0058_payment_adjustment_original_capture_binding.sql" },
+      { version: "0059_payment_refund_balance_reservations", file: "0059_payment_refund_balance_reservations.sql" }
     ].map(async migration => ({
       version: migration.version,
       sql: await readFile(resolve(process.cwd(), `../../database/migrations/${migration.file}`), "utf8")
