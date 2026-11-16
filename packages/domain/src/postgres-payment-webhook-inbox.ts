@@ -170,14 +170,13 @@ export class PostgresPaymentWebhookInbox {
 
       const active = await client.query<{
         id: string; adjustment_id: string; amount_minor: string; status: string;
-        provider_key: string | null; provider_reference: string | null; adjustment_status: string;
-        submission_status: string; submission_provider_reference: string | null;
+        provider_key: string | null; adjustment_status: string;
+        submission_status: string;
         currency: string; previous_total_minor: string; proposed_total_minor: string;
         order_id: string; customer_id: string;
       }>(
         `SELECT r.id,r.adjustment_id,r.amount_minor,r.status,
-                a.provider_key,a.provider_reference,a.status AS adjustment_status,
-                o.status AS submission_status,o.provider_reference AS submission_provider_reference,
+                a.provider_key,a.status AS adjustment_status,o.status AS submission_status,
                 a.currency,a.previous_total_minor,a.proposed_total_minor,a.order_id,a.customer_id
          FROM payment_refund_reservations r
          JOIN customer_payment_adjustments a
@@ -226,11 +225,7 @@ export class PostgresPaymentWebhookInbox {
       const expectedCumulative = confirmedMinor + Number(refund.amount_minor);
       if (refund.status !== "reserved" || refund.adjustment_status !== "provider_pending" ||
           refund.provider_key !== "moyasar" ||
-          (refund.provider_reference !== null && refund.provider_reference !== input.providerPaymentReference) ||
           !["processing","submitted"].includes(refund.submission_status) ||
-          (refund.submission_status === "submitted" && refund.submission_provider_reference === null) ||
-          (refund.submission_provider_reference !== null &&
-            refund.submission_provider_reference !== input.providerPaymentReference) ||
           refund.currency !== input.currency || refund.order_id !== original.order_id ||
           !Number.isSafeInteger(expectedCumulative) ||
           input.refundedMinor !== expectedCumulative ||
@@ -264,19 +259,16 @@ export class PostgresPaymentWebhookInbox {
 
       await client.query(
         `UPDATE customer_payment_adjustments
-         SET status='provider_confirmed',
-             provider_reference=COALESCE(provider_reference,$4),
-             provider_confirmed_at=$3,updated_at=$3
+         SET status='provider_confirmed',provider_confirmed_at=$3,updated_at=$3
          WHERE tenant_id=$1 AND id=$2 AND status='provider_pending'`,
-        [original.tenant_id,refund.adjustment_id,input.refundedAtUtc,input.providerPaymentReference]
+        [original.tenant_id,refund.adjustment_id,input.refundedAtUtc]
       );
       await client.query(
         `UPDATE payment_adjustment_submission_outbox
-         SET status='submitted',provider_reference=COALESCE(provider_reference,$3),
-             completed_at=$4,lease_owner=NULL,lease_expires_at=NULL,updated_at=$4
-         WHERE tenant_id=$1 AND adjustment_id=$2 AND status='processing'
-           AND (provider_reference IS NULL OR provider_reference=$3)`,
-        [original.tenant_id,refund.adjustment_id,input.providerPaymentReference,now]
+         SET status='submitted',completed_at=$3,
+             lease_owner=NULL,lease_expires_at=NULL,updated_at=$3
+         WHERE tenant_id=$1 AND adjustment_id=$2 AND status='processing'`,
+        [original.tenant_id,refund.adjustment_id,now]
       );
       await appendAdjustmentEvent(client,
         {id:refund.adjustment_id,tenant_id:original.tenant_id},
