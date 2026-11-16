@@ -67,9 +67,12 @@ describe("atomic Moyasar cumulative refund reconciliation", () => {
     const inbox = new PostgresPaymentWebhookInbox(mock.pool);
     await expect(inbox.recordAndReconcileMoyasarRefund(command)).resolves.toBe("applied");
     expect(mock.calls[0]?.sql).toBe("BEGIN");
+    const submissionLock = mock.calls.findIndex(x =>
+      x.sql.includes("SELECT id FROM payment_adjustment_submission_outbox") && x.sql.includes("FOR UPDATE"));
     const adjustmentLock = mock.calls.findIndex(x => x.sql.includes("SELECT id FROM customer_payment_adjustments"));
     const captureLock = mock.calls.findIndex(x => x.sql.includes("FOR UPDATE") && x.sql.includes("verified_order_payment_captures"));
-    expect(adjustmentLock).toBeGreaterThan(-1);
+    expect(submissionLock).toBeGreaterThan(-1);
+    expect(adjustmentLock).toBeGreaterThan(submissionLock);
     expect(captureLock).toBeGreaterThan(adjustmentLock);
     expect(mock.calls.some(x => x.sql.includes("UPDATE customer_orders"))).toBe(true);
     expect(mock.calls.some(x => x.sql.includes("SET status='provider_confirmed'"))).toBe(true);
