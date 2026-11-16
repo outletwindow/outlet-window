@@ -18,7 +18,10 @@ CREATE OR REPLACE FUNCTION validate_merchant_settlement_approval_actor()
 RETURNS trigger LANGUAGE plpgsql AS $function$
 DECLARE
   batch_merchant_id text;
+  authorized_role text;
 BEGIN
+  -- The timestamp is database-owned; callers cannot backdate an approval.
+  NEW.approved_at := clock_timestamp();
   SELECT merchant_id INTO batch_merchant_id
   FROM merchant_settlement_batches
   WHERE tenant_id=NEW.tenant_id AND id=NEW.batch_id AND status='draft'
@@ -28,25 +31,37 @@ BEGIN
       USING ERRCODE='23514';
   END IF;
 
-  IF NOT EXISTS (
-    SELECT 1
-    FROM identities i
-    JOIN role_assignments r ON r.principal_id=i.id
-    WHERE i.id=NEW.actor_id
-      AND i.principal_type='human'
-      AND i.status='active'
-      AND r.active=true
-      AND r.role IN ('finance','platform_admin','platform_owner')
-      AND r.valid_from <= NEW.approved_at
-      AND (r.valid_until IS NULL OR r.valid_until > NEW.approved_at)
-      AND (
-        r.scope->>'platform'='true'
-        OR r.scope->>'merchantId'=batch_merchant_id
-      )
-  ) THEN
+  PERFORM 1
+  FROM identities i
+  JOIN role_assignments r ON r.principal_id=i.id
+  WHERE i.id=NEW.actor_id
+    AND i.principal_type='human'
+    AND i.status='active'
+    AND r.active=true
+    AND r.role IN ('finance','platform_admin','platform_owner')
+    AND r.valid_from <= NEW.approved_at
+    AND (r.valid_until IS NULL OR r.valid_until > NEW.approved_at)
+    AND (
+      r.scope->>'platform'='true'
+      OR r.scope->>'merchantId'=batch_merchant_id
+    )
+  FOR SHARE OF i,r;
+  IF NOT FOUND THEN
     RAISE EXCEPTION 'settlement_approval_actor_lacks_active_finance_scope'
       USING ERRCODE='42501';
   END IF;
+
+  INSERT INTO audit_events
+    (id,schema_version,event_type,category,occurred_at,actor_id,actor_type,actor_role,
+     action,outcome,resource_type,resource_id,tenant_id,merchant_id,correlation_id,
+     source,severity,approval_id,metadata)
+  VALUES
+    ('settlement-approval-audit-' || NEW.id,1,'merchant_settlement.approved',
+     'financial_settlement',NEW.approved_at,NEW.actor_id,'platform_user',
+     'finance','approve','success','merchant_settlement_batch',NEW.batch_id,
+     NEW.tenant_id,batch_merchant_id,'settlement-approval-' || NEW.batch_id,
+     'database_trigger','high',NEW.id,
+     jsonb_build_object('decision',NEW.decision,'approvalId',NEW.id));
   RETURN NEW;
 END
 $function$;
