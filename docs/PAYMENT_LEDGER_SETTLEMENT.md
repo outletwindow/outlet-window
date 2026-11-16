@@ -22,6 +22,14 @@ Support configurable models by country, merchant contract and payment provider:
 
 Do not enable a model until legal, regulatory and payment-provider approval is confirmed.
 
+## 3A. Scheduled Checkout Payment Sequence
+
+For a scheduled order, payment is collected at checkout according to the disclosed payment method behavior. After provider-confirmed capture, Order Management requests an immediate exact-variant inventory reservation from the merchant branch. Preparation is scheduled for the calculated release time; it is not delayed until then to create the order or reserve stock.
+
+If payment fails, the order is not confirmed and inventory reservation is not requested. If payment succeeds but stock cannot be reserved, keep the order in an explicit exception/customer-choice state and show eligible alternatives. If the customer declines or no alternative is available, create a refund linked to the original payment. Refund execution must be idempotent and provider-confirmed. Never silently substitute an item.
+
+Some payment methods may use authorization followed by capture rather than immediate capture. The UI must accurately disclose whether funds are captured or only held. A payment status must always come from the payment provider, never from an order status change.
+
 ## 4. Payment Lifecycle
 1. PAYMENT_INITIATED
 2. PAYMENT_PENDING
@@ -110,4 +118,33 @@ Provide authorized reports for:
 - Access and approvals are enforced.
 
 ## 13. Implementation Status
-Specification only. No payment provider, bank account, wallet, money custody or production settlement integration is claimed.
+
+Partial implementation — database foundation only; this is not a production settlement or payout system.
+
+Implemented in migration 0049:
+- Tenant- and currency-scoped double-entry accounts, journals and journal lines.
+- A journal must balance before posting; posted journals and their lines are immutable.
+- Idempotent journal writes are provided by the domain journal service.
+
+Implemented in migration 0050:
+- Merchant-scoped settlement batches and suborder lines.
+- Settlement lines must reference a fulfilled suborder, match its recorded subtotal and order currency, and include a contract reference plus an arithmetically reconciled deduction breakdown.
+- A suborder can appear in at most one settlement line.
+- Approval requires a matching posted journal that debits CUSTOMER_FUNDS_HELD for gross proceeds, credits MERCHANT_PAYABLE for net proceeds, and allocates deductions to other credit accounts.
+- Approved batches and their lines are immutable.
+- Migration 0062 requires two distinct active human approvers with a current finance, platform-admin or platform-owner role scoped to the merchant (or explicitly platform-wide). Approval timestamps are database-generated, approval records are append-only, role rows are locked during authorization, and each approval writes an append-only audit event. This remains a database guard, not an authenticated approval API or a maker-versus-checker control.
+- Migration 0053 requires draft batches to have no journal reference and enforces one settlement batch per posted journal, preventing a journal from being reused to approve multiple batches.
+- Migration 0054 enforces single-use provider references for payment adjustments within a tenant and provider namespace; legacy rows without a provider key share a guarded legacy namespace.
+- Migration 0055 adds a tenant-scoped durable payment-adjustment submission outbox with a stable provider idempotency key, leased processing state, retry scheduling and dead-letter state. Queue creation is transactionally coupled to the adjustment's transition into provider-pending.
+- Migration 0056 enforces the outbox's initial provider-pending identity, immutable adjustment/provider/idempotency identity, monotonic attempt count and permitted queue/lease/submitted/failed/dead-letter state transitions at the database boundary. Migration 0057 adds a terminal `reconciliation_required` quarantine state for requests whose provider outcome is ambiguous; the worker never automatically resubmits those requests. Migration 0058 binds each refund outbox entry to the exact verified original payment capture, enforces provider/currency/amount consistency, and makes that reference immutable. Refund submissions without a matching verified capture are rejected.
+- A separate worker claims only the configured provider queue, submits the same idempotency key on retries, and persists provider acceptance plus the immutable adjustment event in one database transaction. Explicit rate-limit responses are rescheduled; ambiguous network failures, server errors, malformed success responses and unexpected post-submit worker errors are quarantined as `reconciliation_required` for manual/provider reconciliation. They are never blindly resubmitted. Exhausted leases are dead-lettered for reconciliation.
+- The worker refuses to start unless `PAYMENT_ADJUSTMENT_ENVIRONMENT=sandbox` and sandbox endpoint/token settings are supplied. This is a generic HTTPS adapter contract, not a verified provider-specific Moyasar/HyperPay/Tap/Stripe implementation.
+
+Not implemented or enabled:
+- Contract/commission/tax policy calculation or independent verification of the supplied contract reference and deduction amounts.
+- An authenticated approval API and maker-versus-checker enforcement (the batch schema does not yet identify its creator).
+- Provider payout execution, bank transfer, wallet transfer, payout confirmation, or settlement reconciliation against bank/provider statements.
+- Refund execution or production money custody.
+- Provider-specific Moyasar, HyperPay, Tap Payments and Stripe adjustment adapters, provider-specific webhook/reconciliation contract tests, and production activation. When `PAYMENT_ADJUSTMENT_PROVIDER_KEY` is configured, the customer consent endpoint now atomically records consent and queues the durable outbox; without that setting it records consent only. The generic HTTPS adapter/worker remains sandbox-only and is not a certified integration for any named provider.
+
+The database approval transition is an accounting-record control, not evidence that a merchant was paid. No live payment, payout, bank account or money movement is claimed. Legal, regulatory, payment-provider and accounting review remains required before activation.

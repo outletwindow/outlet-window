@@ -1,0 +1,104 @@
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
+import { Pool } from "pg";
+import { applyPostgresMigrations } from "../../packages/domain/src/postgres-migrations.js";
+import type { PostgresClient } from "../../packages/domain/src/postgres-iam-store.js";
+
+async function main(): Promise<void> {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) throw new Error("DATABASE_URL is required to run database migrations");
+
+  const pool = new Pool({
+    connectionString,
+    max: 1,
+    connectionTimeoutMillis: 5_000,
+    ...(process.env.NODE_ENV === "production" ? { ssl: { rejectUnauthorized: true } } : {})
+  });
+
+  try {
+    const migrations = await Promise.all([
+      { version: "0001_identity_access_sessions", file: "0001_identity_access_sessions.sql" },
+      { version: "0002_merchants_branches", file: "0002_merchants_branches.sql" },
+      { version: "0003_audit_events", file: "0003_audit_events.sql" },
+      { version: "0004_customer_orders", file: "0004_customer_orders.sql" },
+      { version: "0005_marketplace_order_tenancy", file: "0005_marketplace_order_tenancy.sql" },
+      { version: "0006_scheduled_task_outbox", file: "0006_scheduled_task_outbox.sql" },
+      { version: "0007_branch_inventory_reservations", file: "0007_branch_inventory_reservations.sql" },
+      { version: "0008_scheduled_task_inbox_leases", file: "0008_scheduled_task_inbox_leases.sql" },
+      { version: "0009_fulfillment_provider_receipts", file: "0009_fulfillment_provider_receipts.sql" },
+      { version: "0010_customer_order_editing_and_delivery_destination", file: "0010_customer_order_editing_and_delivery_destination.sql" },
+      { version: "0011_service_areas_and_pricing_rules", file: "0011_service_areas_and_pricing_rules.sql" },
+      { version: "0012_branch_geolocation", file: "0012_branch_geolocation.sql" },
+      { version: "0013_payment_adjustment_consents", file: "0013_payment_adjustment_consents.sql" },
+      { version: "0014_payment_provider_webhook_inbox", file: "0014_payment_provider_webhook_inbox.sql" },
+      { version: "0015_multi_provider_integration_hub", file: "0015_multi_provider_integration_hub.sql" },
+      { version: "0016_payment_webhook_worker_envelope", file: "0016_payment_webhook_worker_envelope.sql" },
+      { version: "0017_self_healing_incidents", file: "0017_self_healing_incidents.sql" },
+      { version: "0018_commerce_catalog", file: "0018_commerce_catalog.sql" },
+      { version: "0019_salla_oauth_vault", file: "0019_salla_oauth_vault.sql" },
+      { version: "0020_inventory_reservation_line_scope", file: "0020_inventory_reservation_line_scope.sql" },
+      { version: "0021_unique_inventory_handover_evidence", file: "0021_unique_inventory_handover_evidence.sql" },
+      { version: "0022_fulfillment_handover_event_inbox", file: "0022_fulfillment_handover_event_inbox.sql" },
+      { version: "0023_fulfillment_provider_branch_scopes", file: "0023_fulfillment_provider_branch_scopes.sql" },
+      { version: "0024_merchant_order_item_preparation_checks", file: "0024_merchant_order_item_preparation_checks.sql" },
+      { version: "0025_immutable_preparation_check_evidence", file: "0025_immutable_preparation_check_evidence.sql" },
+      { version: "0026_block_preparation_evidence_truncate", file: "0026_block_preparation_evidence_truncate.sql" },
+      { version: "0027_verified_order_payment_captures", file: "0027_verified_order_payment_captures.sql" },
+      { version: "0028_provider_payment_intents", file: "0028_provider_payment_intents.sql" },
+      { version: "0029_initial_payment_capture_webhook_inbox", file: "0029_initial_payment_capture_webhook_inbox.sql" },
+      { version: "0030_checkout_recovery_cases", file: "0030_checkout_recovery_cases.sql" },
+      { version: "0031_positive_verified_payment_capture", file: "0031_positive_verified_payment_capture.sql" },
+      { version: "0032_payment_intent_creation_attempts", file: "0032_payment_intent_creation_attempts.sql" },
+      { version: "0033_payment_intent_creation_attempt_expiry", file: "0033_payment_intent_creation_attempt_expiry.sql" },
+      { version: "0034_catalog_product_publication", file: "0034_catalog_product_publication.sql" },
+      { version: "0035_customer_durable_carts", file: "0035_customer_durable_carts.sql" },
+      { version: "0036_inventory_catalog_variant_identity", file: "0036_inventory_catalog_variant_identity.sql" },
+      { version: "0037_order_item_catalog_variant_scope", file: "0037_order_item_catalog_variant_scope.sql" },
+      { version: "0038_immutable_checkout_pricing_snapshot", file: "0038_immutable_checkout_pricing_snapshot.sql" },
+      { version: "0039_single_initial_capture_per_order", file: "0039_single_initial_capture_per_order.sql" },
+      { version: "0040_paid_checkout_inventory_reservation_jobs", file: "0040_paid_checkout_inventory_reservation_jobs.sql" },
+      { version: "0041_branch_inventory_snapshot_watermark", file: "0041_branch_inventory_snapshot_watermark.sql" },
+      { version: "0042_branch_inventory_reconciliation_alerts", file: "0042_branch_inventory_reconciliation_alerts.sql" },
+      { version: "0043_merchant_inventory_provider_branch_scopes", file: "0043_merchant_inventory_provider_branch_scopes.sql" },
+      { version: "0044_external_inventory_reservation_evidence", file: "0044_external_inventory_reservation_evidence.sql" },
+      { version: "0045_checkout_recovery_suborder_scope", file: "0045_checkout_recovery_suborder_scope.sql" },
+      { version: "0046_checkout_recovery_reservation_scope", file: "0046_checkout_recovery_reservation_scope.sql" },
+      { version: "0047_checkout_recovery_reservation_error_codes", file: "0047_checkout_recovery_reservation_error_codes.sql" },
+      { version: "0048_suborder_delivery_quote_snapshots", file: "0048_suborder_delivery_quote_snapshots.sql" },
+      { version: "0049_double_entry_financial_journal", file: "0049_double_entry_financial_journal.sql" },
+      { version: "0050_merchant_settlement_batches", file: "0050_merchant_settlement_batches.sql" },
+      { version: "0051_inventory_provider_reservation_release_intents", file: "0051_inventory_provider_reservation_release_intents.sql" },
+      { version: "0052_payment_adjustment_provider_binding", file: "0052_payment_adjustment_provider_binding.sql" },
+      { version: "0053_merchant_settlement_journal_uniqueness", file: "0053_merchant_settlement_journal_uniqueness.sql" },
+      { version: "0054_payment_adjustment_provider_reference_uniqueness", file: "0054_payment_adjustment_provider_reference_uniqueness.sql" },
+      { version: "0055_payment_adjustment_submission_outbox", file: "0055_payment_adjustment_submission_outbox.sql" },
+      { version: "0056_payment_adjustment_submission_outbox_guards", file: "0056_payment_adjustment_submission_outbox_guards.sql" },
+      { version: "0057_payment_adjustment_outcome_reconciliation", file: "0057_payment_adjustment_outcome_reconciliation.sql" },
+      { version: "0058_payment_adjustment_original_capture_binding", file: "0058_payment_adjustment_original_capture_binding.sql" },
+      { version: "0059_payment_refund_balance_reservations", file: "0059_payment_refund_balance_reservations.sql" },
+      { version: "0060_payment_refund_webhook_reconciliation_state", file: "0060_payment_refund_webhook_reconciliation_state.sql" },
+      { version: "0061_moyasar_submission_reference_optional", file: "0061_moyasar_submission_reference_optional.sql" },
+      { version: "0062_merchant_settlement_dual_approval", file: "0062_merchant_settlement_dual_approval.sql" }
+    ].map(async migration => ({
+      version: migration.version,
+      sql: await readFile(resolve(process.cwd(), `../../database/migrations/${migration.file}`), "utf8")
+    })));
+    const client = await pool.connect();
+    try {
+      const result = await applyPostgresMigrations(
+        client as unknown as PostgresClient,
+        migrations
+      );
+      process.stdout.write(JSON.stringify(result) + "\n");
+    } finally {
+      client.release();
+    }
+  } finally {
+    await pool.end();
+  }
+}
+
+main().catch(error => {
+  process.stderr.write(`Database migration failed: ${error instanceof Error ? error.message : "unknown error"}\n`);
+  process.exitCode = 1;
+});
