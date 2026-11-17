@@ -21,6 +21,7 @@ import type { BranchInventoryRecord } from "../../../packages/domain/src/postgre
 import type { InventoryReservationFinalizeResult } from "../../../packages/domain/src/postgres-branch-inventory-reservation-lifecycle.js";
 import type { RecordPreparationCheckInput, RecordPreparationCheckResult } from "../../../packages/domain/src/postgres-merchant-order-item-preparation.js";
 import type { CreateCustomerCheckoutInput, CustomerCheckoutResult } from "../../../packages/domain/src/postgres-customer-checkout.js";
+import type { CourierTaskStatus } from "../../../packages/domain/src/courier-task.js";
 
 export interface SallaOAuthFlow {
   begin(input: { tenantId: string; integrationId: string }): Promise<{ authorizationUrl: string }>;
@@ -137,6 +138,10 @@ export interface AppOptions {
   /** Durable audit writer. Protected operations are not executed if their audit write fails. */
   auditEvents?: AuditEventWriter;
   orderTransitions?: OrderTransitionWriter;
+  courierTasks?: {
+    listForCourier(input: { tenantId: string; courierId: string; limit?: number }): Promise<import("../../../packages/domain/src/courier-task.js").CourierTask[]>;
+    transition(input: { tenantId: string; taskId: string; courierId: string; nextStatus: CourierTaskStatus; expectedVersion: number; pickupCode?: string; reason?: string }): Promise<import("../../../packages/domain/src/postgres-courier-task-store.js").CourierTaskTransitionOutcome>;
+  };
   merchantOrderItemPreparation?: { record(input: RecordPreparationCheckInput): Promise<RecordPreparationCheckResult> };
   customerDeliveryDestinations?: CustomerDeliveryDestinationService;
   customerPaymentAdjustments?: CustomerPaymentAdjustmentActions;
@@ -290,6 +295,57 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     version: "v1",
     status: "foundation"
   }));
+
+  app.get("/api/v1/courier/tasks", async (request, reply) => {
+    const auth = await authorizeRequest(request, options, actor => ({
+      resource: "courier.delivery_task", action: "read",
+      scope: { merchantId: actor.grants.find(g => g.resource === "courier.delivery_task" && g.scope.merchantId)?.scope.merchantId }
+    }));
+    if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
+    if (!(auth.actor.roles ?? [auth.actor.role]).includes("courier")) return reply.code(403).send({ error: "courier_only" });
+    if (!options.courierTasks) return reply.code(503).send({ error: "courier_tasks_unavailable" });
+    const merchantIds = [...new Set(auth.actor.grants
+      .filter(g => g.resource === "courier.delivery_task" && g.actions.includes("read") && g.scope.merchantId)
+      .map(g => g.scope.merchantId!))];
+    const tasks = (await Promise.all(merchantIds.map(tenantId =>
+      options.courierTasks!.listForCourier({ tenantId, courierId: auth.actor!.id, limit: 100 })
+    ))).flat();
+    return reply.code(200).send({ tasks });
+  });
+
+  app.patch<{ Params: { taskId: string }; Body: unknown }>(
+    "/api/v1/courier/tasks/:taskId/status", async (request, reply) => {
+      const auth = await authorizeRequest(request, options, actor => ({
+        resource: "courier.delivery_task", action: "update",
+        scope: { merchantId: actor.grants.find(g => g.resource === "courier.delivery_task" && g.scope.merchantId)?.scope.merchantId }
+      }));
+      if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
+      if (!(auth.actor.roles ?? [auth.actor.role]).includes("courier")) return reply.code(403).send({ error: "courier_only" });
+      if (!options.courierTasks) return reply.code(503).send({ error: "courier_tasks_unavailable" });
+      const body = request.body as Record<string, unknown> | null;
+      const statuses: CourierTaskStatus[] = ["accepted","heading_to_pickup","arrived_at_pickup","picked_up","in_transit","arrived_at_dropoff","delivered","declined","failed"];
+      if (!body || typeof body.status !== "string" || !statuses.includes(body.status as CourierTaskStatus) ||
+          !Number.isSafeInteger(body.expectedVersion) || (body.expectedVersion as number) < 1 ||
+          (body.pickupCode !== undefined && (typeof body.pickupCode !== "string" || body.pickupCode.length > 100)) ||
+          (body.reason !== undefined && (typeof body.reason !== "string" || body.reason.length > 500))) {
+        return reply.code(400).send({ error: "invalid_courier_task_transition" });
+      }
+      const tenantId = auth.actor.grants.find(g => g.resource === "courier.delivery_task" &&
+        g.actions.includes("update") && g.scope.merchantId)?.scope.merchantId;
+      if (!tenantId) return reply.code(403).send({ error: "courier_tenant_scope_missing" });
+      const result = await options.courierTasks.transition({
+        tenantId, taskId: request.params.taskId, courierId: auth.actor.id,
+        nextStatus: body.status as CourierTaskStatus, expectedVersion: body.expectedVersion as number,
+        ...(typeof body.pickupCode === "string" ? { pickupCode: body.pickupCode } : {}),
+        ...(typeof body.reason === "string" ? { reason: body.reason } : {})
+      });
+      if (result.outcome === "not_found") return reply.code(404).send({ error: "courier_task_not_found" });
+      if (result.outcome === "conflict") return reply.code(409).send({ error: "courier_task_version_conflict" });
+      if (result.outcome === "rejected") return reply.code(422).send({ error: result.reason ?? "courier_task_transition_rejected" });
+      return reply.code(200).send({ task: result.task });
+    }
+  );
+
   // Only platform administrators can authorize external inventory providers for a branch.
   app.post<{ Body: unknown }>(
     "/api/v1/platform/inventory-provider-capabilities/hard-reservation/approve",

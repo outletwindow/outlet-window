@@ -8,6 +8,11 @@ export function grantsForAssignments(assignments: readonly RoleAssignment[]): re
   const orderManageRoles = new Set(["merchant_owner", "merchant_admin", "branch_manager"]);
   return assignments.flatMap((assignment): PermissionGrant[] => {
     // Customers may edit only the exact order explicitly present in their active IAM scope.
+    if (assignment.role === "courier") return [{
+      resource: "courier.delivery_task",
+      actions: ["read", "update"] as const,
+      scope: assignment.scope
+    }];
     if (assignment.role === "customer") {
       const grants: PermissionGrant[] = [];
       if (assignment.scope.orderId) grants.push({

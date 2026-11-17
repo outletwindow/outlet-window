@@ -25,6 +25,8 @@ import { PostgresBranchInventoryReservationLifecycle } from "../../../packages/d
 import { PostgresFulfillmentHandoverInbox } from "../../../packages/domain/src/postgres-fulfillment-handover-inbox.js";
 import { PostgresFulfillmentProviderScopeAuthorizer } from "../../../packages/domain/src/postgres-fulfillment-provider-scope-authorizer.js";
 import { PostgresMerchantOrderItemPreparationStore } from "../../../packages/domain/src/postgres-merchant-order-item-preparation.js";
+import { PostgresCourierTaskStore } from "../../../packages/domain/src/postgres-courier-task-store.js";
+import { createHmac } from "node:crypto";
 import { PostgresPaymentIntentStore } from "../../../packages/domain/src/postgres-payment-intent-store.js";
 import { PostgresCustomerPaymentIntentCheckout } from "../../../packages/domain/src/postgres-customer-payment-intent-checkout.js";
 import { PostgresCustomerCartStore } from "../../../packages/domain/src/postgres-customer-cart-store.js";
@@ -140,6 +142,11 @@ export function buildPostgresApp(options: PostgresApiOptions) {
       paymentWebhookSecretResolver: options.paymentWebhookSecretResolver
     }),
     orderTransitions: new PostgresOrderTransitionStore(options.pool),
+    ...(typeof process.env.COURIER_PICKUP_CODE_PEPPER === "string" && process.env.COURIER_PICKUP_CODE_PEPPER.length >= 32
+      ? { courierTasks: new PostgresCourierTaskStore(options.pool,
+          async code => createHmac("sha256", process.env.COURIER_PICKUP_CODE_PEPPER!).update(code, "utf8").digest("hex"),
+          options.now) }
+      : {}),
     customerPaymentAdjustments: options.customerPaymentAdjustments ?? (() => {
       const store = new PostgresPaymentAdjustmentStore(options.pool, options.now);
       const providerKey = process.env.PAYMENT_ADJUSTMENT_PROVIDER_KEY;
