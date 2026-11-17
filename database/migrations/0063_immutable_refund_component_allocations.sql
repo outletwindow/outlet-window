@@ -3,6 +3,7 @@
 CREATE TABLE customer_payment_adjustment_allocations (
   id text PRIMARY KEY,
   tenant_id text NOT NULL,
+  merchant_tenant_id text NOT NULL,
   adjustment_id text NOT NULL,
   order_id text NOT NULL,
   suborder_id text NOT NULL,
@@ -15,7 +16,7 @@ CREATE TABLE customer_payment_adjustment_allocations (
     REFERENCES customer_payment_adjustments(tenant_id,id) ON DELETE RESTRICT,
   FOREIGN KEY (tenant_id,order_id)
     REFERENCES customer_orders(tenant_id,id) ON DELETE RESTRICT,
-  FOREIGN KEY (tenant_id,order_id,suborder_id)
+  FOREIGN KEY (merchant_tenant_id,order_id,suborder_id)
     REFERENCES merchant_suborders(tenant_id,order_id,id) ON DELETE RESTRICT,
   UNIQUE (tenant_id,adjustment_id,suborder_id,component_kind),
   CHECK (
@@ -62,10 +63,11 @@ BEGIN
 
   SELECT * INTO suborder_row
     FROM merchant_suborders
-   WHERE tenant_id=NEW.tenant_id AND order_id=NEW.order_id AND id=NEW.suborder_id;
+   WHERE order_id=NEW.order_id AND id=NEW.suborder_id;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'refund_allocation_suborder_not_found' USING ERRCODE='23503';
   END IF;
+  NEW.merchant_tenant_id := suborder_row.tenant_id;
 
   IF NEW.component_kind='product_subtotal' THEN
     SELECT COUNT(*), MAX((entry->>'amountMinor')::numeric)
@@ -83,7 +85,7 @@ BEGIN
     SELECT COUNT(*),MAX(total_minor::numeric)
       INTO matching_sources,source_cap
       FROM customer_order_suborder_delivery_quotes
-     WHERE tenant_id=NEW.tenant_id AND order_id=NEW.order_id
+     WHERE tenant_id=NEW.merchant_tenant_id AND order_id=NEW.order_id
        AND suborder_id=NEW.suborder_id AND id=NEW.source_reference
        AND currency=NEW.currency;
     IF matching_sources <> 1 OR source_cap IS NULL THEN
