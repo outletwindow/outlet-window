@@ -37,8 +37,9 @@ export class S3CourierProofObjectStorage implements CourierProofObjectStorage {
     private readonly now: () => Date = () => new Date()
   ) {
     this.endpoint = new URL(config.endpoint);
+    if (this.endpoint.search || this.endpoint.hash) throw new Error("Courier proof storage endpoint cannot include query or fragment");
     if (this.endpoint.protocol !== "https:") throw new Error("Courier proof storage endpoint must use HTTPS");
-    if (!/^[a-z0-9][a-z0-9.-]{1,62}$/.test(config.bucket)) throw new Error("Invalid courier proof storage bucket");
+    if (!/^[a-z0-9][a-z0-9.-]{2,62}$/.test(config.bucket)) throw new Error("Invalid courier proof storage bucket");
     if (!/^[a-z0-9-]{1,64}$/.test(config.region)) throw new Error("Invalid courier proof storage region");
   }
 
@@ -104,9 +105,11 @@ export class S3CourierProofObjectStorage implements CourierProofObjectStorage {
     const signature = createHmac("sha256", signingKey(this.config.secretAccessKey, day, this.config.region))
       .update(stringToSign, "utf8").digest("hex");
     const authorization = `AWS4-HMAC-SHA256 Credential=${this.config.accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+    const requestHeaders = { ...headers, authorization };
+    delete requestHeaders.host;
     const response = await this.fetchImpl(url, {
       method: "HEAD",
-      headers: { ...headers, authorization }
+      headers: requestHeaders
     });
     if (response.status === 404) return { exists: false };
     if (!response.ok) throw new Error("Courier proof storage inspection failed");
