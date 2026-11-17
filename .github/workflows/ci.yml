@@ -308,3 +308,7 @@ jobs:
         run: pnpm test
       - name: Build
         run: pnpm build
+      - name: Courier app typecheck and lint
+        run: pnpm --filter @outlet-window/courier-web typecheck && pnpm --filter @outlet-window/courier-web lint
+      - name: Courier app unit tests and static build
+        run: pnpm --filter @outlet-window/courier-web test && pnpm --filter @outlet-window/courier-web build
