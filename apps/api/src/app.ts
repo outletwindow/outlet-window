@@ -123,6 +123,23 @@ export interface OrderTransitionWriter {
   >;
 }
 
+export interface CourierDeliveryEvidenceService {
+  requestProofUpload(input: {
+    tenantId: string; taskId: string; courierId: string;
+    contentType: "image/jpeg" | "image/png" | "image/webp";
+    contentLength: number; contentSha256: string;
+  }): Promise<
+    | { outcome: "upload_created"; uploadId: string; uploadUrl: string; expiresAtUtc: string }
+    | { outcome: "not_found" | "task_not_ready" | "upload_unavailable" }
+  >;
+  finalizeProofUpload(input: {
+    tenantId: string; taskId: string; courierId: string; uploadId: string;
+  }): Promise<
+    | { outcome: "verified"; evidenceId: string; verifiedAtUtc: string }
+    | { outcome: "not_found" | "task_not_ready" | "upload_missing" | "checksum_mismatch" | "invalid_upload" }
+  >;
+}
+
 export interface AppOptions {
   serviceName?: string;
   version?: string;
@@ -138,6 +155,7 @@ export interface AppOptions {
   /** Durable audit writer. Protected operations are not executed if their audit write fails. */
   auditEvents?: AuditEventWriter;
   orderTransitions?: OrderTransitionWriter;
+  courierDeliveryEvidence?: CourierDeliveryEvidenceService;
   courierTasks?: {
     listForCourier(input: { tenantId: string; courierId: string; limit?: number }): Promise<import("../../../packages/domain/src/courier-task.js").CourierTask[]>;
     transition(input: { tenantId: string; taskId: string; courierId: string; nextStatus: CourierTaskStatus; expectedVersion: number; pickupCode?: string; reason?: string }): Promise<import("../../../packages/domain/src/postgres-courier-task-store.js").CourierTaskTransitionOutcome>;
@@ -312,6 +330,74 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     ))).flat();
     return reply.code(200).send({ tasks });
   });
+
+  app.post<{ Params: { taskId: string }; Body: unknown }>(
+    "/api/v1/courier/tasks/:taskId/proof-upload", async (request, reply) => {
+      const auth = await authorizeRequest(request, options, actor => ({
+        resource: "courier.delivery_task", action: "update",
+        scope: { merchantId: actor.grants.find(g => g.resource === "courier.delivery_task" && g.actions.includes("update") && g.scope.merchantId)?.scope.merchantId ?? "" }
+      }));
+      if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
+      if (!(auth.actor.roles ?? [auth.actor.role]).includes("courier")) return reply.code(403).send({ error: "courier_only" });
+      if (!options.courierDeliveryEvidence) return reply.code(503).send({ error: "courier_delivery_evidence_unavailable" });
+      const body = request.body as Record<string, unknown> | null;
+      const contentTypes = ["image/jpeg", "image/png", "image/webp"] as const;
+      if (!body || !contentTypes.includes(body.contentType as typeof contentTypes[number]) ||
+          !Number.isSafeInteger(body.contentLength) || (body.contentLength as number) < 1 ||
+          (body.contentLength as number) > 10 * 1024 * 1024 ||
+          typeof body.contentSha256 !== "string" || !/^[a-f0-9]{64}$/.test(body.contentSha256)) {
+        return reply.code(400).send({ error: "invalid_delivery_proof_upload" });
+      }
+      const tenantIds = [...new Set(auth.actor.grants
+        .filter(g => g.resource === "courier.delivery_task" && g.actions.includes("update") && g.scope.merchantId)
+        .map(g => g.scope.merchantId!))];
+      for (const tenantId of tenantIds) {
+        const result = await options.courierDeliveryEvidence.requestProofUpload({
+          tenantId, taskId: request.params.taskId, courierId: auth.actor.id,
+          contentType: body.contentType as typeof contentTypes[number],
+          contentLength: body.contentLength as number, contentSha256: body.contentSha256
+        });
+        if (result.outcome === "not_found") continue;
+        if (result.outcome === "task_not_ready") return reply.code(409).send({ error: "courier_task_not_ready_for_delivery_proof" });
+        if (result.outcome === "upload_unavailable") return reply.code(503).send({ error: "delivery_proof_storage_unavailable" });
+        return reply.code(201).send({
+          uploadId: result.uploadId, uploadUrl: result.uploadUrl, expiresAtUtc: result.expiresAtUtc,
+          requiredHeaders: { "content-type": body.contentType, "x-content-sha256": body.contentSha256 }
+        });
+      }
+      return reply.code(404).send({ error: "courier_task_not_found" });
+    }
+  );
+
+  app.post<{ Params: { taskId: string; uploadId: string }; Body: unknown }>(
+    "/api/v1/courier/tasks/:taskId/proof-upload/:uploadId/complete", async (request, reply) => {
+      const auth = await authorizeRequest(request, options, actor => ({
+        resource: "courier.delivery_task", action: "update",
+        scope: { merchantId: actor.grants.find(g => g.resource === "courier.delivery_task" && g.actions.includes("update") && g.scope.merchantId)?.scope.merchantId ?? "" }
+      }));
+      if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
+      if (!(auth.actor.roles ?? [auth.actor.role]).includes("courier")) return reply.code(403).send({ error: "courier_only" });
+      if (!options.courierDeliveryEvidence) return reply.code(503).send({ error: "courier_delivery_evidence_unavailable" });
+      if (!/^[a-zA-Z0-9_-]{8,128}$/.test(request.params.uploadId)) {
+        return reply.code(400).send({ error: "invalid_delivery_proof_upload_id" });
+      }
+      const tenantIds = [...new Set(auth.actor.grants
+        .filter(g => g.resource === "courier.delivery_task" && g.actions.includes("update") && g.scope.merchantId)
+        .map(g => g.scope.merchantId!))];
+      for (const tenantId of tenantIds) {
+        const result = await options.courierDeliveryEvidence.finalizeProofUpload({
+          tenantId, taskId: request.params.taskId, courierId: auth.actor.id, uploadId: request.params.uploadId
+        });
+        if (result.outcome === "not_found") continue;
+        if (result.outcome === "task_not_ready") return reply.code(409).send({ error: "courier_task_not_ready_for_delivery_proof" });
+        if (result.outcome === "upload_missing") return reply.code(409).send({ error: "delivery_proof_object_missing" });
+        if (result.outcome === "checksum_mismatch") return reply.code(422).send({ error: "delivery_proof_checksum_mismatch" });
+        if (result.outcome === "invalid_upload") return reply.code(422).send({ error: "delivery_proof_upload_invalid" });
+        return reply.code(200).send({ outcome: result.outcome, evidenceId: result.evidenceId, verifiedAtUtc: result.verifiedAtUtc });
+      }
+      return reply.code(404).send({ error: "courier_task_not_found" });
+    }
+  );
 
   app.patch<{ Params: { taskId: string }; Body: unknown }>(
     "/api/v1/courier/tasks/:taskId/status", async (request, reply) => {
