@@ -32,6 +32,7 @@ describe("Moyasar payment intent client", () => {
     const [url, init] = fetchImpl.mock.calls[0]!;
     expect(url).toBe("https://api.moyasar.com/v1/payment_intents");
     expect(init?.method).toBe("POST");
+    expect(init?.redirect).toBe("error");
     expect((init?.headers as Record<string, string>).authorization).toBe(
       `Basic ${Buffer.from("sk_test_0123456789abcdef:").toString("base64")}`
     );
