@@ -363,7 +363,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
         if (result.outcome !== "upload_created") return reply.code(503).send({ error: "delivery_proof_upload_unavailable" });
         return reply.code(201).send({
           uploadId: result.uploadId, uploadUrl: result.uploadUrl, expiresAtUtc: result.expiresAtUtc,
-          requiredHeaders: { "content-type": body.contentType, "if-none-match": "*", "x-amz-checksum-sha256": Buffer.from(body.contentSha256, "hex").toString("base64") }
+          requiredHeaders: { "content-type": body.contentType, "if-none-match": "*" }
         });
       }
       return reply.code(404).send({ error: "courier_task_not_found" });
