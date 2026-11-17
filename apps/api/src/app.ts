@@ -360,6 +360,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
         if (result.outcome === "not_found") continue;
         if (result.outcome === "task_not_ready") return reply.code(409).send({ error: "courier_task_not_ready_for_delivery_proof" });
         if (result.outcome === "upload_unavailable") return reply.code(503).send({ error: "delivery_proof_storage_unavailable" });
+        if (result.outcome !== "upload_created") return reply.code(503).send({ error: "delivery_proof_upload_unavailable" });
         return reply.code(201).send({
           uploadId: result.uploadId, uploadUrl: result.uploadUrl, expiresAtUtc: result.expiresAtUtc,
           requiredHeaders: { "content-type": body.contentType, "x-content-sha256": body.contentSha256 }
@@ -393,6 +394,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
         if (result.outcome === "upload_missing") return reply.code(409).send({ error: "delivery_proof_object_missing" });
         if (result.outcome === "checksum_mismatch") return reply.code(422).send({ error: "delivery_proof_checksum_mismatch" });
         if (result.outcome === "invalid_upload") return reply.code(422).send({ error: "delivery_proof_upload_invalid" });
+        if (result.outcome !== "verified") return reply.code(503).send({ error: "delivery_proof_verification_unavailable" });
         return reply.code(200).send({ outcome: result.outcome, evidenceId: result.evidenceId, verifiedAtUtc: result.verifiedAtUtc });
       }
       return reply.code(404).send({ error: "courier_task_not_found" });
