@@ -48,7 +48,8 @@ describe("PostgreSQL API readiness migration gate", () => {
     "0051_inventory_provider_reservation_release_intents",
     "0052_payment_adjustment_provider_binding",
     "0062_moyasar_single_refund_per_payment",
-    "0063_courier_delivery_tasks"
+    "0063_courier_delivery_tasks",
+    "0065_courier_dispatch_offers"
 
   ])("keeps the API unready when migration %s is missing", async missing => {
     const app = buildPostgresApp({
