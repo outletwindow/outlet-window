@@ -13,7 +13,7 @@ const config = {
 };
 
 describe("S3CourierProofObjectStorage", () => {
-  it("creates a short-lived signed PUT URL bound to MIME type and SHA-256", async () => {
+  it("creates a short-lived signed PUT URL bound to MIME type, length, and create-only semantics", async () => {
     const storage = new S3CourierProofObjectStorage(config, vi.fn(), () => new Date("2026-11-17T12:00:00.000Z"));
     const url = new URL(await storage.createUploadUrl({
       objectKey: "courier-delivery-proof/upload-123",
@@ -26,7 +26,7 @@ describe("S3CourierProofObjectStorage", () => {
     expect(url.pathname).toBe("/outlet-window-private/courier-delivery-proof/upload-123");
     expect(url.searchParams.get("X-Amz-Algorithm")).toBe("AWS4-HMAC-SHA256");
     expect(url.searchParams.get("X-Amz-Expires")).toBe("300");
-    expect(url.searchParams.get("X-Amz-SignedHeaders")).toBe("content-length;content-type;host;if-none-match;x-amz-checksum-sha256");
+    expect(url.searchParams.get("X-Amz-SignedHeaders")).toBe("content-length;content-type;host;if-none-match");
     expect(url.searchParams.get("X-Amz-Signature")).toMatch(/^[a-f0-9]{64}$/);
   });
 
