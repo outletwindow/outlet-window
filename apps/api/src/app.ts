@@ -347,7 +347,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
         if (result.outcome === "not_found") continue;
         if (result.outcome === "conflict") return reply.code(409).send({ error: "courier_task_version_conflict" });
         if (result.outcome === "rejected") return reply.code(422).send({ error: result.reason ?? "courier_task_transition_rejected" });
-        return reply.code(200).send({ task: result.task });
+        if (result.outcome === "updated") return reply.code(200).send({ task: result.task });
       }
       return reply.code(404).send({ error: "courier_task_not_found" });
     }
