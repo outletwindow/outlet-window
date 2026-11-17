@@ -30,7 +30,7 @@ describe("S3CourierProofObjectStorage", () => {
   });
 
   it("returns server-validated checksum and object metadata from HEAD", async () => {
-    const fetchImpl = vi.fn(async () => new Response(null, {
+    const fetchImpl = vi.fn(async (_input: string | URL, _init?: RequestInit) => new Response(null, {
       status: 200,
       headers: {
         "content-type": "image/jpeg",
@@ -53,9 +53,9 @@ describe("S3CourierProofObjectStorage", () => {
   });
 
   it("distinguishes a missing object from storage failures", async () => {
-    const missing = new S3CourierProofObjectStorage(config, vi.fn(async () => new Response(null, { status: 404 })));
+    const missing = new S3CourierProofObjectStorage(config, vi.fn(async (_input: string | URL, _init?: RequestInit) => new Response(null, { status: 404 })));
     await expect(missing.inspectObject({ objectKey: "missing" })).resolves.toEqual({ exists: false });
-    const denied = new S3CourierProofObjectStorage(config, vi.fn(async () => new Response(null, { status: 403 })));
+    const denied = new S3CourierProofObjectStorage(config, vi.fn(async (_input: string | URL, _init?: RequestInit) => new Response(null, { status: 403 })));
     await expect(denied.inspectObject({ objectKey: "private" })).rejects.toThrow("inspection failed");
   });
 
