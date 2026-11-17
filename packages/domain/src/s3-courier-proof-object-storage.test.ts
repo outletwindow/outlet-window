@@ -25,7 +25,7 @@ describe("S3CourierProofObjectStorage", () => {
     expect(url.pathname).toBe("/outlet-window-private/courier-delivery-proof/upload-123");
     expect(url.searchParams.get("X-Amz-Algorithm")).toBe("AWS4-HMAC-SHA256");
     expect(url.searchParams.get("X-Amz-Expires")).toBe("300");
-    expect(url.searchParams.get("X-Amz-SignedHeaders")).toBe("content-type;host;x-amz-checksum-sha256");
+    expect(url.searchParams.get("X-Amz-SignedHeaders")).toBe("content-type;host;if-none-match;x-amz-checksum-sha256");
     expect(url.searchParams.get("X-Amz-Signature")).toMatch(/^[a-f0-9]{64}$/);
   });
 
