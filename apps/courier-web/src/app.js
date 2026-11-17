@@ -174,7 +174,7 @@ form.addEventListener("submit", async event => {
     api = null;
     tasks = [];
     render();
-    notify(error instanceof CourierApiError ? error.message : t("connectionRequired"));
+    notify(error instanceof Error ? error.message : t("connectionRequired"));
   } finally {
     setBusy(false);
     render();
