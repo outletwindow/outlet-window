@@ -330,21 +330,26 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
           (body.reason !== undefined && (typeof body.reason !== "string" || body.reason.length > 500))) {
         return reply.code(400).send({ error: "invalid_courier_task_transition" });
       }
-      const tenantId = auth.actor.grants.find(g => g.resource === "courier.delivery_task" &&
-        g.actions.includes("update") && g.scope.merchantId)?.scope.merchantId;
-      if (!tenantId) return reply.code(403).send({ error: "courier_tenant_scope_missing" });
-      const result = await options.courierTasks.transition({
-        tenantId, taskId: request.params.taskId, courierId: auth.actor.id,
+      const tenantIds = [...new Set(auth.actor.grants
+        .filter(g => g.resource === "courier.delivery_task" &&
+          g.actions.includes("update") && g.scope.merchantId)
+        .map(g => g.scope.merchantId!))];
+      if (!tenantIds.length) return reply.code(403).send({ error: "courier_tenant_scope_missing" });
+      const transitionInput = {
+        taskId: request.params.taskId, courierId: auth.actor.id,
         nextStatus: body.status as CourierTaskStatus, expectedVersion: body.expectedVersion as number,
         ...(typeof body.pickupCode === "string" ? { pickupCode: body.pickupCode } : {}),
         ...(typeof body.reason === "string" ? { reason: body.reason } : {})
-      });
-      if (result.outcome !== "updated") {
-        if (result.outcome === "not_found") return reply.code(404).send({ error: "courier_task_not_found" });
+      };
+      // Probe only explicitly granted tenant scopes; stop on the first definitive result.
+      for (const tenantId of tenantIds) {
+        const result = await options.courierTasks.transition({ tenantId, ...transitionInput });
+        if (result.outcome === "not_found") continue;
         if (result.outcome === "conflict") return reply.code(409).send({ error: "courier_task_version_conflict" });
-        return reply.code(422).send({ error: result.reason ?? "courier_task_transition_rejected" });
+        if (result.outcome === "rejected") return reply.code(422).send({ error: result.reason ?? "courier_task_transition_rejected" });
+        return reply.code(200).send({ task: result.task });
       }
-      return reply.code(200).send({ task: result.task });
+      return reply.code(404).send({ error: "courier_task_not_found" });
     }
   );
 

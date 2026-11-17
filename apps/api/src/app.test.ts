@@ -1240,6 +1240,39 @@ describe("courier delivery task API", () => {
     }
   });
 
+  it("updates tasks across every explicitly granted merchant tenant", async () => {
+    const courier: Actor = {
+      id: "courier-multi-tenant", role: "courier", active: true,
+      grants: [
+        { resource: "courier.delivery_task", actions: ["read", "update"], scope: { merchantId: "merchant-one" } },
+        { resource: "courier.delivery_task", actions: ["read", "update"], scope: { merchantId: "merchant-two" } }
+      ]
+    };
+    const transition = vi.fn(async (input: { tenantId: string }) => input.tenantId === "merchant-one"
+      ? { outcome: "not_found" as const }
+      : { outcome: "updated" as const, task: {
+          id: "task-from-second-tenant", tenantId: "merchant-two", orderId: "order-2",
+          suborderId: "suborder-2", courierId: courier.id, status: "accepted" as const,
+          version: 2, updatedAtUtc: new Date().toISOString()
+        } });
+    const api = buildApp({ resolveActor: async () => courier, courierTasks: {
+      listForCourier: vi.fn(async () => []), transition
+    } });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "PATCH", url: "/api/v1/courier/tasks/task-from-second-tenant/status",
+        payload: { status: "accepted", expectedVersion: 1 }
+      });
+      expect(response.statusCode).toBe(200);
+      expect(transition).toHaveBeenNthCalledWith(1, expect.objectContaining({ tenantId: "merchant-one" }));
+      expect(transition).toHaveBeenNthCalledWith(2, expect.objectContaining({ tenantId: "merchant-two" }));
+      expect(response.json().task.tenantId).toBe("merchant-two");
+    } finally {
+      await api.close();
+    }
+  });
+
   it("does not accept a courier identifier from the request body", async () => {
     const courier: Actor = {
       id: "courier-principal-2", role: "courier", active: true,
