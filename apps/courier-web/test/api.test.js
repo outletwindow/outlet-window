@@ -49,3 +49,12 @@ test("preserves API conflict status", async () => {
     error instanceof CourierApiError && error.status === 409
   );
 });
+
+test("rejects insecure or credential-bearing API endpoints", () => {
+  assert.throws(() => createCourierApi({ baseUrl: "http://api.example.test", token }), /courier_api_requires_https/);
+  assert.throws(() => createCourierApi({ baseUrl: "https://user:pass@example.test", token }), /invalid_courier_api_base_url/);
+});
+
+test("allows local HTTP development endpoint", () => {
+  assert.doesNotThrow(() => createCourierApi({ baseUrl: "http://localhost:3000", token }));
+});
