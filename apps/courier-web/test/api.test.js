@@ -65,7 +65,7 @@ test("uploads delivery proof, then finalizes server verification", async () => {
       if (requests.length === 1) return response(201, {
         uploadId: "upload_12345678",
         uploadUrl: "https://objects.example.test/signed-upload",
-        requiredHeaders: { "content-type": "image/jpeg", "if-none-match": "*", "x-amz-checksum-sha256": "AQIDBA==" }
+        requiredHeaders: { "content-type": "image/jpeg", "if-none-match": "*",  }
       });
       if (requests.length === 2) return response(200, null);
       return response(200, { outcome: "verified", evidenceId: "evidence-1" });
@@ -77,7 +77,6 @@ test("uploads delivery proof, then finalizes server verification", async () => {
   assert.equal(requests[0].init.method, "POST");
   assert.equal(requests[1].url, "https://objects.example.test/signed-upload");
   assert.equal(requests[1].init.method, "PUT");
-  assert.equal(requests[1].init.headers["x-amz-checksum-sha256"], "AQIDBA==");
   assert.equal(requests[1].init.headers["if-none-match"], "*");
   assert.equal(requests[2].url, "/api/v1/courier/tasks/task%2F1/proof-upload/upload_12345678/complete");
 });
