@@ -13,7 +13,7 @@ const event = (id: string, suborderId: string, tenantId: string, merchantId: str
   metadata: { orderId: "order-1", previousStatus: "pending_validation", nextStatus: "awaiting_payment" }
 });
 
-function database(options: { parentStatus?: string; version?: number; expiredQuote?: boolean; badOrderTotal?: boolean; hiddenDiscount?: boolean; multiBranch?: boolean; missingDeliveryQuote?: boolean; mismatchedDeliveryQuote?: boolean } = {}) {
+function database(options: { parentStatus?: string; version?: number; expiredQuote?: boolean; badOrderTotal?: boolean; hiddenDiscount?: boolean; multiBranch?: boolean; missingDeliveryQuote?: boolean; mismatchedDeliveryQuote?: boolean; badProductAllocation?: boolean } = {}) {
   const statements: string[] = [];
   const query = vi.fn(async <Row>(sql: string, values?: readonly unknown[]) => {
     statements.push(sql);
@@ -28,6 +28,10 @@ function database(options: { parentStatus?: string; version?: number; expiredQuo
           deliveryQuotes: [
             { merchantId: "merchant-1", branchId: "branch-1", quoteId: "quote-1", ruleId: "rule-1", ruleVersion: 1, totalMinor: 1500 },
             ...(options.multiBranch ? [{ merchantId: "merchant-2", branchId: "branch-2", quoteId: "quote-2", ruleId: "rule-1", ruleVersion: 1, totalMinor: 1500 }] : [])
+          ],
+          suborderProductSubtotals: [
+            { merchantId: "merchant-1", branchId: "branch-1", amountMinor: options.multiBranch ? 5000 : 12000 },
+            ...(options.multiBranch ? [{ merchantId: "merchant-2", branchId: "branch-2", amountMinor: options.badProductAllocation ? 7001 : 7000 }] : [])
           ],
           components: [
             { kind: "product_subtotal", amountMinor: 12000, label: "Products" },
@@ -160,6 +164,18 @@ describe("PostgresPlatformCheckoutReadinessStore", () => {
     expect(result).toEqual({ outcome: "ready", orderId: "order-1", suborderIds: ["sub-1", "sub-2"], parentVersion: 5 });
     expect(db.statements.filter(sql => sql.includes("INSERT INTO audit_events"))).toHaveLength(2);
     expect(db.statements.at(-1)).toBe("COMMIT");
+  });
+
+  it("rejects suborder product allocations that do not match the immutable order-item totals", async () => {
+    const db = database({ multiBranch: true, badProductAllocation: true });
+    const input = { ...baseInput, auditEvents: [
+      event("audit-1", "sub-1", "merchant-tenant-1", "merchant-1", "branch-1"),
+      event("audit-2", "sub-2", "merchant-tenant-2", "merchant-2", "branch-2")
+    ] };
+    const result = await new PostgresPlatformCheckoutReadinessStore(db.pool).transitionToAwaitingPayment(input);
+    expect(result).toEqual({ outcome: "invalid_snapshot" });
+    expect(db.statements).toContain("ROLLBACK");
+    expect(db.statements.some(sql => sql.startsWith("UPDATE"))).toBe(false);
   });
 
   it("rejects a parent total that does not reconcile to the persisted pricing components", async () => {
