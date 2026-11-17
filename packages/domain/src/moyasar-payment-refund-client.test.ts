@@ -34,6 +34,7 @@ describe("Moyasar one-shot payment refund client", () => {
     expect(requests[0]?.init?.method).toBe("GET");
     expect(requests[1]?.url).toBe(`https://api.moyasar.com/v1/payments/${paymentId}/refund`);
     expect(requests[1]?.init?.method).toBe("POST");
+    expect(requests[1]?.init?.redirect).toBe("error");
     expect(JSON.parse(String(requests[1]?.init?.body))).toEqual({ amount: 2_500 });
     const headers = new Headers(requests[1]?.init?.headers);
     expect(headers.get("authorization")).toBe(
