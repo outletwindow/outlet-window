@@ -60,6 +60,7 @@ export interface PostgresApiOptions {
   fulfillmentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
   fulfillmentWebhookAuthorizationResolver?: NonNullable<AppOptions["fulfillmentWebhookAuthorizationResolver"]>;
   sallaOAuthFlow?: SallaOAuthFlow;
+  courierDeliveryEvidence?: AppOptions["courierDeliveryEvidence"];
 }
 
 /**
@@ -142,6 +143,7 @@ export function buildPostgresApp(options: PostgresApiOptions) {
       paymentWebhookSecretResolver: options.paymentWebhookSecretResolver
     }),
     orderTransitions: new PostgresOrderTransitionStore(options.pool),
+    ...(options.courierDeliveryEvidence === undefined ? {} : { courierDeliveryEvidence: options.courierDeliveryEvidence }),
     ...(typeof process.env.COURIER_PICKUP_CODE_PEPPER === "string" && process.env.COURIER_PICKUP_CODE_PEPPER.length >= 32
       ? { courierTasks: new PostgresCourierTaskStore(options.pool,
           async code => createHmac("sha256", process.env.COURIER_PICKUP_CODE_PEPPER!).update(code, "utf8").digest("hex"),
