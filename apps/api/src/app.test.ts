@@ -727,6 +727,7 @@ describe("signed payment provider webhook intake", () => {
       paymentReference: "intent-from-provider", amountMinor: 12500, currency: "SAR",
       capturedAtUtc: new Date().toISOString(), orderId: "client-forged-order"
     });
+    const signatureHeader = makeSignature(captureBody);
     const process = vi.fn(async () => ({ outcome: "recorded" as const, captureId: "capture-api-1" }));
     const record = vi.fn(async () => ({ outcome: "received" as const, receiptId: "wrong-path" }));
     const app = buildApp({
@@ -736,13 +737,13 @@ describe("signed payment provider webhook intake", () => {
     try {
       const response = await app.inject({
         method: "POST", url: "/api/v1/webhooks/payments/psp-a",
-        headers: { "content-type": "application/json", "x-payment-signature": makeSignature(captureBody) },
+        headers: { "content-type": "application/json", "x-payment-signature": signatureHeader },
         payload: captureBody
       });
       expect(response.statusCode).toBe(201);
       expect(response.json()).toEqual({ outcome: "recorded", captureId: "capture-api-1" });
       expect(process).toHaveBeenCalledWith({
-        providerKey: "psp-a", rawBody: captureBody, signatureHeader: makeSignature(captureBody)
+        providerKey: "psp-a", rawBody: captureBody, signatureHeader
       });
       expect(record).not.toHaveBeenCalled();
     } finally { await app.close(); }
