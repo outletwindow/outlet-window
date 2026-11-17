@@ -5,7 +5,7 @@ const translations = {
   ar: {
     role:"تطبيق المندوب", greeting:"أهلاً بك في Outlet Window", subtitle:"مهام التوصيل الخاصة بك في مكان واحد",
     available:"متصل بالخدمة", today:"ملخص المهام", completed:"طلبات مكتملة", earnings:"الأرباح",
-    pickup:"الاستلام", dropoff:"التسليم", order:"الطلب", accept:"قبول المهمة", decline:"رفض المهمة",
+    pickup:"الاستلام", dropoff:"التسليم", order:"الطلب", suborder:"الطلب الفرعي", accept:"قبول المهمة", decline:"رفض المهمة",
     offers:"المهام المتاحة", active:"مهامي الحالية", history:"السجل",
     noOffers:"لا توجد مهام متاحة", noActive:"لا توجد مهام نشطة", noHistory:"لا يوجد سجل توصيل",
     connectTitle:"اتصال حساب المندوب", tokenLabel:"رمز جلسة المندوب", connect:"اتصال وجلب المهام",
@@ -28,7 +28,7 @@ const translations = {
   en: {
     role:"Courier app", greeting:"Welcome to Outlet Window", subtitle:"Your delivery tasks in one place",
     available:"Connected", today:"Task summary", completed:"Completed orders", earnings:"Earnings",
-    pickup:"Pickup", dropoff:"Drop-off", order:"Order", accept:"Accept task", decline:"Decline task",
+    pickup:"Pickup", dropoff:"Drop-off", order:"Order", suborder:"Suborder", accept:"Accept task", decline:"Decline task",
     offers:"Available tasks", active:"My active tasks", history:"History",
     noOffers:"No available tasks", noActive:"No active tasks", noHistory:"No delivery history",
     connectTitle:"Courier account connection", tokenLabel:"Courier session token", connect:"Connect and load tasks",
@@ -128,7 +128,7 @@ function renderTask(task) {
   const order = document.createElement("p");
   order.textContent = `${t("order")}: ${task.orderId ?? task.suborderId ?? "—"}`;
   const tenant = document.createElement("p");
-  tenant.textContent = `${t("pickup")}: ${task.suborderId ?? "—"}`;
+  tenant.textContent = `${t("suborder")}: ${task.suborderId ?? "—"}`;
   details.append(order, tenant);
   card.append(header, details);
 
@@ -164,7 +164,8 @@ form.addEventListener("submit", async event => {
   const token = tokenInput.value.trim();
   try {
     setBusy(true);
-    api = createCourierApi({ baseUrl: $("#api-base-url").value.trim(), token });
+    const configuredApiUrl = document.querySelector('meta[name="outlet-window-api-base-url"]')?.content?.trim() ?? "";
+    api = createCourierApi({ baseUrl: configuredApiUrl, token });
     await loadTasks();
     tokenInput.value = "";
     connectionState.textContent = t("available");
