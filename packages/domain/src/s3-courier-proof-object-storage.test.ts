@@ -1,8 +1,9 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { S3CourierProofObjectStorage } from "./s3-courier-proof-object-storage.js";
 
-const digest = "ab".repeat(32);
-const checksum = Buffer.from(digest, "hex").toString("base64");
+const objectBytes = Buffer.from("proof image bytes");
+const digest = createHash("sha256").update(objectBytes).digest("hex");
 const config = {
   endpoint: "https://objects.example.test",
   bucket: "outlet-window-private",
@@ -29,21 +30,20 @@ describe("S3CourierProofObjectStorage", () => {
     expect(url.searchParams.get("X-Amz-Signature")).toMatch(/^[a-f0-9]{64}$/);
   });
 
-  it("returns server-validated checksum and object metadata from HEAD", async () => {
-    const fetchImpl = vi.fn(async (_input: string | URL, _init?: RequestInit) => new Response(null, {
+  it("hashes actual object bytes and verifies object metadata with GET", async () => {
+    const fetchImpl = vi.fn(async (_input: string | URL, _init?: RequestInit) => new Response(objectBytes, {
       status: 200,
       headers: {
         "content-type": "image/jpeg",
-        "content-length": "2048",
-        "x-amz-checksum-sha256": checksum
+        "content-length": String(objectBytes.length)
       }
     }));
     const storage = new S3CourierProofObjectStorage(config, fetchImpl, () => new Date("2026-11-17T12:00:00.000Z"));
     await expect(storage.inspectObject({ objectKey: "courier-delivery-proof/upload-123" }))
       .resolves.toEqual({
-        exists: true, contentType: "image/jpeg", contentLength: 2048, contentSha256: digest
+        exists: true, contentType: "image/jpeg", contentLength: objectBytes.length, contentSha256: digest
       });
-    expect(fetchImpl).toHaveBeenCalledWith(expect.any(URL), expect.objectContaining({ method: "HEAD" }));
+    expect(fetchImpl).toHaveBeenCalledWith(expect.any(URL), expect.objectContaining({ method: "GET" }));
     const init = fetchImpl.mock.calls[0]?.[1];
     expect(init?.headers).toMatchObject({
       "x-amz-content-sha256": expect.any(String),
