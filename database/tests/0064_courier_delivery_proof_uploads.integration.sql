@@ -10,12 +10,12 @@ INSERT INTO merchant_suborders (id,tenant_id,order_id,merchant_id,branch_id,stat
 VALUES ('courier-proof-ci-suborder','courier-proof-ci-merchant','courier-proof-ci-order',
   'courier-proof-ci-merchant','courier-proof-ci-branch','ready_for_pickup',10000);
 INSERT INTO courier_delivery_tasks
-  (id,tenant_id,suborder_id,courier_id,status,idempotency_key)
+  (id,tenant_id,suborder_id,courier_id,status,idempotency_key,picked_up_at)
 VALUES
   ('courier-proof-ci-task','courier-proof-ci-merchant','courier-proof-ci-suborder',
-   'courier-proof-ci-user','arrived_at_dropoff','courier-proof-task-key-001'),
+   'courier-proof-ci-user','arrived_at_dropoff','courier-proof-task-key-001',now()),
   ('courier-proof-ci-other-task','courier-proof-ci-merchant','courier-proof-ci-suborder',
-   'courier-proof-ci-other-user','arrived_at_dropoff','courier-proof-task-key-002');
+   'courier-proof-ci-other-user','arrived_at_dropoff','courier-proof-task-key-002',now());
 INSERT INTO courier_delivery_evidence
   (id,tenant_id,task_id,evidence_type,verification_method,object_key,content_sha256,verified_by,verified_at)
 VALUES
