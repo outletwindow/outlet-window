@@ -113,6 +113,7 @@ export class MoyasarPaymentIntentClient {
     try {
       response = await this.fetchImpl("https://api.moyasar.com/v1/payment_intents", {
         method: "POST",
+        redirect: "error",
         headers: {
           authorization: `Basic ${Buffer.from(`${this.options.secretKey}:`, "utf8").toString("base64")}`,
           "content-type": "application/json",
