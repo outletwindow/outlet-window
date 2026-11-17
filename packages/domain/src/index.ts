@@ -125,3 +125,4 @@ export * from "./postgres-courier-task-store.js";
 
 export * from "./courier-dispatch.js";
 export * from "./courier-dispatch-offer.js";
+export * from "./postgres-courier-dispatch-offer-store.js";

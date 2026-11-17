@@ -26,6 +26,7 @@ import { PostgresFulfillmentHandoverInbox } from "../../../packages/domain/src/p
 import { PostgresFulfillmentProviderScopeAuthorizer } from "../../../packages/domain/src/postgres-fulfillment-provider-scope-authorizer.js";
 import { PostgresMerchantOrderItemPreparationStore } from "../../../packages/domain/src/postgres-merchant-order-item-preparation.js";
 import { PostgresCourierTaskStore } from "../../../packages/domain/src/postgres-courier-task-store.js";
+import { PostgresCourierDispatchOfferStore } from "../../../packages/domain/src/postgres-courier-dispatch-offer-store.js";
 import { PostgresCourierDeliveryEvidenceService, type CourierProofObjectStorage } from "../../../packages/domain/src/postgres-courier-delivery-evidence.js";
 import { createHmac } from "node:crypto";
 import { PostgresPaymentIntentStore } from "../../../packages/domain/src/postgres-payment-intent-store.js";
@@ -155,6 +156,7 @@ export function buildPostgresApp(options: PostgresApiOptions) {
           async code => createHmac("sha256", process.env.COURIER_PICKUP_CODE_PEPPER!).update(code, "utf8").digest("hex"),
           options.now) }
       : {}),
+    courierDispatchOffers: new PostgresCourierDispatchOfferStore(options.pool),
     customerPaymentAdjustments: options.customerPaymentAdjustments ?? (() => {
       const store = new PostgresPaymentAdjustmentStore(options.pool, options.now);
       const providerKey = process.env.PAYMENT_ADJUSTMENT_PROVIDER_KEY;

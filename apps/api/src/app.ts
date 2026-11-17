@@ -160,6 +160,9 @@ export interface AppOptions {
     listForCourier(input: { tenantId: string; courierId: string; limit?: number }): Promise<import("../../../packages/domain/src/courier-task.js").CourierTask[]>;
     transition(input: { tenantId: string; taskId: string; courierId: string; nextStatus: CourierTaskStatus; expectedVersion: number; pickupCode?: string; reason?: string }): Promise<import("../../../packages/domain/src/postgres-courier-task-store.js").CourierTaskTransitionOutcome>;
   };
+  courierDispatchOffers?: {
+    listForCourier(input: { tenantId: string; courierId: string; limit?: number }): Promise<import("../../../packages/domain/src/postgres-courier-dispatch-offer-store.js").CourierDispatchOfferSummary[]>;
+  };
   merchantOrderItemPreparation?: { record(input: RecordPreparationCheckInput): Promise<RecordPreparationCheckResult> };
   customerDeliveryDestinations?: CustomerDeliveryDestinationService;
   customerPaymentAdjustments?: CustomerPaymentAdjustmentActions;
@@ -313,6 +316,23 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     version: "v1",
     status: "foundation"
   }));
+
+  app.get("/api/v1/courier/offers", async (request, reply) => {
+    const auth = await authorizeRequest(request, options, actor => ({
+      resource: "courier.delivery_task", action: "read",
+      scope: { merchantId: actor.grants.find(g => g.resource === "courier.delivery_task" && g.actions.includes("read") && g.scope.merchantId)?.scope.merchantId ?? "" }
+    }));
+    if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
+    if (!(auth.actor.roles ?? [auth.actor.role]).includes("courier")) return reply.code(403).send({ error: "courier_only" });
+    if (!options.courierDispatchOffers) return reply.code(503).send({ error: "courier_dispatch_offers_unavailable" });
+    const tenantIds = [...new Set(auth.actor.grants
+      .filter(g => g.resource === "courier.delivery_task" && g.actions.includes("read") && g.scope.merchantId)
+      .map(g => g.scope.merchantId!))];
+    const offers = (await Promise.all(tenantIds.map(tenantId =>
+      options.courierDispatchOffers!.listForCourier({ tenantId, courierId: auth.actor!.id, limit: 100 })
+    ))).flat();
+    return reply.code(200).send({ offers });
+  });
 
   app.get("/api/v1/courier/tasks", async (request, reply) => {
     const auth = await authorizeRequest(request, options, actor => ({
