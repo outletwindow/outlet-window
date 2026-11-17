@@ -55,14 +55,22 @@ export class S3CourierProofObjectStorage implements CourierProofObjectStorage {
     contentSha256: string;
     expiresAtUtc: string;
   }): Promise<string> {
+    if (!Number.isSafeInteger(input.contentLength) || input.contentLength < 1 || input.contentLength > 10 * 1024 * 1024 ||
+        !/^[a-f0-9]{64}$/.test(input.contentSha256)) {
+      throw new Error("Invalid courier proof upload constraints");
+    }
     const url = this.objectUrl(input.objectKey);
     const now = this.now();
+    const expiresAt = new Date(input.expiresAtUtc).getTime();
+    if (!Number.isFinite(expiresAt) || expiresAt <= now.getTime()) {
+      throw new Error("Courier proof upload URL expiry must be in the future");
+    }
     const date = amzDate(now);
     const day = date.slice(0, 8);
     const scope = `${day}/${this.config.region}/s3/aws4_request`;
     const checksum = Buffer.from(input.contentSha256, "hex").toString("base64");
     const signedHeaders = "content-type;host;if-none-match;x-amz-checksum-sha256";
-    const expires = Math.max(1, Math.min(300, Math.floor((new Date(input.expiresAtUtc).getTime() - now.getTime()) / 1000)));
+    const expires = Math.min(300, Math.floor((expiresAt - now.getTime()) / 1000));
     const params: Record<string, string> = {
       "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
       "X-Amz-Credential": `${this.config.accessKeyId}/${scope}`,
@@ -106,7 +114,7 @@ export class S3CourierProofObjectStorage implements CourierProofObjectStorage {
     const authorization = `AWS4-HMAC-SHA256 Credential=${this.config.accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
     const requestHeaders: Record<string, string> = { ...headers, authorization };
     delete requestHeaders.host;
-    const response = await this.fetchImpl(url, { method: "GET", headers: requestHeaders });
+    const response = await this.fetchImpl(url, { method: "GET", headers: requestHeaders, redirect: "error" });
     if (response.status === 404) return { exists: false };
     if (!response.ok) throw new Error("Courier proof storage inspection failed");
 
