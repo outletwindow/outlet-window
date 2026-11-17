@@ -26,6 +26,7 @@ import { PostgresFulfillmentHandoverInbox } from "../../../packages/domain/src/p
 import { PostgresFulfillmentProviderScopeAuthorizer } from "../../../packages/domain/src/postgres-fulfillment-provider-scope-authorizer.js";
 import { PostgresMerchantOrderItemPreparationStore } from "../../../packages/domain/src/postgres-merchant-order-item-preparation.js";
 import { PostgresCourierTaskStore } from "../../../packages/domain/src/postgres-courier-task-store.js";
+import { PostgresCourierDeliveryEvidenceService, type CourierProofObjectStorage } from "../../../packages/domain/src/postgres-courier-delivery-evidence.js";
 import { createHmac } from "node:crypto";
 import { PostgresPaymentIntentStore } from "../../../packages/domain/src/postgres-payment-intent-store.js";
 import { PostgresCustomerPaymentIntentCheckout } from "../../../packages/domain/src/postgres-customer-payment-intent-checkout.js";
@@ -61,6 +62,7 @@ export interface PostgresApiOptions {
   fulfillmentWebhookAuthorizationResolver?: NonNullable<AppOptions["fulfillmentWebhookAuthorizationResolver"]>;
   sallaOAuthFlow?: SallaOAuthFlow;
   courierDeliveryEvidence?: AppOptions["courierDeliveryEvidence"];
+  courierProofObjectStorage?: CourierProofObjectStorage;
 }
 
 /**
@@ -143,7 +145,11 @@ export function buildPostgresApp(options: PostgresApiOptions) {
       paymentWebhookSecretResolver: options.paymentWebhookSecretResolver
     }),
     orderTransitions: new PostgresOrderTransitionStore(options.pool),
-    ...(options.courierDeliveryEvidence === undefined ? {} : { courierDeliveryEvidence: options.courierDeliveryEvidence }),
+    ...((options.courierDeliveryEvidence ?? (options.courierProofObjectStorage
+      ? new PostgresCourierDeliveryEvidenceService(options.pool, options.courierProofObjectStorage, options.now)
+      : undefined)) === undefined ? {} : {
+        courierDeliveryEvidence: options.courierDeliveryEvidence ?? new PostgresCourierDeliveryEvidenceService(options.pool, options.courierProofObjectStorage!, options.now)
+      }),
     ...(typeof process.env.COURIER_PICKUP_CODE_PEPPER === "string" && process.env.COURIER_PICKUP_CODE_PEPPER.length >= 32
       ? { courierTasks: new PostgresCourierTaskStore(options.pool,
           async code => createHmac("sha256", process.env.COURIER_PICKUP_CODE_PEPPER!).update(code, "utf8").digest("hex"),
