@@ -79,7 +79,7 @@ export class MoyasarPaymentIntentClient {
       });
     } catch { throw new Error("MOYASAR_PAYMENT_INTENT_FETCH_OUTCOME_UNKNOWN"); }
     if (!response.ok) {
-      if (response.status === 408 || response.status >= 500) throw new Error("MOYASAR_PAYMENT_INTENT_FETCH_OUTCOME_UNKNOWN");
+      if (response.status === 408 || response.status === 425 || response.status === 429 || response.status >= 500) throw new Error("MOYASAR_PAYMENT_INTENT_FETCH_OUTCOME_UNKNOWN");
       throw new Error("MOYASAR_PAYMENT_INTENT_FETCH_REJECTED");
     }
     let payload: MoyasarIntentResponse;
