@@ -27,6 +27,7 @@ import { PostgresFulfillmentProviderScopeAuthorizer } from "../../../packages/do
 import { PostgresMerchantOrderItemPreparationStore } from "../../../packages/domain/src/postgres-merchant-order-item-preparation.js";
 import { PostgresCourierTaskStore } from "../../../packages/domain/src/postgres-courier-task-store.js";
 import { PostgresCourierDeliveryEvidenceService, type CourierProofObjectStorage } from "../../../packages/domain/src/postgres-courier-delivery-evidence.js";
+import type { S3CourierProofStorageConfig } from "../../../packages/domain/src/s3-courier-proof-object-storage.js";
 import { createHmac } from "node:crypto";
 import { PostgresPaymentIntentStore } from "../../../packages/domain/src/postgres-payment-intent-store.js";
 import { PostgresCustomerPaymentIntentCheckout } from "../../../packages/domain/src/postgres-customer-payment-intent-checkout.js";
