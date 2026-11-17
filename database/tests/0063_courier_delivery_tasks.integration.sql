@@ -3,7 +3,7 @@ BEGIN;
 INSERT INTO merchants (id,legal_name,display_name,country_code,status)
 VALUES ('courier-ci-merchant','Courier Test LLC','Courier Test','SA','active');
 INSERT INTO merchant_branches (id,merchant_id,display_name,city_code,status)
-VALUES ('courier-ci-branch','courier-ci-merchant','Courier Branch','DMM','active');
+VALUES ('courier-ci-branch','courier-ci-merchant','Courier Branch','JUB','active');
 INSERT INTO customer_orders (id,tenant_id,customer_id,idempotency_key,status,currency,total_minor)
 VALUES ('courier-ci-order','platform','courier-ci-customer','courier-ci-order-key','confirmed','SAR',10000);
 INSERT INTO merchant_suborders (id,tenant_id,order_id,merchant_id,branch_id,status,subtotal_minor)
