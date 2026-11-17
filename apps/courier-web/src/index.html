@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#174b55">
-  <meta name="description" content="Outlet Window courier application preview">
+  <meta name="description" content="Outlet Window courier application">
   <title>Outlet Window | تطبيق المندوب</title>
   <link rel="stylesheet" href="./styles.css">
   <script type="module" src="./app.js"></script>
@@ -16,18 +16,28 @@
   </header>
   <main>
     <section class="welcome">
-      <div><span class="eyebrow" data-copy="role">تطبيق المندوب</span><h1 data-copy="greeting">مساء الخير، كابتن</h1><p data-copy="subtitle">كل مهامك وتفاصيل توصيلك في مكان واحد</p></div>
-      <span class="availability"><i></i><span data-copy="available">متاح لاستقبال المهام</span></span>
+      <div><span class="eyebrow" data-copy="role">تطبيق المندوب</span><h1 data-copy="greeting">أهلاً بك في Outlet Window</h1><p data-copy="subtitle">مهام التوصيل الخاصة بك في مكان واحد</p></div>
+      <span class="availability"><i></i><span id="connection-state">غير متصل</span></span>
     </section>
-    <section class="summary">
-      <h2 data-copy="today">ملخص اليوم</h2>
-      <div class="stats">
-        <article><span data-copy="completed">طلبات مكتملة</span><strong>0</strong></article>
-        <article><span data-copy="earnings">الأرباح التقديرية</span><strong>٠ ر.س</strong></article>
+    <section class="connection">
+      <h2 data-copy="connectTitle">اتصال حساب المندوب</h2>
+      <form id="connect-form">
+        <label for="api-base-url">API URL</label>
+        <input id="api-base-url" type="url" placeholder="https://api.example.com" autocomplete="url">
+        <label for="session-token" data-copy="tokenLabel">رمز جلسة المندوب</label>
+        <input id="session-token" type="password" required autocomplete="off" spellcheck="false">
+        <p class="session-note" data-copy="sessionNote">رمز الجلسة يبقى في ذاكرة الصفحة فقط ولا يُحفظ على الجهاز</p>
+        <div class="actions">
+          <button id="connect-button" class="primary" type="submit" data-copy="connect">اتصال وجلب المهام</button>
+          <button id="disconnect-button" class="secondary" type="button" hidden data-copy="disconnect">قطع الاتصال</button>
+        </div>
+      </form>
+    </section>
+    <section id="task-area" class="tasks" hidden>
+      <div class="section-heading">
+        <div><span class="eyebrow">DELIVERY TASKS</span><h2 data-copy="offers">المهام المتاحة</h2></div>
+        <button id="refresh-button" class="secondary" type="button" data-copy="refresh">تحديث المهام</button>
       </div>
-    </section>
-    <section class="tasks">
-      <div class="section-heading"><div><span class="eyebrow">DELIVERY TASKS</span><h2 data-copy="offers">المهام المتاحة</h2></div><span class="demo-pill" data-copy="sample">مهمة تجريبية</span></div>
       <nav class="tabs" aria-label="Task views">
         <button class="selected" data-tab="offers" type="button" data-copy="offers">المهام المتاحة</button>
         <button data-tab="active" type="button" data-copy="active">مهامي الحالية</button>
@@ -35,7 +45,6 @@
       </nav>
       <div id="task-list" class="task-list" aria-live="polite"></div>
     </section>
-    <p class="demo-note" data-copy="demo">عرض تجريبي — لا توجد مهام حقيقية أو مشاركة موقع فعلية</p>
   </main>
   <footer>© 2026 Outlet Window</footer>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
