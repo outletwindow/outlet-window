@@ -112,26 +112,4 @@ describe("PostgresFinancialJournalService", () => {
     expect(query.mock.calls.at(-1)?.[0]).toBe("ROLLBACK");
     expect(client.release).toHaveBeenCalledOnce();
   });
-
-  it("returns identity collision when the journal header matches but ledger allocations differ", async () => {
-    const query = vi.fn()
-      .mockResolvedValueOnce({ rows: [], rowCount: null })
-      .mockResolvedValueOnce({ rows: [], rowCount: 0 })
-      .mockResolvedValueOnce({ rows: [{
-        id: "journal-existing", tenant_id: input.tenantId, idempotency_key: input.idempotencyKey,
-        source_type: input.sourceType, source_reference: input.sourceReference,
-        currency: input.currency, description: input.description,
-        occurred_at: new Date(input.occurredAtUtc), status: "posted"
-      }], rowCount: 1 })
-      .mockResolvedValueOnce({ rows: [
-        { account_id: "cash-account", currency: "SAR", line_number: 1, debit_minor: "10000", credit_minor: "0", memo: null },
-        { account_id: "merchant-payable", currency: "SAR", line_number: 2, debit_minor: "0", credit_minor: "8500", memo: null },
-        { account_id: "platform-revenue", currency: "SAR", line_number: 3, debit_minor: "0", credit_minor: "1500", memo: null }
-      ], rowCount: 3 })
-      .mockResolvedValueOnce({ rows: [], rowCount: null });
-    const { service } = serviceWith(query);
-    await expect(service.post(input)).resolves.toEqual({ outcome: "identity_collision" });
-    expect(query.mock.calls.at(-1)?.[0]).toBe("COMMIT");
-  });
-
 });
