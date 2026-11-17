@@ -199,6 +199,13 @@ export class PostgresCustomerCheckoutService {
           ruleVersion: result.quote.ruleVersion,
           totalMinor: result.quote.totalMinor
         })),
+        // Immutable merchant-level product allocation supports later refunds without
+        // inferring a merchant split from the order-wide product subtotal.
+        suborderProductSubtotals: priced.suborders.map(suborder => ({
+          merchantId: suborder.merchantId,
+          branchId: suborder.branchId,
+          amountMinor: suborder.subtotalMinor
+        })),
         discountMinor: 0,
         components
       };
