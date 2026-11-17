@@ -59,6 +59,23 @@ describe("S3CourierProofObjectStorage", () => {
     await expect(denied.inspectObject({ objectKey: "private" })).rejects.toThrow("inspection failed");
   });
 
+  it("rejects invalid upload size, checksum, and expired URL requests", async () => {
+    const storage = new S3CourierProofObjectStorage(config, vi.fn(), () => new Date("2026-11-17T12:00:00.000Z"));
+    const base = {
+      objectKey: "courier-delivery-proof/upload-123",
+      contentType: "image/jpeg" as const,
+      contentLength: 128,
+      contentSha256: digest,
+      expiresAtUtc: "2026-11-17T12:05:00.000Z"
+    };
+    await expect(storage.createUploadUrl({ ...base, contentLength: 10 * 1024 * 1024 + 1 }))
+      .rejects.toThrow("Invalid courier proof upload constraints");
+    await expect(storage.createUploadUrl({ ...base, contentSha256: "bad" }))
+      .rejects.toThrow("Invalid courier proof upload constraints");
+    await expect(storage.createUploadUrl({ ...base, expiresAtUtc: "2026-11-17T11:59:59.000Z" }))
+      .rejects.toThrow("expiry must be in the future");
+  });
+
   it("rejects non-HTTPS storage endpoints", () => {
     expect(() => new S3CourierProofObjectStorage({ ...config, endpoint: "http://objects.example.test" }))
       .toThrow("must use HTTPS");
