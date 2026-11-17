@@ -1,5 +1,12 @@
 -- Short-lived, tenant-scoped upload intents for courier proof-of-delivery.
 -- Object bytes remain in private storage; this table stores only server-owned metadata.
+ALTER TABLE courier_delivery_tasks
+  ADD CONSTRAINT courier_delivery_tasks_tenant_task_courier_unique
+  UNIQUE (tenant_id, id, courier_id);
+ALTER TABLE courier_delivery_evidence
+  ADD CONSTRAINT courier_delivery_evidence_tenant_task_id_unique
+  UNIQUE (tenant_id, task_id, id);
+
 CREATE TABLE courier_delivery_proof_uploads (
   id text PRIMARY KEY,
   tenant_id text NOT NULL,
@@ -14,8 +21,11 @@ CREATE TABLE courier_delivery_proof_uploads (
   verified_evidence_id text,
   created_at timestamptz NOT NULL DEFAULT now(),
   completed_at timestamptz,
-  FOREIGN KEY (tenant_id, task_id)
-    REFERENCES courier_delivery_tasks(tenant_id, id) ON DELETE RESTRICT,
+  FOREIGN KEY (tenant_id, task_id, courier_id)
+    REFERENCES courier_delivery_tasks(tenant_id, id, courier_id) ON DELETE RESTRICT,
+  FOREIGN KEY (tenant_id, task_id, verified_evidence_id)
+    REFERENCES courier_delivery_evidence(tenant_id, task_id, id) ON DELETE RESTRICT,
+  CHECK (expires_at > created_at),
   CHECK ((status = 'verified') = (verified_evidence_id IS NOT NULL)),
   CHECK ((status = 'verified') = (completed_at IS NOT NULL))
 );
