@@ -15,7 +15,6 @@ const sha256 = (value: string) => createHash("sha256").update(value, "utf8").dig
 const amzDate = (date: Date) => date.toISOString().replace(/[:-]|\.\d{3}/g, "");
 const encodePath = (value: string) => value.split("/").map(part => encodeURIComponent(part).replace(/[!'()*]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)).join("/");
 const encodeQuery = (value: string) => encodeURIComponent(value).replace(/[!'()*]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
-const hex = (value: Buffer | string) => Buffer.isBuffer(value) ? value.toString("hex") : value;
 
 function signingKey(secret: string, date: string, region: string): Buffer {
   const dateKey = createHmac("sha256", `AWS4${secret}`).update(date, "utf8").digest();
@@ -99,31 +98,32 @@ export class S3CourierProofObjectStorage implements CourierProofObjectStorage {
     };
     if (this.config.sessionToken) headers["x-amz-security-token"] = this.config.sessionToken;
     const signedHeaders = Object.keys(headers).sort().join(";");
-    const canonicalHeaders = Object.keys(headers).sort().map(key => `${key}:${headers[key]!.trim()}\n`).join("");
-    const canonicalRequest = ["HEAD", url.pathname, "", canonicalHeaders, signedHeaders, payloadHash].join("\n");
-    const stringToSign = ["AWS4-HMAC-SHA256", date, scope, sha256(canonicalRequest)].join("\n");
+    const canonicalHeaders = Object.keys(headers).sort().map(key => `${key}:${headers[key]!.trim()}\\n`).join("");
+    const canonicalRequest = ["GET", url.pathname, "", canonicalHeaders, signedHeaders, payloadHash].join("\\n");
+    const stringToSign = ["AWS4-HMAC-SHA256", date, scope, sha256(canonicalRequest)].join("\\n");
     const signature = createHmac("sha256", signingKey(this.config.secretAccessKey, day, this.config.region))
       .update(stringToSign, "utf8").digest("hex");
     const authorization = `AWS4-HMAC-SHA256 Credential=${this.config.accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
     const requestHeaders: Record<string, string> = { ...headers, authorization };
     delete requestHeaders.host;
-    const response = await this.fetchImpl(url, {
-      method: "HEAD",
-      headers: requestHeaders
-    });
+    const response = await this.fetchImpl(url, { method: "GET", headers: requestHeaders });
     if (response.status === 404) return { exists: false };
     if (!response.ok) throw new Error("Courier proof storage inspection failed");
-    const checksum = response.headers.get("x-amz-checksum-sha256");
+
     const contentType = response.headers.get("content-type");
-    const contentLength = Number(response.headers.get("content-length"));
-    if (!checksum || !contentType || !Number.isSafeInteger(contentLength) || contentLength < 1) {
-      throw new Error("Courier proof object is missing trusted checksum metadata");
+    const declaredLength = Number(response.headers.get("content-length"));
+    if (!contentType || !Number.isSafeInteger(declaredLength) ||
+        declaredLength < 1 || declaredLength > 10 * 1024 * 1024) {
+      throw new Error("Courier proof object has invalid trusted metadata");
+    }
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.length !== declaredLength || bytes.length > 10 * 1024 * 1024) {
+      throw new Error("Courier proof object length does not match its metadata");
     }
     return {
       exists: true,
       contentType: contentType.split(";")[0]!.trim(),
-      contentLength,
-      contentSha256: Buffer.from(checksum, "base64").toString("hex")
+      contentLength: bytes.length,
+      contentSha256: createHash("sha256").update(bytes).digest("hex")
     };
-  }
-}
+  }}
