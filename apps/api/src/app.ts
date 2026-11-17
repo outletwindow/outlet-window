@@ -299,7 +299,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   app.get("/api/v1/courier/tasks", async (request, reply) => {
     const auth = await authorizeRequest(request, options, actor => ({
       resource: "courier.delivery_task", action: "read",
-      scope: { merchantId: actor.grants.find(g => g.resource === "courier.delivery_task" && g.scope.merchantId)?.scope.merchantId ?? "" }
+      scope: { merchantId: actor.grants.find(g => g.resource === "courier.delivery_task" && g.actions.includes("read") && g.scope.merchantId)?.scope.merchantId ?? "" }
     }));
     if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
     if (!(auth.actor.roles ?? [auth.actor.role]).includes("courier")) return reply.code(403).send({ error: "courier_only" });
@@ -317,7 +317,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     "/api/v1/courier/tasks/:taskId/status", async (request, reply) => {
       const auth = await authorizeRequest(request, options, actor => ({
         resource: "courier.delivery_task", action: "update",
-        scope: { merchantId: actor.grants.find(g => g.resource === "courier.delivery_task" && g.scope.merchantId)?.scope.merchantId ?? "" }
+        scope: { merchantId: actor.grants.find(g => g.resource === "courier.delivery_task" && g.actions.includes("update") && g.scope.merchantId)?.scope.merchantId ?? "" }
       }));
       if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
       if (!(auth.actor.roles ?? [auth.actor.role]).includes("courier")) return reply.code(403).send({ error: "courier_only" });
