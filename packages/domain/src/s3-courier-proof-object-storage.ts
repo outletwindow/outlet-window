@@ -12,8 +12,6 @@ export interface S3CourierProofStorageConfig {
 
 type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 const sha256 = (value: string) => createHash("sha256").update(value, "utf8").digest("hex");
-const hmac = (key: Buffer | string, value: string, encoding?: "hex") =>
-  createHmac("sha256", key).update(value, "utf8").digest(encoding ?? undefined) as Buffer | string;
 const amzDate = (date: Date) => date.toISOString().replace(/[:-]|\.\d{3}/g, "");
 const encodePath = (value: string) => value.split("/").map(part => encodeURIComponent(part).replace(/[!'()*]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)).join("/");
 const encodeQuery = (value: string) => encodeURIComponent(value).replace(/[!'()*]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
@@ -63,11 +61,6 @@ export class S3CourierProofObjectStorage implements CourierProofObjectStorage {
     const day = date.slice(0, 8);
     const scope = `${day}/${this.config.region}/s3/aws4_request`;
     const checksum = Buffer.from(input.contentSha256, "hex").toString("base64");
-    const headers = {
-      "content-type": input.contentType,
-      "host": url.host,
-      "x-amz-checksum-sha256": checksum
-    };
     const signedHeaders = "content-type;host;x-amz-checksum-sha256";
     const expires = Math.max(1, Math.min(300, Math.floor((new Date(input.expiresAtUtc).getTime() - now.getTime()) / 1000)));
     const params: Record<string, string> = {
@@ -115,7 +108,7 @@ export class S3CourierProofObjectStorage implements CourierProofObjectStorage {
       method: "HEAD",
       headers: { ...headers, authorization }
     });
-    if (response.status === 404 || response.status === 403) return { exists: false };
+    if (response.status === 404) return { exists: false };
     if (!response.ok) throw new Error("Courier proof storage inspection failed");
     const checksum = response.headers.get("x-amz-checksum-sha256");
     const contentType = response.headers.get("content-type");
