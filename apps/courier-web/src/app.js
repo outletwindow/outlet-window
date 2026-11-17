@@ -1,64 +1,96 @@
-import { acceptTask, declineTask, getTaskGroups } from "./tasks.js";
+import { createCourierApi, CourierApiError } from "./api.js";
+import { getTaskGroups, getNextTaskAction } from "./tasks.js";
 
 const translations = {
   ar: {
-    brand: "Outlet Window", role: "تطبيق المندوب", greeting: "مساء الخير، كابتن",
-    subtitle: "كل مهامك وتفاصيل توصيلك في مكان واحد", available: "متاح لاستقبال المهام",
-    today: "ملخص اليوم", completed: "طلبات مكتملة", earnings: "الأرباح التقديرية",
-    distance: "المسافة", pickup: "الاستلام", dropoff: "التسليم", reward: "المكافأة",
-    accept: "قبول المهمة", decline: "رفض", offers: "المهام المتاحة", active: "مهامي الحالية",
-    history: "السجل", noOffers: "لا توجد مهام متاحة الآن", noActive: "ليس لديك مهام نشطة",
-    noHistory: "لا يوجد سجل بعد", demo: "عرض تجريبي — لا توجد مهام حقيقية أو مشاركة موقع فعلية",
-    sample: "مهمة تجريبية", accepted: "تم قبول المهمة في العرض التجريبي",
-    declined: "تم رفض المهمة في العرض التجريبي", next: "الخطوة التالية",
-    toStore: "التوجه إلى المتجر", collect: "استلام الطلب والتحقق منه",
-    deliver: "التوجه إلى العميل", done: "إتمام التسليم بإثبات معتمد",
-    language: "English", status: { offered: "متاحة", accepted: "تم القبول", heading_to_pickup: "في الطريق للمتجر", arrived_at_pickup: "وصل للمتجر", picked_up: "تم الاستلام", in_transit: "في الطريق للعميل", arrived_at_dropoff: "وصل للعميل", delivered: "تم التسليم", declined: "مرفوضة", cancelled: "ملغاة", failed: "تعذّر التنفيذ", in_progress: "قيد التنفيذ", completed: "مكتملة" }
+    role:"تطبيق المندوب", greeting:"أهلاً بك في Outlet Window", subtitle:"مهام التوصيل الخاصة بك في مكان واحد",
+    available:"متصل بالخدمة", today:"ملخص المهام", completed:"طلبات مكتملة", earnings:"الأرباح",
+    pickup:"الاستلام", dropoff:"التسليم", order:"الطلب", accept:"قبول المهمة", decline:"رفض المهمة",
+    offers:"المهام المتاحة", active:"مهامي الحالية", history:"السجل",
+    noOffers:"لا توجد مهام متاحة", noActive:"لا توجد مهام نشطة", noHistory:"لا يوجد سجل توصيل",
+    connectTitle:"اتصال حساب المندوب", tokenLabel:"رمز جلسة المندوب", connect:"اتصال وجلب المهام",
+    disconnect:"قطع الاتصال", loading:"جارٍ الاتصال...", refresh:"تحديث المهام",
+    connected:"تم الاتصال وجلب المهام", disconnected:"تم قطع الاتصال",
+    connectionRequired:"أدخل رمز جلسة صالحاً للاتصال", failed:"تعذر تنفيذ الطلب",
+    accepted:"تم قبول المهمة", declined:"تم رفض المهمة", declineReason:"اكتب سبب رفض المهمة",
+    toStore:"بدء التوجه إلى المتجر", atStore:"تأكيد الوصول إلى المتجر",
+    collect:"استلام الطلب برمز التحقق", toCustomer:"بدء التوجه إلى العميل",
+    atCustomer:"تأكيد الوصول إلى العميل", pickupCode:"أدخل رمز الاستلام لمرة واحدة",
+    pickupCodeRequired:"رمز الاستلام مطلوب", versionConflict:"تغيرت المهمة؛ حدّث القائمة وحاول مجدداً",
+    proofPending:"إتمام التسليم ينتظر إضافة خدمة رفع إثبات التسليم والتحقق منه",
+    sessionNote:"رمز الجلسة يبقى في ذاكرة الصفحة فقط ولا يُحفظ على الجهاز",
+    notConnected:"غير متصل", status:{offered:"متاحة",accepted:"تم القبول",heading_to_pickup:"في الطريق للمتجر",
+      arrived_at_pickup:"وصل للمتجر",picked_up:"تم الاستلام",in_transit:"في الطريق للعميل",
+      arrived_at_dropoff:"وصل للعميل",delivered:"تم التسليم",declined:"مرفوضة",
+      cancelled:"ملغاة",failed:"تعذّر التنفيذ",in_progress:"قيد التنفيذ",completed:"مكتملة"},
+    language:"English"
   },
   en: {
-    brand: "Outlet Window", role: "Courier app", greeting: "Good evening, Captain",
-    subtitle: "Your delivery tasks and details in one place", available: "Available for tasks",
-    today: "Today's summary", completed: "Completed orders", earnings: "Estimated earnings",
-    distance: "Distance", pickup: "Pickup", dropoff: "Drop-off", reward: "Reward",
-    accept: "Accept task", decline: "Decline", offers: "Available tasks", active: "My active tasks",
-    history: "History", noOffers: "No tasks available right now", noActive: "You have no active tasks",
-    noHistory: "No history yet", demo: "Demo preview — no real tasks or live location sharing",
-    sample: "Demo task", accepted: "Task accepted in demo preview",
-    declined: "Task declined in demo preview", next: "Next step",
-    toStore: "Head to the store", collect: "Collect and verify the order",
-    deliver: "Head to the customer", done: "Complete delivery with approved proof",
-    language: "العربية", status: { offered: "Available", accepted: "Accepted", heading_to_pickup: "Heading to store", arrived_at_pickup: "Arrived at store", picked_up: "Picked up", in_transit: "In transit", arrived_at_dropoff: "Arrived at customer", delivered: "Delivered", declined: "Declined", cancelled: "Cancelled", failed: "Failed", in_progress: "In progress", completed: "Completed" }
+    role:"Courier app", greeting:"Welcome to Outlet Window", subtitle:"Your delivery tasks in one place",
+    available:"Connected", today:"Task summary", completed:"Completed orders", earnings:"Earnings",
+    pickup:"Pickup", dropoff:"Drop-off", order:"Order", accept:"Accept task", decline:"Decline task",
+    offers:"Available tasks", active:"My active tasks", history:"History",
+    noOffers:"No available tasks", noActive:"No active tasks", noHistory:"No delivery history",
+    connectTitle:"Courier account connection", tokenLabel:"Courier session token", connect:"Connect and load tasks",
+    disconnect:"Disconnect", loading:"Connecting...", refresh:"Refresh tasks",
+    connected:"Connected and tasks loaded", disconnected:"Disconnected",
+    connectionRequired:"Enter a valid session token to connect", failed:"Request could not be completed",
+    accepted:"Task accepted", declined:"Task declined", declineReason:"Enter a reason for declining",
+    toStore:"Start heading to store", atStore:"Confirm arrival at store",
+    collect:"Collect using verification code", toCustomer:"Start heading to customer",
+    atCustomer:"Confirm arrival at customer", pickupCode:"Enter the single-use pickup code",
+    pickupCodeRequired:"Pickup code is required", versionConflict:"Task changed; refresh and try again",
+    proofPending:"Delivery completion awaits a delivery-proof upload and verification service",
+    sessionNote:"The session token stays in page memory only and is not saved on this device",
+    notConnected:"Not connected", status:{offered:"Available",accepted:"Accepted",heading_to_pickup:"Heading to store",
+      arrived_at_pickup:"Arrived at store",picked_up:"Picked up",in_transit:"In transit",
+      arrived_at_dropoff:"Arrived at customer",delivered:"Delivered",declined:"Declined",
+      cancelled:"Cancelled",failed:"Failed",in_progress:"In progress",completed:"Completed"},
+    language:"العربية"
   }
 };
 
-const initialTasks = [
-  { id: "OW-D-2048", status: "offered", distance: "4.2 كم", reward: "٢٢ ر.س", store: "متجر الأناقة — فرع الكورنيش", destination: "حي الشاطئ، الدمام", items: 2, eta: "18 دقيقة" },
-  { id: "OW-D-2051", status: "offered", distance: "6.8 كم", reward: "٣١ ر.س", store: "ركن الأحذية — فرع الفيصلية", destination: "حي النزهة، الدمام", items: 1, eta: "26 دقيقة" }
-];
-
-let tasks = initialTasks;
+let api = null;
+let tasks = [];
 let language = "ar";
 let activeTab = "offers";
-const $ = (selector) => document.querySelector(selector);
+let busy = false;
+const $ = selector => document.querySelector(selector);
 const content = $("#task-list");
 const toast = $("#toast");
+const form = $("#connect-form");
+const tokenInput = $("#session-token");
+const connectionState = $("#connection-state");
 
-function t(key) { return translations[language][key]; }
+function t(key) { return translations[language][key] ?? key; }
 function notify(message) {
   toast.textContent = message;
   toast.hidden = false;
   window.clearTimeout(notify.timer);
-  notify.timer = window.setTimeout(() => { toast.hidden = true; }, 2400);
+  notify.timer = window.setTimeout(() => { toast.hidden = true; }, 3000);
 }
+function setBusy(value) {
+  busy = value;
+  document.querySelectorAll("button").forEach(button => {
+    if (button.dataset.keepEnabled !== "true") button.disabled = value;
+  });
+  $("#connect-button").textContent = value ? t("loading") : t("connect");
+}
+function statusText(status) { return t("status")[status] ?? status; }
 
 function render() {
   document.documentElement.lang = language;
   document.documentElement.dir = language === "ar" ? "rtl" : "ltr";
-  document.querySelectorAll("[data-copy]").forEach((node) => { node.textContent = t(node.dataset.copy); });
+  document.querySelectorAll("[data-copy]").forEach(node => { node.textContent = t(node.dataset.copy); });
   $("#language-toggle").textContent = t("language");
-  document.querySelectorAll("[data-tab]").forEach((button) => button.classList.toggle("selected", button.dataset.tab === activeTab));
+  $("#connection-state").textContent = api ? t("available") : t("notConnected");
+  $("#disconnect-button").hidden = !api;
+  $("#refresh-button").hidden = !api;
+  $("#task-area").hidden = !api;
+  document.querySelectorAll("[data-tab]").forEach(button =>
+    button.classList.toggle("selected", button.dataset.tab === activeTab));
   const groups = getTaskGroups(tasks);
-  const list = groups[activeTab];
+  const list = groups[activeTab] ?? [];
   content.replaceChildren();
   if (!list.length) {
     const empty = document.createElement("p");
@@ -67,7 +99,17 @@ function render() {
     content.append(empty);
     return;
   }
-  for (const task of list) content.append(renderTask(task));
+  list.forEach(task => content.append(renderTask(task)));
+}
+
+function makeButton(label, action, taskId, className = "primary") {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = className;
+  button.dataset.action = action;
+  button.dataset.id = taskId;
+  button.textContent = t(label);
+  return button;
 }
 
 function renderTask(task) {
@@ -79,49 +121,130 @@ function renderTask(task) {
   id.textContent = task.id;
   const status = document.createElement("span");
   status.className = "status";
-  status.textContent = t("status")[task.status];
+  status.textContent = statusText(task.status);
   header.append(id, status);
-  const store = document.createElement("h3");
-  store.textContent = task.store;
-  const route = document.createElement("div");
-  route.className = "route";
-  route.innerHTML = `<div><span>●</span><section><small>${t("pickup")}</small><strong></strong></section></div><div><span>●</span><section><small>${t("dropoff")}</small><strong></strong></section></div>`;
-  route.children[0].querySelector("strong").textContent = task.store;
-  route.children[1].querySelector("strong").textContent = task.destination;
-  const meta = document.createElement("div");
-  meta.className = "meta";
-  for (const value of [`${t("distance")}: ${task.distance}`, `${t("reward")}: ${task.reward}`, task.eta, `${task.items} ${language === "ar" ? "قطع" : "items"}`]) {
-    const item = document.createElement("span"); item.textContent = value; meta.append(item);
-  }
-  card.append(header, store, route, meta);
+  const details = document.createElement("div");
+  details.className = "route";
+  const order = document.createElement("p");
+  order.textContent = `${t("order")}: ${task.orderId ?? task.suborderId ?? "—"}`;
+  const tenant = document.createElement("p");
+  tenant.textContent = `${t("pickup")}: ${task.suborderId ?? "—"}`;
+  details.append(order, tenant);
+  card.append(header, details);
+
+  const actions = document.createElement("div");
+  actions.className = "actions";
   if (task.status === "offered") {
-    const actions = document.createElement("div");
-    actions.className = "actions";
-    const accept = document.createElement("button");
-    accept.className = "primary"; accept.dataset.action = "accept"; accept.dataset.id = task.id; accept.textContent = t("accept");
-    const decline = document.createElement("button");
-    decline.className = "secondary"; decline.dataset.action = "decline"; decline.dataset.id = task.id; decline.textContent = t("decline");
-    actions.append(accept, decline); card.append(actions);
+    actions.append(makeButton("accept", "transition", task.id));
+    actions.append(makeButton("decline", "decline", task.id, "secondary"));
   } else {
-    const next = document.createElement("p");
-    next.className = "next-step";
-    next.textContent = `${t("next")}: ${t("toStore")}`;
-    card.append(next);
+    const next = getNextTaskAction(task);
+    if (next) actions.append(makeButton(next.label, "transition", task.id));
+    if (task.status === "arrived_at_dropoff") {
+      const note = document.createElement("p");
+      note.className = "next-step";
+      note.textContent = t("proofPending");
+      card.append(note);
+    }
   }
+  if (actions.childElementCount) card.append(actions);
   return card;
 }
 
-document.addEventListener("click", (event) => {
-  const tab = event.target.closest("[data-tab]");
-  if (tab) { activeTab = tab.dataset.tab; render(); return; }
-  const action = event.target.closest("button[data-action]");
-  if (!action) return;
-  const result = action.dataset.action === "accept" ? acceptTask(tasks, action.dataset.id) : declineTask(tasks, action.dataset.id);
-  if (!result.changed) return;
-  tasks = result.tasks;
-  notify(t(action.dataset.action === "accept" ? "accepted" : "declined"));
+async function loadTasks() {
+  if (!api) return;
+  const result = await api.listTasks();
+  tasks = result;
   render();
+}
+
+form.addEventListener("submit", async event => {
+  event.preventDefault();
+  if (busy) return;
+  const token = tokenInput.value.trim();
+  try {
+    setBusy(true);
+    api = createCourierApi({ baseUrl: $("#api-base-url").value.trim(), token });
+    await loadTasks();
+    tokenInput.value = "";
+    connectionState.textContent = t("available");
+    notify(t("connected"));
+  } catch (error) {
+    api = null;
+    tasks = [];
+    render();
+    notify(error instanceof CourierApiError ? error.message : t("connectionRequired"));
+  } finally {
+    setBusy(false);
+    render();
+  }
 });
 
-$("#language-toggle").addEventListener("click", () => { language = language === "ar" ? "en" : "ar"; render(); });
+$("#disconnect-button").addEventListener("click", () => {
+  api = null;
+  tasks = [];
+  render();
+  notify(t("disconnected"));
+});
+
+$("#refresh-button").addEventListener("click", async () => {
+  if (!api || busy) return;
+  try {
+    setBusy(true);
+    await loadTasks();
+    notify(t("connected"));
+  } catch (error) {
+    notify(error instanceof Error ? error.message : t("failed"));
+  } finally {
+    setBusy(false);
+    render();
+  }
+});
+
+document.addEventListener("click", async event => {
+  const tab = event.target.closest("[data-tab]");
+  if (tab) { activeTab = tab.dataset.tab; render(); return; }
+  const button = event.target.closest("button[data-action]");
+  if (!button || !api || busy) return;
+  const task = tasks.find(item => item.id === button.dataset.id);
+  if (!task) return;
+
+  let status;
+  let extra = {};
+  if (button.dataset.action === "decline") {
+    const reason = window.prompt(t("declineReason"));
+    if (!reason?.trim()) return;
+    status = "declined";
+    extra.reason = reason.trim();
+  } else if (task.status === "offered") {
+    status = "accepted";
+  } else {
+    const next = getNextTaskAction(task);
+    if (!next) return;
+    status = next.status;
+    if (next.requiresPickupCode) {
+      const pickupCode = window.prompt(t("pickupCode"));
+      if (!pickupCode?.trim()) { notify(t("pickupCodeRequired")); return; }
+      extra.pickupCode = pickupCode.trim();
+    }
+  }
+
+  try {
+    setBusy(true);
+    await api.transitionTask(task.id, { status, expectedVersion: task.version, ...extra });
+    await loadTasks();
+    notify(t("status")[status] ?? status);
+  } catch (error) {
+    if (error instanceof CourierApiError && error.status === 409) notify(t("versionConflict"));
+    else notify(error instanceof Error ? error.message : t("failed"));
+  } finally {
+    setBusy(false);
+    render();
+  }
+});
+
+$("#language-toggle").addEventListener("click", () => {
+  language = language === "ar" ? "en" : "ar";
+  render();
+});
 render();
