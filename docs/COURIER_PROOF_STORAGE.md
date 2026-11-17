@@ -35,7 +35,8 @@ the platform's general-purpose storage credentials.
 
 The client hashes the image bytes with SHA-256, requests an upload URL, then
 uploads using the exact `Content-Type`, `If-None-Match: *`, and `x-amz-checksum-sha256` headers
-returned by the API. S3 validates the checksum during PUT and the `If-None-Match: *` condition prevents a later overwrite of the proof object. Finalization performs a signed GET, downloads at most 10 MB from the private bucket,
+returned by the API. The signed URL also binds the exact `Content-Length`; the browser
+sets it from the selected File body. S3 validates the checksum during PUT and the `If-None-Match: *` condition prevents a later overwrite of the proof object. Finalization performs a signed GET, downloads at most 10 MB from the private bucket,
 calculates SHA-256 from the actual bytes, and compares the digest, content type,
 and byte length with the upload intent persisted in PostgreSQL. Only then does
 the API append immutable `proof_of_delivery` evidence.
