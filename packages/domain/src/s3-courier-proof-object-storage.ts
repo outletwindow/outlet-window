@@ -26,7 +26,7 @@ function signingKey(secret: string, date: string, region: string): Buffer {
 /**
  * S3-compatible private object storage adapter (AWS S3 / Cloudflare R2).
  * Upload URLs are short-lived, single-object PUT URLs. S3 validates the SHA-256
- * checksum during PUT; HEAD returns that server-validated checksum for finalize.
+ * checksum during PUT; finalization downloads the private object and hashes its actual bytes.
  */
 export class S3CourierProofObjectStorage implements CourierProofObjectStorage {
   private readonly endpoint: URL;
@@ -98,9 +98,9 @@ export class S3CourierProofObjectStorage implements CourierProofObjectStorage {
     };
     if (this.config.sessionToken) headers["x-amz-security-token"] = this.config.sessionToken;
     const signedHeaders = Object.keys(headers).sort().join(";");
-    const canonicalHeaders = Object.keys(headers).sort().map(key => `${key}:${headers[key]!.trim()}\\n`).join("");
-    const canonicalRequest = ["GET", url.pathname, "", canonicalHeaders, signedHeaders, payloadHash].join("\\n");
-    const stringToSign = ["AWS4-HMAC-SHA256", date, scope, sha256(canonicalRequest)].join("\\n");
+    const canonicalHeaders = Object.keys(headers).sort().map(key => `${key}:${headers[key]!.trim()}\n`).join("");
+    const canonicalRequest = ["GET", url.pathname, "", canonicalHeaders, signedHeaders, payloadHash].join("\n");
+    const stringToSign = ["AWS4-HMAC-SHA256", date, scope, sha256(canonicalRequest)].join("\n");
     const signature = createHmac("sha256", signingKey(this.config.secretAccessKey, day, this.config.region))
       .update(stringToSign, "utf8").digest("hex");
     const authorization = `AWS4-HMAC-SHA256 Credential=${this.config.accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
@@ -126,4 +126,5 @@ export class S3CourierProofObjectStorage implements CourierProofObjectStorage {
       contentLength: bytes.length,
       contentSha256: createHash("sha256").update(bytes).digest("hex")
     };
-  }}
+  }
+}
