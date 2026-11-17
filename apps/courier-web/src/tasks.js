@@ -4,6 +4,14 @@ const ACTIVE_STATUSES = new Set([
 ]);
 const HISTORY_STATUSES = new Set(["delivered", "completed", "declined", "cancelled", "failed"]);
 
+const NEXT_ACTIONS = Object.freeze({
+  accepted: { status: "heading_to_pickup", label: "toStore" },
+  heading_to_pickup: { status: "arrived_at_pickup", label: "atStore" },
+  arrived_at_pickup: { status: "picked_up", label: "collect", requiresPickupCode: true },
+  picked_up: { status: "in_transit", label: "toCustomer" },
+  in_transit: { status: "arrived_at_dropoff", label: "atCustomer" }
+});
+
 export function acceptTask(tasks, taskId) {
   let found = false;
   const next = tasks.map((task) => {
@@ -30,4 +38,9 @@ export function getTaskGroups(tasks) {
     active: tasks.filter((task) => ACTIVE_STATUSES.has(task.status)),
     history: tasks.filter((task) => HISTORY_STATUSES.has(task.status))
   };
+}
+
+export function getNextTaskAction(task) {
+  if (!task || typeof task.status !== "string") return null;
+  return NEXT_ACTIONS[task.status] ?? null;
 }
