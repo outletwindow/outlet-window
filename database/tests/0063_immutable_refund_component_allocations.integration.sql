@@ -14,7 +14,7 @@ VALUES
 INSERT INTO merchant_suborders
   (id,tenant_id,order_id,merchant_id,branch_id,status,subtotal_minor)
 VALUES
-  ('refund-alloc-suborder','platform','refund-alloc-order','refund-alloc-merchant',
+  ('refund-alloc-suborder','refund-alloc-merchant','refund-alloc-order','refund-alloc-merchant',
    'refund-alloc-branch','confirmed',5000);
 
 INSERT INTO customer_payment_adjustments
