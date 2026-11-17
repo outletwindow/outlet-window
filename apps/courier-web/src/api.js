@@ -74,19 +74,34 @@ export function createCourierApi({ baseUrl = "", token, fetchImpl = globalThis.f
         method: "POST",
         body: JSON.stringify({ contentType: file.type, contentLength: file.size, contentSha256 })
       });
-      if (!intent || typeof intent.uploadUrl !== "string" || typeof intent.uploadId !== "string" ||
-          !intent.requiredHeaders || typeof intent.requiredHeaders !== "object") {
+      if (!intent || typeof intent.uploadUrl !== "string" ||
+          typeof intent.uploadId !== "string" || !/^[A-Za-z0-9_-]{8,128}$/.test(intent.uploadId) ||
+          !intent.requiredHeaders || typeof intent.requiredHeaders !== "object" ||
+          Array.isArray(intent.requiredHeaders)) {
         throw new CourierApiError("invalid_delivery_proof_upload_response", 502, intent);
+      }
+      const signedHeaders = Object.fromEntries(
+        Object.entries(intent.requiredHeaders).map(([name, value]) => [name.toLowerCase(), value])
+      );
+      if (Object.keys(signedHeaders).length !== 2 ||
+          signedHeaders["content-type"] !== file.type ||
+          signedHeaders["if-none-match"] !== "*") {
+        throw new CourierApiError("invalid_delivery_proof_upload_headers", 502, null);
       }
       let uploadUrl;
       try { uploadUrl = new URL(intent.uploadUrl); } catch {
         throw new CourierApiError("invalid_delivery_proof_upload_url", 502, null);
       }
-      if (uploadUrl.protocol !== "https:") throw new CourierApiError("insecure_delivery_proof_upload_url", 502, null);
+      if (uploadUrl.protocol !== "https:" || uploadUrl.username || uploadUrl.password ||
+          uploadUrl.hash || !uploadUrl.hostname) {
+        throw new CourierApiError("insecure_delivery_proof_upload_url", 502, null);
+      }
       const uploaded = await fetchImpl(uploadUrl.toString(), {
         method: "PUT",
-        headers: intent.requiredHeaders,
-        body: file
+        headers: signedHeaders,
+        body: file,
+        // A redirect could disclose the signed URL to an untrusted destination.
+        redirect: "error"
       });
       if (!uploaded.ok) {
         throw new CourierApiError("delivery_proof_storage_upload_failed", uploaded.status, null);

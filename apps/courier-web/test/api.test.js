@@ -81,6 +81,54 @@ test("uploads delivery proof, then finalizes server verification", async () => {
   assert.equal(requests[2].url, "/api/v1/courier/tasks/task%2F1/proof-upload/upload_12345678/complete");
 });
 
+test("does not follow redirects for signed proof uploads", async () => {
+  const requests = [];
+  const file = {
+    type: "image/png", size: 3,
+    async arrayBuffer() { return new Uint8Array([1, 2, 3]).buffer; }
+  };
+  const api = createCourierApi({
+    token,
+    fetchImpl: async (url, init) => {
+      requests.push({ url, init });
+      if (requests.length === 1) return response(201, {
+        uploadId: "upload_12345678",
+        uploadUrl: "https://objects.example.test/signed",
+        requiredHeaders: { "content-type": "image/png", "if-none-match": "*" }
+      });
+      if (requests.length === 2) throw new TypeError("redirect blocked");
+      return response(200, {});
+    }
+  });
+  await assert.rejects(api.uploadDeliveryProof("task-1", file), /redirect blocked/);
+  assert.equal(requests[1].init.redirect, "error");
+  assert.equal(requests.length, 2);
+});
+
+test("rejects unexpected signed upload headers before sending file bytes", async () => {
+  let uploadAttempted = false;
+  const file = {
+    type: "image/png", size: 3,
+    async arrayBuffer() { return new Uint8Array([1, 2, 3]).buffer; }
+  };
+  const api = createCourierApi({
+    token,
+    fetchImpl: async (_url, init) => {
+      if (init.method === "POST") return response(201, {
+        uploadId: "upload_12345678",
+        uploadUrl: "https://objects.example.test/signed",
+        requiredHeaders: {
+          "content-type": "image/png", "if-none-match": "*", authorization: "Bearer leaked"
+        }
+      });
+      uploadAttempted = true;
+      return response(200, {});
+    }
+  });
+  await assert.rejects(api.uploadDeliveryProof("task-1", file), /invalid_delivery_proof_upload_headers/);
+  assert.equal(uploadAttempted, false);
+});
+
 test("rejects unsupported delivery proof files before making requests", async () => {
   let called = false;
   const api = createCourierApi({ token, fetchImpl: async () => { called = true; return response(200, {}); } });
