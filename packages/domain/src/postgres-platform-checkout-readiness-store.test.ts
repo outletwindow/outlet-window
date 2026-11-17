@@ -30,7 +30,7 @@ function database(options: { parentStatus?: string; version?: number; expiredQuo
             ...(options.multiBranch ? [{ merchantId: "merchant-2", branchId: "branch-2", quoteId: "quote-2", ruleId: "rule-1", ruleVersion: 1, totalMinor: 1500 }] : [])
           ],
           suborderProductSubtotals: [
-            { merchantId: "merchant-1", branchId: "branch-1", amountMinor: 12000 },
+            { merchantId: "merchant-1", branchId: "branch-1", amountMinor: options.multiBranch ? 5000 : 12000 },
             ...(options.multiBranch ? [{ merchantId: "merchant-2", branchId: "branch-2", amountMinor: options.badProductAllocation ? 7001 : 7000 }] : [])
           ],
           components: [
