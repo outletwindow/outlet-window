@@ -299,7 +299,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   app.get("/api/v1/courier/tasks", async (request, reply) => {
     const auth = await authorizeRequest(request, options, actor => ({
       resource: "courier.delivery_task", action: "read",
-      scope: { merchantId: actor.grants.find(g => g.resource === "courier.delivery_task" && g.scope.merchantId)?.scope.merchantId }
+      scope: { merchantId: actor.grants.find(g => g.resource === "courier.delivery_task" && g.scope.merchantId)?.scope.merchantId ?? "" }
     }));
     if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
     if (!(auth.actor.roles ?? [auth.actor.role]).includes("courier")) return reply.code(403).send({ error: "courier_only" });
@@ -317,7 +317,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     "/api/v1/courier/tasks/:taskId/status", async (request, reply) => {
       const auth = await authorizeRequest(request, options, actor => ({
         resource: "courier.delivery_task", action: "update",
-        scope: { merchantId: actor.grants.find(g => g.resource === "courier.delivery_task" && g.scope.merchantId)?.scope.merchantId }
+        scope: { merchantId: actor.grants.find(g => g.resource === "courier.delivery_task" && g.scope.merchantId)?.scope.merchantId ?? "" }
       }));
       if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
       if (!(auth.actor.roles ?? [auth.actor.role]).includes("courier")) return reply.code(403).send({ error: "courier_only" });
@@ -339,9 +339,11 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
         ...(typeof body.pickupCode === "string" ? { pickupCode: body.pickupCode } : {}),
         ...(typeof body.reason === "string" ? { reason: body.reason } : {})
       });
-      if (result.outcome === "not_found") return reply.code(404).send({ error: "courier_task_not_found" });
-      if (result.outcome === "conflict") return reply.code(409).send({ error: "courier_task_version_conflict" });
-      if (result.outcome === "rejected") return reply.code(422).send({ error: result.reason ?? "courier_task_transition_rejected" });
+      if (result.outcome !== "updated") {
+        if (result.outcome === "not_found") return reply.code(404).send({ error: "courier_task_not_found" });
+        if (result.outcome === "conflict") return reply.code(409).send({ error: "courier_task_version_conflict" });
+        return reply.code(422).send({ error: result.reason ?? "courier_task_transition_rejected" });
+      }
       return reply.code(200).send({ task: result.task });
     }
   );
