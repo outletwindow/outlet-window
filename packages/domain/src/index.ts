@@ -122,3 +122,5 @@ export * from "./ledger-backed-inventory-provider-reservation-adapter.js";
 
 export * from "./courier-task.js";
 export * from "./postgres-courier-task-store.js";
+
+export * from "./courier-dispatch.js";
