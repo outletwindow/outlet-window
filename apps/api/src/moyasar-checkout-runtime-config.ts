@@ -25,6 +25,9 @@ export function createMoyasarCheckoutRuntimeConfig(
   if (environment.MOYASAR_EXPECT_LIVE !== "true" && environment.MOYASAR_EXPECT_LIVE !== "false") {
     throw new Error("MOYASAR_EXPECT_LIVE_MUST_MATCH_PROVIDER_MODE");
   }
+  if (!/^sk_(test|live)_[A-Za-z0-9]+$/.test(secretKey)) {
+    throw new Error("MOYASAR_SECRET_KEY_FORMAT_INVALID");
+  }
   const expectedLive = environment.MOYASAR_EXPECT_LIVE === "true";
   if (secretKey.startsWith("sk_live_") !== expectedLive) {
     throw new Error("MOYASAR_SECRET_KEY_MODE_MISMATCH");

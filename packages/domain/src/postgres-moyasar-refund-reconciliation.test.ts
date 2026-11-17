@@ -14,6 +14,7 @@ function makePool(options: {
   confirmedMinor?: string;
   refundedMinor?: number;
   orderRowCount?: number;
+  submissionLockCount?: number;
 } = {}) {
   const calls: Array<{ sql: string; params?: readonly unknown[] }> = [];
   const query = vi.fn(async (sql: string, params?: readonly unknown[]) => {
@@ -29,6 +30,11 @@ function makePool(options: {
     }
     if (sql.includes("SELECT r.adjustment_id")) {
       return options.activeCount === 0 ? { rows: [], rowCount: 0 } : { rows: [{ adjustment_id: "adjustment-1" }], rowCount: options.activeCount ?? 1 };
+    }
+    if (sql.includes("SELECT id FROM payment_adjustment_submission_outbox")) {
+      return options.submissionLockCount === 0
+        ? { rows: [], rowCount: 0 }
+        : { rows: [{ id: "submission-1" }], rowCount: 1 };
     }
     if (sql.includes("SELECT id FROM customer_payment_adjustments")) {
       return { rows: [{ id: "adjustment-1" }], rowCount: 1 };
@@ -67,9 +73,12 @@ describe("atomic Moyasar cumulative refund reconciliation", () => {
     const inbox = new PostgresPaymentWebhookInbox(mock.pool);
     await expect(inbox.recordAndReconcileMoyasarRefund(command)).resolves.toBe("applied");
     expect(mock.calls[0]?.sql).toBe("BEGIN");
+    const submissionLock = mock.calls.findIndex(x =>
+      x.sql.includes("SELECT id FROM payment_adjustment_submission_outbox") && x.sql.includes("FOR UPDATE"));
     const adjustmentLock = mock.calls.findIndex(x => x.sql.includes("SELECT id FROM customer_payment_adjustments"));
     const captureLock = mock.calls.findIndex(x => x.sql.includes("FOR UPDATE") && x.sql.includes("verified_order_payment_captures"));
-    expect(adjustmentLock).toBeGreaterThan(-1);
+    expect(submissionLock).toBeGreaterThan(-1);
+    expect(adjustmentLock).toBeGreaterThan(submissionLock);
     expect(captureLock).toBeGreaterThan(adjustmentLock);
     expect(mock.calls.some(x => x.sql.includes("UPDATE customer_orders"))).toBe(true);
     expect(mock.calls.some(x => x.sql.includes("SET status='provider_confirmed'"))).toBe(true);
@@ -77,6 +86,18 @@ describe("atomic Moyasar cumulative refund reconciliation", () => {
     expect(mock.calls.some(x => x.sql.includes("SET status='applied'"))).toBe(true);
     expect(mock.calls.at(-1)?.sql).toBe("COMMIT");
     expect(mock.client.release).toHaveBeenCalledOnce();
+  });
+
+  it("quarantines a refund webhook when its active submission outbox row is missing", async () => {
+    const mock = makePool({ submissionLockCount: 0 });
+    const inbox = new PostgresPaymentWebhookInbox(mock.pool);
+    await expect(inbox.recordAndReconcileMoyasarRefund(command)).resolves.toBe("reconciliation_required");
+    expect(mock.calls.some(x => x.sql.includes("status='reconciliation_required'") &&
+      x.params?.includes("REFUND_SUBMISSION_NOT_ACTIVE"))).toBe(true);
+    expect(mock.calls.some(x => x.sql.includes("SELECT id FROM customer_payment_adjustments"))).toBe(false);
+    expect(mock.calls.some(x => x.sql.includes("FOR UPDATE") &&
+      x.sql.includes("verified_order_payment_captures"))).toBe(false);
+    expect(mock.calls.at(-1)?.sql).toBe("COMMIT");
   });
 
   it("quarantines a cumulative amount mismatch without changing order or reservation", async () => {

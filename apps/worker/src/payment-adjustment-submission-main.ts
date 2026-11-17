@@ -135,7 +135,8 @@ try{
   await pool.query("SELECT 1");
   const required=["0013_payment_adjustment_consents","0052_payment_adjustment_provider_binding",
     "0054_payment_adjustment_provider_reference_uniqueness","0055_payment_adjustment_submission_outbox","0056_payment_adjustment_submission_outbox_guards","0057_payment_adjustment_outcome_reconciliation","0058_payment_adjustment_original_capture_binding",
-    "0059_payment_refund_balance_reservations","0061_payment_adjustment_reference_optional"];
+    "0059_payment_refund_balance_reservations","0061_payment_adjustment_reference_optional",
+    "0062_moyasar_single_refund_per_payment"];
   const migrations=await pool.query("SELECT version FROM schema_migrations WHERE version=ANY($1::text[])",[required]);
   if(migrations.rowCount!==required.length)throw new Error("payment_adjustment_submission_worker_migration_required");
   process.stdout.write(JSON.stringify({

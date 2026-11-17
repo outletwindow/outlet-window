@@ -6,9 +6,9 @@ concurrency:
 
 on:
   push:
-    branches: ["main", "work/**"]
+    branches: ["main", "work/**", "fix/**", "feat/**"]
   pull_request:
-    branches: ["main", "work/**"]
+    branches: ["main", "work/**", "fix/**", "feat/**"]
 
 permissions:
   contents: read
@@ -278,10 +278,12 @@ jobs:
       - name: Verify financial journal projection worker is part of runtime Compose
         env:
           DATABASE_URL: postgres://outlet_window:ci_only_password@127.0.0.1:5432/outlet_window_test
+          MOYASAR_EXPECT_LIVE: "false"
         run: docker compose -f compose.yaml config --services | grep -Fx financial-journal-projection-worker
       - name: Validate opt-in payment adjustment sandbox Compose profile
         env:
           DATABASE_URL: postgres://outlet_window:ci_only_password@127.0.0.1:5432/outlet_window_test
+          MOYASAR_EXPECT_LIVE: "false"
           PAYMENT_ADJUSTMENT_ENVIRONMENT: sandbox
           PAYMENT_ADJUSTMENT_PROVIDER_KEY: ci-sandbox
           PAYMENT_ADJUSTMENT_SANDBOX_ENDPOINT: https://sandbox.example.test/adjustments
@@ -290,6 +292,7 @@ jobs:
       - name: Verify payment adjustment sandbox worker is opt-in and present
         env:
           DATABASE_URL: postgres://outlet_window:ci_only_password@127.0.0.1:5432/outlet_window_test
+          MOYASAR_EXPECT_LIVE: "false"
         run: docker compose --profile payment-adjustments-sandbox -f compose.yaml config --services | grep -Fx payment-adjustment-sandbox-worker
       - name: Typecheck
         run: pnpm typecheck

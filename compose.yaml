@@ -36,6 +36,13 @@ services:
   api:
     <<: *runtime
     command: ["node", "apps/api/dist/apps/api/src/server.js"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
+      MOYASAR_SECRET_KEY: ${MOYASAR_SECRET_KEY:-}
+      MOYASAR_PAYMENT_CALLBACK_URL: ${MOYASAR_PAYMENT_CALLBACK_URL:-}
+      MOYASAR_WEBHOOK_SECRET: ${MOYASAR_WEBHOOK_SECRET:-}
+      MOYASAR_EXPECT_LIVE: ${MOYASAR_EXPECT_LIVE:?Set MOYASAR_EXPECT_LIVE to true or false in .env}
     ports:
       - "${API_PORT:-3000}:3000"
     healthcheck:

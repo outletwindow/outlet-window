@@ -134,6 +134,21 @@ export class PostgresPaymentWebhookInbox {
         return "reconciliation_required";
       }
       if (candidate.rows.length === 1) {
+        // Keep the same lock order as the submission worker: outbox first,
+        // adjustment second, original capture third. Reversing the first two
+        // locks can deadlock a concurrent recordAccepted/recordRejected call.
+        const lockedSubmission = await client.query(
+          `SELECT id FROM payment_adjustment_submission_outbox
+           WHERE tenant_id=$1 AND adjustment_id=$2
+             AND status IN ('processing','submitted')
+           FOR UPDATE`,
+          [original.tenant_id,candidate.rows[0]!.adjustment_id]
+        );
+        if (lockedSubmission.rowCount !== 1) {
+          await this.quarantineRefundReceipt(client,receiptId,"REFUND_SUBMISSION_NOT_ACTIVE");
+          await client.query("COMMIT");
+          return "reconciliation_required";
+        }
         const lockedAdjustment = await client.query(
           "SELECT id FROM customer_payment_adjustments WHERE tenant_id=$1 AND id=$2 FOR UPDATE",
           [original.tenant_id,candidate.rows[0]!.adjustment_id]

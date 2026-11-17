@@ -19,7 +19,7 @@ describe("Moyasar one-shot payment refund client", () => {
       fetchImpl: async (url, init) => {
         requests.push({ url: String(url), ...(init === undefined ? {} : { init }) });
         if (init?.method === "GET") return new Response(JSON.stringify(payment()), { status: 200 });
-        return new Response(JSON.stringify(payment({ status: "captured", refunded: 3_500 })), { status: 200 });
+        return new Response(JSON.stringify(payment({ status: "refunded", refunded: 3_500 })), { status: 200 });
       }
     });
 
@@ -34,6 +34,7 @@ describe("Moyasar one-shot payment refund client", () => {
     expect(requests[0]?.init?.method).toBe("GET");
     expect(requests[1]?.url).toBe(`https://api.moyasar.com/v1/payments/${paymentId}/refund`);
     expect(requests[1]?.init?.method).toBe("POST");
+    expect(requests[1]?.init?.redirect).toBe("error");
     expect(JSON.parse(String(requests[1]?.init?.body))).toEqual({ amount: 2_500 });
     const headers = new Headers(requests[1]?.init?.headers);
     expect(headers.get("authorization")).toBe(
@@ -111,7 +112,7 @@ describe("Moyasar one-shot payment refund client", () => {
   });
 
   it("treats 429 and 5xx as unknown and never retries the refund", async () => {
-    for (const status of [429, 500, 503]) {
+    for (const status of [408, 425, 429, 500, 503]) {
       let posts = 0;
       const client = new MoyasarPaymentRefundClient({
         secretKey,
@@ -134,6 +135,18 @@ describe("Moyasar one-shot payment refund client", () => {
       fetchImpl: async (_url, init) => init?.method === "GET"
         ? new Response(JSON.stringify(payment()), { status: 200 })
         : new Response(JSON.stringify(payment({ refunded: 3_499 })), { status: 200 })
+    });
+    await expect(client.refund({
+      paymentId, amountMinor: 2_500, currency: "SAR", expectedRefundedMinor: 1_000
+    })).resolves.toEqual({ outcome: "unknown", code: "MOYASAR_REFUND_RESPONSE_UNVERIFIABLE" });
+  });
+
+  it("does not confirm an exact cumulative total when the provider status is not refunded", async () => {
+    const client = new MoyasarPaymentRefundClient({
+      secretKey,
+      fetchImpl: async (_url, init) => init?.method === "GET"
+        ? new Response(JSON.stringify(payment()), { status: 200 })
+        : new Response(JSON.stringify(payment({ status: "captured", refunded: 3_500 })), { status: 200 })
     });
     await expect(client.refund({
       paymentId, amountMinor: 2_500, currency: "SAR", expectedRefundedMinor: 1_000

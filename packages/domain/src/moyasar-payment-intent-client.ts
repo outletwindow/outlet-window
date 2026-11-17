@@ -79,7 +79,7 @@ export class MoyasarPaymentIntentClient {
       });
     } catch { throw new Error("MOYASAR_PAYMENT_INTENT_FETCH_OUTCOME_UNKNOWN"); }
     if (!response.ok) {
-      if (response.status === 408 || response.status >= 500) throw new Error("MOYASAR_PAYMENT_INTENT_FETCH_OUTCOME_UNKNOWN");
+      if (response.status === 408 || response.status === 425 || response.status === 429 || response.status >= 500) throw new Error("MOYASAR_PAYMENT_INTENT_FETCH_OUTCOME_UNKNOWN");
       throw new Error("MOYASAR_PAYMENT_INTENT_FETCH_REJECTED");
     }
     let payload: MoyasarIntentResponse;
@@ -113,6 +113,7 @@ export class MoyasarPaymentIntentClient {
     try {
       response = await this.fetchImpl("https://api.moyasar.com/v1/payment_intents", {
         method: "POST",
+        redirect: "error",
         headers: {
           authorization: `Basic ${Buffer.from(`${this.options.secretKey}:`, "utf8").toString("base64")}`,
           "content-type": "application/json",
@@ -134,7 +135,7 @@ export class MoyasarPaymentIntentClient {
     if (!response.ok) {
       // A server-side failure or gateway timeout may occur after the provider
       // accepted the request. Keep the attempt unresolved; never permit a blind retry.
-      if (response.status === 408 || response.status >= 500) {
+      if (response.status === 408 || response.status === 425 || response.status === 429 || response.status >= 500) {
         throw new Error("MOYASAR_PAYMENT_INTENT_OUTCOME_UNKNOWN");
       }
       throw new Error("MOYASAR_PAYMENT_INTENT_PROVIDER_REJECTED");
