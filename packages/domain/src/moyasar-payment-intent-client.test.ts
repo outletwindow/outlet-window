@@ -74,7 +74,7 @@ describe("Moyasar payment intent client", () => {
   });
 
   it("treats provider 5xx and gateway timeout responses as ambiguous without retrying", async () => {
-    for (const status of [408, 500, 502, 503]) {
+    for (const status of [408, 425, 429, 500, 502, 503]) {
       const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(response({ message: "temporary failure" }, status));
       const client = new MoyasarPaymentIntentClient({ secretKey: "sk_test_0123456789", fetchImpl });
       await expect(client.createIntent({
