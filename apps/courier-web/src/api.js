@@ -59,6 +59,42 @@ export function createCourierApi({ baseUrl = "", token, fetchImpl = globalThis.f
       }
       return payload.tasks;
     },
+    async uploadDeliveryProof(taskId, file) {
+      if (typeof taskId !== "string" || !taskId.trim()) throw new TypeError("invalid_task_id");
+      if (!file || typeof file.arrayBuffer !== "function" ||
+          !["image/jpeg", "image/png", "image/webp"].includes(file.type) ||
+          !Number.isSafeInteger(file.size) || file.size < 1 || file.size > 10 * 1024 * 1024) {
+        throw new TypeError("invalid_delivery_proof_file");
+      }
+      if (!globalThis.crypto?.subtle) throw new TypeError("secure_file_hashing_unavailable");
+      const bytes = await file.arrayBuffer();
+      const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
+      const contentSha256 = Array.from(new Uint8Array(digest), value => value.toString(16).padStart(2, "0")).join("");
+      const intent = await request(`/api/v1/courier/tasks/${encodeURIComponent(taskId)}/proof-upload`, {
+        method: "POST",
+        body: JSON.stringify({ contentType: file.type, contentLength: file.size, contentSha256 })
+      });
+      if (!intent || typeof intent.uploadUrl !== "string" || typeof intent.uploadId !== "string" ||
+          !intent.requiredHeaders || typeof intent.requiredHeaders !== "object") {
+        throw new CourierApiError("invalid_delivery_proof_upload_response", 502, intent);
+      }
+      let uploadUrl;
+      try { uploadUrl = new URL(intent.uploadUrl); } catch {
+        throw new CourierApiError("invalid_delivery_proof_upload_url", 502, null);
+      }
+      if (uploadUrl.protocol !== "https:") throw new CourierApiError("insecure_delivery_proof_upload_url", 502, null);
+      const uploaded = await fetchImpl(uploadUrl.toString(), {
+        method: "PUT",
+        headers: intent.requiredHeaders,
+        body: file
+      });
+      if (!uploaded.ok) {
+        throw new CourierApiError("delivery_proof_storage_upload_failed", uploaded.status, null);
+      }
+      return request(`/api/v1/courier/tasks/${encodeURIComponent(taskId)}/proof-upload/${encodeURIComponent(intent.uploadId)}/complete`, {
+        method: "POST"
+      });
+    },
     async transitionTask(taskId, { status, expectedVersion, pickupCode, reason } = {}) {
       if (typeof taskId !== "string" || !taskId.trim()) throw new TypeError("invalid_task_id");
       if (typeof status !== "string" || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1) {
