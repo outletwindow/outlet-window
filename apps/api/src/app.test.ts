@@ -1195,3 +1195,75 @@ describe("Moyasar refund webhook route", () => {
     } finally { await collision.close(); }
   });
 });
+
+
+describe("courier delivery task API", () => {
+  it("lists only the authenticated courier's tenant-scoped tasks", async () => {
+    const courier: Actor = {
+      id: "courier-principal-1", role: "courier", active: true,
+      grants: [{
+        resource: "courier.delivery_task", actions: ["read", "update"],
+        scope: { merchantId: "merchant-courier-1" }
+      }]
+    };
+    const listForCourier = vi.fn(async (input: { tenantId: string; courierId: string }) => [{
+      id: "task-1", tenantId: input.tenantId, orderId: "order-1", suborderId: "suborder-1",
+      courierId: input.courierId, status: "offered" as const, version: 1, updatedAtUtc: new Date().toISOString()
+    }]);
+    const transition = vi.fn(async () => ({
+      outcome: "updated" as const,
+      task: { id: "task-1", tenantId: "merchant-courier-1", orderId: "order-1",
+        suborderId: "suborder-1", courierId: courier.id, status: "accepted" as const,
+        version: 2, updatedAtUtc: new Date().toISOString() }
+    }));
+    const api = buildApp({ resolveActor: async () => courier, courierTasks: { listForCourier, transition } });
+    await api.ready();
+    try {
+      const listed = await api.inject({ method: "GET", url: "/api/v1/courier/tasks" });
+      expect(listed.statusCode).toBe(200);
+      expect(listed.json().tasks).toHaveLength(1);
+      expect(listForCourier).toHaveBeenCalledWith({
+        tenantId: "merchant-courier-1", courierId: courier.id, limit: 100
+      });
+
+      const changed = await api.inject({
+        method: "PATCH", url: "/api/v1/courier/tasks/task-1/status",
+        payload: { status: "accepted", expectedVersion: 1 }
+      });
+      expect(changed.statusCode).toBe(200);
+      expect(transition).toHaveBeenCalledWith({
+        tenantId: "merchant-courier-1", taskId: "task-1", courierId: courier.id,
+        nextStatus: "accepted", expectedVersion: 1
+      });
+    } finally {
+      await api.close();
+    }
+  });
+
+  it("does not accept a courier identifier from the request body", async () => {
+    const courier: Actor = {
+      id: "courier-principal-2", role: "courier", active: true,
+      grants: [{
+        resource: "courier.delivery_task", actions: ["update"],
+        scope: { merchantId: "merchant-courier-2" }
+      }]
+    };
+    const transition = vi.fn(async () => ({ outcome: "not_found" as const }));
+    const api = buildApp({ resolveActor: async () => courier, courierTasks: {
+      listForCourier: vi.fn(async () => []), transition
+    } });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "PATCH", url: "/api/v1/courier/tasks/task-2/status",
+        payload: { courierId: "attacker-id", status: "accepted", expectedVersion: 1 }
+      });
+      expect(response.statusCode).toBe(404);
+      expect(transition).toHaveBeenCalledWith(expect.objectContaining({
+        courierId: courier.id, tenantId: "merchant-courier-2"
+      }));
+    } finally {
+      await api.close();
+    }
+  });
+});
