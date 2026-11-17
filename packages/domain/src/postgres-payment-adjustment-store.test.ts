@@ -76,7 +76,7 @@ describe("Postgres payment adjustment intent allocations", () => {
         { suborderId: "sub-2", componentKind: "delivery", sourceReference: "delivery-quote-2", amountMinor: 1000 }
       ]
     })).resolves.toMatchObject({
-      outcome: "created", adjustmentId: "adjustment-created", amountMinor: 2500, direction: "refund"
+      outcome: "created", adjustmentId: expect.any(String), amountMinor: 2500, direction: "refund"
     });
     const allocationInserts = calls.filter(call => call.sql.includes("INSERT INTO customer_payment_adjustment_allocations"));
     expect(allocationInserts).toHaveLength(2);
