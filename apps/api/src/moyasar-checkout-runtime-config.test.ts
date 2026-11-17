@@ -40,6 +40,14 @@ describe("Moyasar checkout runtime configuration", () => {
     })).toThrow("MOYASAR_SECRET_KEY_MODE_MISMATCH");
   });
 
+  it("rejects malformed and unsupported secret key formats", () => {
+    for (const secretKey of ["not-a-key", "sk_prod_0123456789", "sk_test_", "sk_live_invalid-key"]) {
+      expect(() => createMoyasarCheckoutRuntimeConfig({
+        ...valid, MOYASAR_SECRET_KEY: secretKey
+      })).toThrow("MOYASAR_SECRET_KEY_FORMAT_INVALID");
+    }
+  });
+
   it("rejects insecure, credential-bearing, or fragment callback URLs", () => {
     for (const callback of [
       "http://app.example.com/payment-return",
