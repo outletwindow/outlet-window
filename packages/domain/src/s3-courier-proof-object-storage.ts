@@ -99,13 +99,13 @@ export class S3CourierProofObjectStorage implements CourierProofObjectStorage {
     };
     if (this.config.sessionToken) headers["x-amz-security-token"] = this.config.sessionToken;
     const signedHeaders = Object.keys(headers).sort().join(";");
-    const canonicalHeaders = Object.keys(headers).sort().map(key => `${key}:${headers[key].trim()}\n`).join("");
+    const canonicalHeaders = Object.keys(headers).sort().map(key => `${key}:${headers[key]!.trim()}\n`).join("");
     const canonicalRequest = ["HEAD", url.pathname, "", canonicalHeaders, signedHeaders, payloadHash].join("\n");
     const stringToSign = ["AWS4-HMAC-SHA256", date, scope, sha256(canonicalRequest)].join("\n");
     const signature = createHmac("sha256", signingKey(this.config.secretAccessKey, day, this.config.region))
       .update(stringToSign, "utf8").digest("hex");
     const authorization = `AWS4-HMAC-SHA256 Credential=${this.config.accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
-    const requestHeaders = { ...headers, authorization };
+    const requestHeaders: Record<string, string> = { ...headers, authorization };
     delete requestHeaders.host;
     const response = await this.fetchImpl(url, {
       method: "HEAD",
