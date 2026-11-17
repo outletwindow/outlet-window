@@ -174,3 +174,25 @@ FOR EACH ROW EXECUTE FUNCTION prevent_customer_payment_adjustment_allocation_mut
 CREATE TRIGGER customer_payment_adjustment_allocations_no_truncate
 BEFORE TRUNCATE ON customer_payment_adjustment_allocations
 FOR EACH STATEMENT EXECUTE FUNCTION prevent_customer_payment_adjustment_allocation_mutation();
+
+-- Never let legacy refund jobs without immutable component evidence be submitted
+-- after this migration. Their PSP outcome may already be ambiguous, so quarantine
+-- them for reconciliation rather than retrying or inventing an allocation.
+UPDATE payment_adjustment_submission_outbox o
+   SET status='reconciliation_required',
+       completed_at=NULL,
+       lease_owner=NULL,
+       lease_expires_at=NULL,
+       last_error_code='REFUND_COMPONENT_ALLOCATION_MISSING',
+       updated_at=now()
+  FROM customer_payment_adjustments a
+ WHERE a.tenant_id=o.tenant_id AND a.id=o.adjustment_id
+   AND a.adjustment_direction='refund'
+   AND o.status IN ('queued','processing','submitted')
+   AND NOT EXISTS (
+     SELECT 1
+       FROM customer_payment_adjustment_allocations x
+      WHERE x.tenant_id=a.tenant_id AND x.adjustment_id=a.id
+      GROUP BY x.tenant_id,x.adjustment_id
+     HAVING SUM(x.amount_minor)=a.amount_minor
+   );
