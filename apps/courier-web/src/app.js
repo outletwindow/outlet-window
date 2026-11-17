@@ -13,7 +13,7 @@ const translations = {
     declined: "تم رفض المهمة في العرض التجريبي", next: "الخطوة التالية",
     toStore: "التوجه إلى المتجر", collect: "استلام الطلب والتحقق منه",
     deliver: "التوجه إلى العميل", done: "إتمام التسليم بإثبات معتمد",
-    language: "English", status: { offered: "متاحة", accepted: "تم القبول", in_progress: "قيد التنفيذ", completed: "مكتملة", declined: "مرفوضة" }
+    language: "English", status: { offered: "متاحة", accepted: "تم القبول", heading_to_pickup: "في الطريق للمتجر", arrived_at_pickup: "وصل للمتجر", picked_up: "تم الاستلام", in_transit: "في الطريق للعميل", arrived_at_dropoff: "وصل للعميل", delivered: "تم التسليم", declined: "مرفوضة", cancelled: "ملغاة", failed: "تعذّر التنفيذ", in_progress: "قيد التنفيذ", completed: "مكتملة" }
   },
   en: {
     brand: "Outlet Window", role: "Courier app", greeting: "Good evening, Captain",
@@ -27,7 +27,7 @@ const translations = {
     declined: "Task declined in demo preview", next: "Next step",
     toStore: "Head to the store", collect: "Collect and verify the order",
     deliver: "Head to the customer", done: "Complete delivery with approved proof",
-    language: "العربية", status: { offered: "Available", accepted: "Accepted", in_progress: "In progress", completed: "Completed", declined: "Declined" }
+    language: "العربية", status: { offered: "Available", accepted: "Accepted", heading_to_pickup: "Heading to store", arrived_at_pickup: "Arrived at store", picked_up: "Picked up", in_transit: "In transit", arrived_at_dropoff: "Arrived at customer", delivered: "Delivered", declined: "Declined", cancelled: "Cancelled", failed: "Failed", in_progress: "In progress", completed: "Completed" }
   }
 };
 
