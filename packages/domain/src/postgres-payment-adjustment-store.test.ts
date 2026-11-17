@@ -80,6 +80,7 @@ describe("Postgres payment adjustment intent allocations", () => {
     });
     const allocationInserts = calls.filter(call => call.sql.includes("INSERT INTO customer_payment_adjustment_allocations"));
     expect(allocationInserts).toHaveLength(2);
+    expect(allocationInserts[1]?.params?.[2]).toBe(allocationInserts[0]?.params?.[2]);
     expect(allocationInserts[0]?.params).toEqual([
       expect.any(String), "tenant-1", expect.any(String), "order-1", "sub-1",
       "product_subtotal", null, 1500, "SAR"
