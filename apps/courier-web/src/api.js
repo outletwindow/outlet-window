@@ -19,7 +19,15 @@ export function createCourierApi({ baseUrl = "", token, fetchImpl = globalThis.f
   }
   if (typeof fetchImpl !== "function") throw new TypeError("fetch_unavailable");
 
-  const root = String(baseUrl).replace(/\/+$/, "");
+  const configuredBase = String(baseUrl).trim();
+  if (configuredBase) {
+    let parsed;
+    try { parsed = new URL(configuredBase); } catch { throw new TypeError("invalid_courier_api_base_url"); }
+    const localHttp = parsed.protocol === "http:" && ["localhost", "127.0.0.1"].includes(parsed.hostname);
+    if (parsed.protocol !== "https:" && !localHttp) throw new TypeError("courier_api_requires_https");
+    if (parsed.username || parsed.password) throw new TypeError("invalid_courier_api_base_url");
+  }
+  const root = configuredBase.replace(/\/+$/, "");
 
   async function request(path, init = {}) {
     const response = await fetchImpl(`${root}${path}`, {
