@@ -65,7 +65,7 @@ test("uploads delivery proof, then finalizes server verification", async () => {
       if (requests.length === 1) return response(201, {
         uploadId: "upload_12345678",
         uploadUrl: "https://objects.example.test/signed-upload",
-        requiredHeaders: { "content-type": "image/jpeg", "if-none-match": "*",  }
+        requiredHeaders: { "content-type": "image/jpeg", "if-none-match": "*" }
       });
       if (requests.length === 2) return response(200, null);
       return response(200, { outcome: "verified", evidenceId: "evidence-1" });
