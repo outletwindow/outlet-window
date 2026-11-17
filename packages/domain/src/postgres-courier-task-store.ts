@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { PostgresPool } from "./postgres-iam-store.js";
 import {
   transitionCourierTask,
@@ -158,7 +159,7 @@ export class PostgresCourierTaskStore {
         `INSERT INTO courier_delivery_task_events
           (id, tenant_id, task_id, sequence, from_status, to_status, actor_id, actor_role, reason, occurred_at)
          VALUES ($1,$2,$3,$4,$5,$6,$7,'courier',$8,$9)`,
-        [`courier-event-${crypto.randomUUID()}`, input.tenantId, input.taskId,
+        [randomUUID(), input.tenantId, input.taskId,
           transition.task.version, row.status, input.nextStatus, input.courierId,
           input.reason ?? null, occurredAtUtc]
       );
@@ -168,7 +169,7 @@ export class PostgresCourierTaskStore {
           `INSERT INTO courier_delivery_evidence
             (id, tenant_id, task_id, evidence_type, verification_method, verified_by, verified_at)
            VALUES ($1,$2,$3,'pickup_code_verification','server_digest_match',$4,$5)`,
-          [`courier-evidence-${crypto.randomUUID()}`, input.tenantId, input.taskId,
+          [randomUUID(), input.tenantId, input.taskId,
             input.courierId, occurredAtUtc]
         );
       }
