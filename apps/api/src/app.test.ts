@@ -1299,4 +1299,77 @@ describe("courier delivery task API", () => {
       await api.close();
     }
   });
+  it("issues and finalizes delivery-proof uploads only within the courier task scope", async () => {
+    const courier: Actor = {
+      id: "courier-proof-1", role: "courier", active: true,
+      grants: [{ resource: "courier.delivery_task", actions: ["update"], scope: { merchantId: "merchant-proof-1" } }]
+    };
+    const requestProofUpload = vi.fn(async () => ({
+      outcome: "upload_created" as const, uploadId: "upload_12345678",
+      uploadUrl: "https://storage.example.invalid/signed-upload",
+      expiresAtUtc: "2026-11-17T16:00:00.000Z"
+    }));
+    const finalizeProofUpload = vi.fn(async () => ({
+      outcome: "verified" as const, evidenceId: "evidence-1",
+      verifiedAtUtc: "2026-11-17T15:59:00.000Z"
+    }));
+    const api = buildApp({
+      resolveActor: async () => courier,
+      courierDeliveryEvidence: { requestProofUpload, finalizeProofUpload }
+    });
+    await api.ready();
+    try {
+      const created = await api.inject({
+        method: "POST", url: "/api/v1/courier/tasks/task-proof/proof-upload",
+        payload: { contentType: "image/jpeg", contentLength: 2048, contentSha256: "a".repeat(64) }
+      });
+      expect(created.statusCode).toBe(201);
+      expect(created.json()).toMatchObject({ uploadId: "upload_12345678", requiredHeaders: { "content-type": "image/jpeg" } });
+      expect(requestProofUpload).toHaveBeenCalledWith({
+        tenantId: "merchant-proof-1", taskId: "task-proof", courierId: courier.id,
+        contentType: "image/jpeg", contentLength: 2048, contentSha256: "a".repeat(64)
+      });
+
+      const completed = await api.inject({
+        method: "POST",
+        url: "/api/v1/courier/tasks/task-proof/proof-upload/upload_12345678/complete"
+      });
+      expect(completed.statusCode).toBe(200);
+      expect(completed.json()).toMatchObject({ outcome: "verified", evidenceId: "evidence-1" });
+      expect(finalizeProofUpload).toHaveBeenCalledWith({
+        tenantId: "merchant-proof-1", taskId: "task-proof", courierId: courier.id,
+        uploadId: "upload_12345678"
+      });
+    } finally {
+      await api.close();
+    }
+  });
+
+  it("rejects unsafe delivery-proof upload metadata before calling storage", async () => {
+    const courier: Actor = {
+      id: "courier-proof-2", role: "courier", active: true,
+      grants: [{ resource: "courier.delivery_task", actions: ["update"], scope: { merchantId: "merchant-proof-2" } }]
+    };
+    const requestProofUpload = vi.fn();
+    const api = buildApp({
+      resolveActor: async () => courier,
+      courierDeliveryEvidence: {
+        requestProofUpload,
+        finalizeProofUpload: vi.fn()
+      }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "POST", url: "/api/v1/courier/tasks/task-proof/proof-upload",
+        payload: { contentType: "text/html", contentLength: 2048, contentSha256: "not-a-sha256" }
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toEqual({ error: "invalid_delivery_proof_upload" });
+      expect(requestProofUpload).not.toHaveBeenCalled();
+    } finally {
+      await api.close();
+    }
+  });
+
 });
