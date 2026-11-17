@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#174b55">
+  <meta name="description" content="Outlet Window courier application preview">
+  <title>Outlet Window | تطبيق المندوب</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#"><span class="mark">OW</span><span>Outlet Window</span></a>
+    <button id="language-toggle" class="language" type="button">English</button>
+  </header>
+  <main>
+    <section class="welcome">
+      <div><span class="eyebrow" data-copy="role">تطبيق المندوب</span><h1 data-copy="greeting">مساء الخير، كابتن</h1><p data-copy="subtitle">كل مهامك وتفاصيل توصيلك في مكان واحد</p></div>
+      <span class="availability"><i></i><span data-copy="available">متاح لاستقبال المهام</span></span>
+    </section>
+    <section class="summary">
+      <h2 data-copy="today">ملخص اليوم</h2>
+      <div class="stats">
+        <article><span data-copy="completed">طلبات مكتملة</span><strong>0</strong></article>
+        <article><span data-copy="earnings">الأرباح التقديرية</span><strong>٠ ر.س</strong></article>
+      </div>
+    </section>
+    <section class="tasks">
+      <div class="section-heading"><div><span class="eyebrow">DELIVERY TASKS</span><h2 data-copy="offers">المهام المتاحة</h2></div><span class="demo-pill" data-copy="sample">مهمة تجريبية</span></div>
+      <nav class="tabs" aria-label="Task views">
+        <button class="selected" data-tab="offers" type="button" data-copy="offers">المهام المتاحة</button>
+        <button data-tab="active" type="button" data-copy="active">مهامي الحالية</button>
+        <button data-tab="history" type="button" data-copy="history">السجل</button>
+      </nav>
+      <div id="task-list" class="task-list" aria-live="polite"></div>
+    </section>
+    <p class="demo-note" data-copy="demo">عرض تجريبي — لا توجد مهام حقيقية أو مشاركة موقع فعلية</p>
+  </main>
+  <footer>© 2026 Outlet Window</footer>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>
