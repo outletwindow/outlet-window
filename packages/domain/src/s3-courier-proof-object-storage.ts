@@ -62,7 +62,7 @@ export class S3CourierProofObjectStorage implements CourierProofObjectStorage {
     const day = date.slice(0, 8);
     const scope = `${day}/${this.config.region}/s3/aws4_request`;
     const checksum = Buffer.from(input.contentSha256, "hex").toString("base64");
-    const signedHeaders = "content-type;host;x-amz-checksum-sha256";
+    const signedHeaders = "content-type;host;if-none-match;x-amz-checksum-sha256";
     const expires = Math.max(1, Math.min(300, Math.floor((new Date(input.expiresAtUtc).getTime() - now.getTime()) / 1000)));
     const params: Record<string, string> = {
       "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
@@ -74,7 +74,7 @@ export class S3CourierProofObjectStorage implements CourierProofObjectStorage {
     if (this.config.sessionToken) params["X-Amz-Security-Token"] = this.config.sessionToken;
     const canonicalQuery = Object.entries(params).sort(([a],[b]) => a.localeCompare(b))
       .map(([key,value]) => `${encodeQuery(key)}=${encodeQuery(value)}`).join("&");
-    const canonicalHeaders = `content-type:${input.contentType}\nhost:${url.host}\nx-amz-checksum-sha256:${checksum}\n`;
+    const canonicalHeaders = `content-type:${input.contentType}\nhost:${url.host}\nif-none-match:*\nx-amz-checksum-sha256:${checksum}\n`;
     const canonicalRequest = ["PUT", url.pathname, canonicalQuery, canonicalHeaders, signedHeaders, "UNSIGNED-PAYLOAD"].join("\n");
     const stringToSign = ["AWS4-HMAC-SHA256", date, scope, sha256(canonicalRequest)].join("\n");
     const signature = createHmac("sha256", signingKey(this.config.secretAccessKey, day, this.config.region))
