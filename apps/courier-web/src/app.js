@@ -17,7 +17,7 @@ const translations = {
     collect:"استلام الطلب برمز التحقق", toCustomer:"بدء التوجه إلى العميل",
     atCustomer:"تأكيد الوصول إلى العميل", pickupCode:"أدخل رمز الاستلام لمرة واحدة",
     pickupCodeRequired:"رمز الاستلام مطلوب", versionConflict:"تغيرت المهمة؛ حدّث القائمة وحاول مجدداً",
-    proofPending:"إتمام التسليم ينتظر إضافة خدمة رفع إثبات التسليم والتحقق منه",
+    proofPending:"لا يمكن إتمام التسليم قبل رفع صورة والتحقق منها", uploadProof:"رفع الإثبات وإتمام التسليم", selectProof:"اختر صورة إثبات التسليم",
     sessionNote:"رمز الجلسة يبقى في ذاكرة الصفحة فقط ولا يُحفظ على الجهاز",
     notConnected:"غير متصل", status:{offered:"متاحة",accepted:"تم القبول",heading_to_pickup:"في الطريق للمتجر",
       arrived_at_pickup:"وصل للمتجر",picked_up:"تم الاستلام",in_transit:"في الطريق للعميل",
@@ -40,7 +40,7 @@ const translations = {
     collect:"Collect using verification code", toCustomer:"Start heading to customer",
     atCustomer:"Confirm arrival at customer", pickupCode:"Enter the single-use pickup code",
     pickupCodeRequired:"Pickup code is required", versionConflict:"Task changed; refresh and try again",
-    proofPending:"Delivery completion awaits a delivery-proof upload and verification service",
+    proofPending:"Delivery cannot be completed until a proof image is uploaded and verified", uploadProof:"Upload proof and complete delivery", selectProof:"Choose delivery proof image",
     sessionNote:"The session token stays in page memory only and is not saved on this device",
     notConnected:"Not connected", status:{offered:"Available",accepted:"Accepted",heading_to_pickup:"Heading to store",
       arrived_at_pickup:"Arrived at store",picked_up:"Picked up",in_transit:"In transit",
@@ -141,6 +141,17 @@ function renderTask(task) {
     const next = getNextTaskAction(task);
     if (next) actions.append(makeButton(next.label, "transition", task.id));
     if (task.status === "arrived_at_dropoff") {
+      const proofInput = document.createElement("input");
+      proofInput.type = "file";
+      proofInput.accept = "image/jpeg,image/png,image/webp";
+      proofInput.dataset.proofFile = task.id;
+      proofInput.setAttribute("aria-label", t("selectProof"));
+      const proofButton = makeButton("uploadProof", "proof", task.id);
+      proofButton.disabled = true;
+      proofInput.addEventListener("change", () => {
+        proofButton.disabled = !proofInput.files?.[0];
+      });
+      actions.append(proofInput, proofButton);
       const note = document.createElement("p");
       note.className = "next-step";
       note.textContent = t("proofPending");
@@ -209,6 +220,27 @@ document.addEventListener("click", async event => {
   if (!button || !api || busy) return;
   const task = tasks.find(item => item.id === button.dataset.id);
   if (!task) return;
+
+  if (button.dataset.action === "proof") {
+    const proofInput = [...content.querySelectorAll("input[data-proof-file]")]
+      .find(input => input.dataset.proofFile === task.id);
+    const file = proofInput?.files?.[0];
+    if (!file) { notify(t("selectProof")); return; }
+    try {
+      setBusy(true);
+      await api.uploadDeliveryProof(task.id, file);
+      await api.transitionTask(task.id, { status: "delivered", expectedVersion: task.version });
+      await loadTasks();
+      notify(t("status").delivered);
+    } catch (error) {
+      if (error instanceof CourierApiError && error.status === 409) notify(t("versionConflict"));
+      else notify(error instanceof Error ? error.message : t("failed"));
+    } finally {
+      setBusy(false);
+      render();
+    }
+    return;
+  }
 
   let status;
   let extra = {};
