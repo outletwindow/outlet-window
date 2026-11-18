@@ -71,6 +71,22 @@ export function createCourierApi({ baseUrl = "", token, fetchImpl = globalThis.f
       }
       return payload.offers;
     },
+    async respondToOffer(offerId, { decision, expectedVersion, reason } = {}) {
+      if (typeof offerId !== "string" || !offerId.trim() ||
+          !["accepted", "declined"].includes(decision) ||
+          !Number.isSafeInteger(expectedVersion) || expectedVersion < 1 ||
+          (decision === "declined" && (typeof reason !== "string" || !reason.trim() || reason.length > 500)) ||
+          (decision === "accepted" && reason !== undefined)) {
+        throw new TypeError("invalid_courier_dispatch_offer_response");
+      }
+      return request(`/api/v1/courier/offers/${encodeURIComponent(offerId)}/respond`, {
+        method: "POST",
+        body: JSON.stringify({
+          decision, expectedVersion,
+          ...(reason === undefined ? {} : { reason })
+        })
+      });
+    },
     async uploadDeliveryProof(taskId, file) {
       if (typeof taskId !== "string" || !taskId.trim()) throw new TypeError("invalid_task_id");
       if (!file || typeof file.arrayBuffer !== "function" ||

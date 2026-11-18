@@ -1374,3 +1374,69 @@ describe("courier delivery task API", () => {
   });
 
 });
+
+
+describe("courier dispatch offer responses", () => {
+  const courierActor: Actor = {
+    id: "courier-1", role: "courier", active: true,
+    grants: [{
+      resource: "courier.delivery_task", actions: ["read", "update"],
+      scope: { merchantId: "tenant-1" }
+    }]
+  };
+
+  it("routes a verified courier's offer decision through the transactional command", async () => {
+    const respond = vi.fn(async () => ({ outcome: "accepted" as const, taskId: "task-1", offerVersion: 3 }));
+    const courierApp = buildApp({
+      resolveActor: async () => courierActor,
+      courierDispatchOfferCommands: { respond }
+    });
+    await courierApp.ready();
+    try {
+      const response = await courierApp.inject({
+        method: "POST", url: "/api/v1/courier/offers/offer-12345678/respond",
+        payload: { decision: "accepted", expectedVersion: 2 }
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ outcome: "accepted", taskId: "task-1", offerVersion: 3 });
+      expect(respond).toHaveBeenCalledWith({
+        tenantId: "tenant-1", offerId: "offer-12345678", courierId: "courier-1",
+        expectedVersion: 2, decision: "accepted"
+      });
+    } finally { await courierApp.close(); }
+  });
+
+  it("rejects invalid decline requests before calling the command store", async () => {
+    const respond = vi.fn();
+    const courierApp = buildApp({
+      resolveActor: async () => courierActor,
+      courierDispatchOfferCommands: { respond }
+    });
+    await courierApp.ready();
+    try {
+      const response = await courierApp.inject({
+        method: "POST", url: "/api/v1/courier/offers/offer-12345678/respond",
+        payload: { decision: "declined", expectedVersion: 2, reason: " " }
+      });
+      expect(response.statusCode).toBe(400);
+      expect(respond).not.toHaveBeenCalled();
+    } finally { await courierApp.close(); }
+  });
+
+  it("does not allow non-couriers to respond to offers", async () => {
+    const respond = vi.fn();
+    const nonCourierApp = buildApp({
+      resolveActor: async () => ({ ...courierActor, role: "customer" as const, grants: courierActor.grants }),
+      courierDispatchOfferCommands: { respond }
+    });
+    await nonCourierApp.ready();
+    try {
+      const response = await nonCourierApp.inject({
+        method: "POST", url: "/api/v1/courier/offers/offer-12345678/respond",
+        payload: { decision: "accepted", expectedVersion: 2 }
+      });
+      expect(response.statusCode).toBe(403);
+      expect(respond).not.toHaveBeenCalled();
+    } finally { await nonCourierApp.close(); }
+  });
+});

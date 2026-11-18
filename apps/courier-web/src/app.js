@@ -7,7 +7,8 @@ const translations = {
     available:"متصل بالخدمة", today:"ملخص المهام", completed:"طلبات مكتملة", earnings:"الأرباح",
     pickup:"الاستلام", dropoff:"التسليم", order:"الطلب", suborder:"الطلب الفرعي", accept:"قبول المهمة", decline:"رفض المهمة",
     offers:"العروض المتاحة", active:"مهامي الحالية", history:"السجل",
-    offerExpires:"ينتهي العرض", offerPendingAcceptance:"عرض بانتظار تفعيل القبول الآمن",
+    offerExpires:"ينتهي العرض", offerPendingAcceptance:"يمكنك الرد على العرض؛ التعيين يتم بعد التحقق من الأهلية",
+    acceptOffer:"قبول العرض", declineOffer:"رفض العرض", declineOfferReason:"اكتب سبب رفض العرض",
     noOffers:"لا توجد مهام متاحة", noActive:"لا توجد مهام نشطة", noHistory:"لا يوجد سجل توصيل",
     connectTitle:"اتصال حساب المندوب", tokenLabel:"رمز جلسة المندوب", connect:"اتصال وجلب المهام",
     disconnect:"قطع الاتصال", loading:"جارٍ الاتصال...", refresh:"تحديث المهام",
@@ -31,7 +32,8 @@ const translations = {
     available:"Connected", today:"Task summary", completed:"Completed orders", earnings:"Earnings",
     pickup:"Pickup", dropoff:"Drop-off", order:"Order", suborder:"Suborder", accept:"Accept task", decline:"Decline task",
     offers:"Available offers", active:"My active tasks", history:"History",
-    offerExpires:"Offer expires", offerPendingAcceptance:"Secure offer acceptance is not enabled yet",
+    offerExpires:"Offer expires", offerPendingAcceptance:"Respond to the offer; assignment follows an eligibility check",
+    acceptOffer:"Accept offer", declineOffer:"Decline offer", declineOfferReason:"Enter a reason for declining the offer",
     noOffers:"No available tasks", noActive:"No active tasks", noHistory:"No delivery history",
     connectTitle:"Courier account connection", tokenLabel:"Courier session token", connect:"Connect and load tasks",
     disconnect:"Disconnect", loading:"Connecting...", refresh:"Refresh tasks",
@@ -126,7 +128,11 @@ function renderOffer(offer) {
   const note = document.createElement("p");
   note.className = "next-step";
   note.textContent = t("offerPendingAcceptance");
-  card.append(header, details, note);
+  const actions = document.createElement("div");
+  actions.className = "actions";
+  actions.append(makeButton("acceptOffer", "offer-accept", offer.id));
+  actions.append(makeButton("declineOffer", "offer-decline", offer.id, "secondary"));
+  card.append(header, details, note, actions);
   return card;
 }
 
@@ -249,6 +255,34 @@ document.addEventListener("click", async event => {
   if (tab) { activeTab = tab.dataset.tab; render(); return; }
   const button = event.target.closest("button[data-action]");
   if (!button || !api || busy) return;
+  if (button.dataset.action === "offer-accept" || button.dataset.action === "offer-decline") {
+    const offer = offers.find(item => item.id === button.dataset.id);
+    if (!offer) return;
+    let decision = "accepted";
+    let reason;
+    if (button.dataset.action === "offer-decline") {
+      reason = window.prompt(t("declineOfferReason"));
+      if (!reason?.trim()) return;
+      decision = "declined";
+      reason = reason.trim();
+    }
+    try {
+      setBusy(true);
+      await api.respondToOffer(offer.id, {
+        decision, expectedVersion: offer.version, ...(reason === undefined ? {} : { reason })
+      });
+      await loadTasks();
+      notify(decision === "accepted" ? t("accepted") : t("declined"));
+    } catch (error) {
+      if (error instanceof CourierApiError && error.status === 409) notify(t("versionConflict"));
+      else notify(error instanceof Error ? error.message : t("failed"));
+    } finally {
+      setBusy(false);
+      render();
+    }
+    return;
+  }
+
   const task = tasks.find(item => item.id === button.dataset.id);
   if (!task) return;
 

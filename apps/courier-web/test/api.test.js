@@ -54,6 +54,35 @@ test("rejects malformed courier offer inbox payloads", async () => {
   );
 });
 
+test("posts a versioned offer acceptance or decline decision", async () => {
+  let request;
+  const api = createCourierApi({
+    token,
+    fetchImpl: async (url, init) => {
+      request = { url, init };
+      return response(200, { outcome: "declined", offerVersion: 3 });
+    }
+  });
+  await api.respondToOffer("offer/123", {
+    decision: "declined", expectedVersion: 2, reason: "vehicle unavailable"
+  });
+  assert.equal(request.url, "/api/v1/courier/offers/offer%2F123/respond");
+  assert.equal(request.init.method, "POST");
+  assert.deepEqual(JSON.parse(request.init.body), {
+    decision: "declined", expectedVersion: 2, reason: "vehicle unavailable"
+  });
+});
+
+test("validates offer responses before network access", async () => {
+  let called = false;
+  const api = createCourierApi({ token, fetchImpl: async () => { called = true; return response(200, {}); } });
+  await assert.rejects(api.respondToOffer("offer-1", {
+    decision: "declined", expectedVersion: 1, reason: " "
+  }), /invalid_courier_dispatch_offer_response/);
+  expectNoNetwork();
+  function expectNoNetwork() { assert.equal(called, false); }
+});
+
 test("sends optimistic task transition and pickup code", async () => {
   let request;
   const api = createCourierApi({
