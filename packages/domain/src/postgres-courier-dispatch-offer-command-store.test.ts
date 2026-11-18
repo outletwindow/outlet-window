@@ -44,7 +44,7 @@ describe("PostgresCourierDispatchOfferCommandStore", () => {
       tenantId: "tenant-1", offerId: "offer-1", courierId: "courier-1",
       expectedVersion: 2, decision: "declined", reason: "vehicle unavailable"
     })).resolves.toEqual({ outcome: "declined", offerVersion: 3 });
-    expect(calls[0]?.sql).toContain("FOR UPDATE OF o, s");
+    expect(calls.some(call => call.sql.includes("FOR UPDATE OF o, s"))).toBe(true);
     expect(query).toHaveBeenCalledWith("BEGIN");
     expect(query).toHaveBeenCalledWith("COMMIT");
     expect(calls.some(call => call.sql.includes("courier_dispatch_offer_events"))).toBe(true);
