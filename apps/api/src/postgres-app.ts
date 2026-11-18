@@ -28,6 +28,7 @@ import { PostgresMerchantOrderItemPreparationStore } from "../../../packages/dom
 import { PostgresCourierTaskStore } from "../../../packages/domain/src/postgres-courier-task-store.js";
 import { PostgresCourierDispatchOfferStore } from "../../../packages/domain/src/postgres-courier-dispatch-offer-store.js";
 import { PostgresCourierDispatchOfferCommandStore, type CourierDispatchOfferEligibility } from "../../../packages/domain/src/postgres-courier-dispatch-offer-command-store.js";
+import { PostgresCourierDispatchOfferEligibility } from "../../../packages/domain/src/postgres-courier-dispatch-offer-eligibility.js";
 import { PostgresCourierDeliveryEvidenceService, type CourierProofObjectStorage } from "../../../packages/domain/src/postgres-courier-delivery-evidence.js";
 import { createHmac } from "node:crypto";
 import { PostgresPaymentIntentStore } from "../../../packages/domain/src/postgres-payment-intent-store.js";
