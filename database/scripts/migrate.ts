@@ -82,7 +82,8 @@ async function main(): Promise<void> {
       { version: "0063_courier_delivery_tasks", file: "0063_courier_delivery_tasks.sql" },
       { version: "0064_courier_delivery_proof_uploads", file: "0064_courier_delivery_proof_uploads.sql" },
       { version: "0065_courier_dispatch_offers", file: "0065_courier_dispatch_offers.sql" },
-      { version: "0066_courier_one_active_assignment_per_suborder", file: "0066_courier_one_active_assignment_per_suborder.sql" }
+      { version: "0066_courier_one_active_assignment_per_suborder", file: "0066_courier_one_active_assignment_per_suborder.sql" },
+      { version: "0067_courier_profiles_and_dispatch_eligibility", file: "0067_courier_profiles_and_dispatch_eligibility.sql" }
     ].map(async migration => ({
       version: migration.version,
       sql: await readFile(resolve(process.cwd(), `../../database/migrations/${migration.file}`), "utf8")
