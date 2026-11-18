@@ -5,7 +5,7 @@ import type { PostgresClient, PostgresPool } from "./postgres-iam-store.js";
 function poolWith(rowsBySql: (sql: string, values?: readonly unknown[]) => { rows?: unknown[]; rowCount?: number }) {
   const calls: Array<{ sql: string; values?: readonly unknown[] }> = [];
   const query = vi.fn(async (sql: string, values?: readonly unknown[]) => {
-    calls.push({ sql, values });
+    calls.push({ sql, ...(values === undefined ? {} : { values }) });
     const result = rowsBySql(sql, values);
     return { rows: result.rows ?? [], rowCount: result.rowCount ?? (result.rows?.length ?? 0) };
   });
