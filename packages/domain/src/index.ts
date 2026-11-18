@@ -127,3 +127,4 @@ export * from "./courier-dispatch.js";
 export * from "./courier-dispatch-offer.js";
 export * from "./postgres-courier-dispatch-offer-store.js";
 export * from "./postgres-courier-dispatch-offer-command-store.js";
+export * from "./postgres-courier-dispatch-offer-eligibility.js";
