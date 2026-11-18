@@ -163,6 +163,12 @@ export interface AppOptions {
   courierDispatchOffers?: {
     listForCourier(input: { tenantId: string; courierId: string; limit?: number }): Promise<import("../../../packages/domain/src/postgres-courier-dispatch-offer-store.js").CourierDispatchOfferSummary[]>;
   };
+  courierDispatchOfferCommands?: {
+    respond(input: {
+      tenantId: string; offerId: string; courierId: string; expectedVersion: number;
+      decision: "accepted" | "declined"; reason?: string;
+    }): Promise<import("../../../packages/domain/src/postgres-courier-dispatch-offer-command-store.js").CourierDispatchOfferResponse>;
+  };
   merchantOrderItemPreparation?: { record(input: RecordPreparationCheckInput): Promise<RecordPreparationCheckResult> };
   customerDeliveryDestinations?: CustomerDeliveryDestinationService;
   customerPaymentAdjustments?: CustomerPaymentAdjustmentActions;
@@ -333,6 +339,47 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     ))).flat();
     return reply.code(200).send({ offers });
   });
+
+  app.post<{ Params: { offerId: string }; Body: unknown }>(
+    "/api/v1/courier/offers/:offerId/respond", async (request, reply) => {
+      const auth = await authorizeRequest(request, options, actor => ({
+        resource: "courier.delivery_task", action: "update",
+        scope: { merchantId: actor.grants.find(g => g.resource === "courier.delivery_task" && g.actions.includes("update") && g.scope.merchantId)?.scope.merchantId ?? "" }
+      }));
+      if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
+      if (!(auth.actor.roles ?? [auth.actor.role]).includes("courier")) return reply.code(403).send({ error: "courier_only" });
+      if (!options.courierDispatchOfferCommands) return reply.code(503).send({ error: "courier_dispatch_offer_commands_unavailable" });
+      if (!/^[A-Za-z0-9_-]{8,128}$/.test(request.params.offerId)) {
+        return reply.code(400).send({ error: "invalid_courier_dispatch_offer_id" });
+      }
+      const body = request.body as Record<string, unknown> | null;
+      if (!body || !["accepted", "declined"].includes(String(body.decision)) ||
+          !Number.isSafeInteger(body.expectedVersion) || (body.expectedVersion as number) < 1 ||
+          (body.decision === "declined" && (typeof body.reason !== "string" || !body.reason.trim() || body.reason.length > 500)) ||
+          (body.decision === "accepted" && body.reason !== undefined)) {
+        return reply.code(400).send({ error: "invalid_courier_dispatch_offer_response" });
+      }
+      const tenantIds = [...new Set(auth.actor.grants
+        .filter(g => g.resource === "courier.delivery_task" && g.actions.includes("update") && g.scope.merchantId)
+        .map(g => g.scope.merchantId!))];
+      for (const tenantId of tenantIds) {
+        const result = await options.courierDispatchOfferCommands.respond({
+          tenantId, offerId: request.params.offerId, courierId: auth.actor.id,
+          expectedVersion: body.expectedVersion as number,
+          decision: body.decision as "accepted" | "declined",
+          ...(body.reason === undefined ? {} : { reason: body.reason as string })
+        });
+        if (result.outcome === "not_found") continue;
+        if (result.outcome === "eligibility_unavailable") return reply.code(503).send({ error: "courier_eligibility_unavailable" });
+        if (result.outcome === "courier_ineligible") return reply.code(409).send({ error: "courier_no_longer_eligible" });
+        if (result.outcome === "already_assigned") return reply.code(409).send({ error: "courier_suborder_already_assigned" });
+        if (result.outcome === "conflict") return reply.code(409).send({ error: "courier_dispatch_offer_conflict" });
+        if (result.outcome === "expired") return reply.code(409).send({ error: "courier_dispatch_offer_expired" });
+        return reply.code(200).send(result);
+      }
+      return reply.code(404).send({ error: "courier_dispatch_offer_not_found" });
+    }
+  );
 
   app.get("/api/v1/courier/tasks", async (request, reply) => {
     const auth = await authorizeRequest(request, options, actor => ({
