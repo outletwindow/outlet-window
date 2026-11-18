@@ -59,6 +59,18 @@ export function createCourierApi({ baseUrl = "", token, fetchImpl = globalThis.f
       }
       return payload.tasks;
     },
+    async listOffers() {
+      const payload = await request("/api/v1/courier/offers");
+      if (!payload || !Array.isArray(payload.offers) || payload.offers.some(offer =>
+        !offer || typeof offer.id !== "string" || typeof offer.suborderId !== "string" ||
+        offer.status !== "offered" || !Number.isSafeInteger(offer.version) ||
+        typeof offer.offeredAtUtc !== "string" || !Number.isFinite(Date.parse(offer.offeredAtUtc)) ||
+        typeof offer.expiresAtUtc !== "string" || !Number.isFinite(Date.parse(offer.expiresAtUtc))
+      )) {
+        throw new CourierApiError("invalid_courier_offers_response", 502, payload);
+      }
+      return payload.offers;
+    },
     async uploadDeliveryProof(taskId, file) {
       if (typeof taskId !== "string" || !taskId.trim()) throw new TypeError("invalid_task_id");
       if (!file || typeof file.arrayBuffer !== "function" ||

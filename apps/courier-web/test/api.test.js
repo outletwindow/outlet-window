@@ -25,6 +25,35 @@ test("lists authenticated tasks", async () => {
   assert.equal(request.init.headers.authorization, "Bearer " + token);
 });
 
+test("lists tenant-scoped dispatch offers from the courier inbox", async () => {
+  let request;
+  const offers = [{
+    id: "offer-1", suborderId: "suborder-1", status: "offered", version: 2,
+    offeredAtUtc: "2026-11-18T08:00:00.000Z", expiresAtUtc: "2026-11-18T08:05:00.000Z"
+  }];
+  const api = createCourierApi({
+    token,
+    fetchImpl: async (url, init) => {
+      request = { url, init };
+      return response(200, { offers });
+    }
+  });
+  assert.deepEqual(await api.listOffers(), offers);
+  assert.equal(request.url, "/api/v1/courier/offers");
+  assert.equal(request.init.headers.authorization, "Bearer " + token);
+});
+
+test("rejects malformed courier offer inbox payloads", async () => {
+  const api = createCourierApi({
+    token,
+    fetchImpl: async () => response(200, { offers: [{ id: "offer-1", status: "accepted" }] })
+  });
+  await assert.rejects(api.listOffers(), error =>
+    error instanceof CourierApiError && error.status === 502 &&
+    error.message === "invalid_courier_offers_response"
+  );
+});
+
 test("sends optimistic task transition and pickup code", async () => {
   let request;
   const api = createCourierApi({

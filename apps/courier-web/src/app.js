@@ -6,7 +6,8 @@ const translations = {
     role:"تطبيق المندوب", greeting:"أهلاً بك في Outlet Window", subtitle:"مهام التوصيل الخاصة بك في مكان واحد",
     available:"متصل بالخدمة", today:"ملخص المهام", completed:"طلبات مكتملة", earnings:"الأرباح",
     pickup:"الاستلام", dropoff:"التسليم", order:"الطلب", suborder:"الطلب الفرعي", accept:"قبول المهمة", decline:"رفض المهمة",
-    offers:"المهام المتاحة", active:"مهامي الحالية", history:"السجل",
+    offers:"العروض المتاحة", active:"مهامي الحالية", history:"السجل",
+    offerExpires:"ينتهي العرض", offerPendingAcceptance:"عرض بانتظار تفعيل القبول الآمن",
     noOffers:"لا توجد مهام متاحة", noActive:"لا توجد مهام نشطة", noHistory:"لا يوجد سجل توصيل",
     connectTitle:"اتصال حساب المندوب", tokenLabel:"رمز جلسة المندوب", connect:"اتصال وجلب المهام",
     disconnect:"قطع الاتصال", loading:"جارٍ الاتصال...", refresh:"تحديث المهام",
@@ -29,7 +30,8 @@ const translations = {
     role:"Courier app", greeting:"Welcome to Outlet Window", subtitle:"Your delivery tasks in one place",
     available:"Connected", today:"Task summary", completed:"Completed orders", earnings:"Earnings",
     pickup:"Pickup", dropoff:"Drop-off", order:"Order", suborder:"Suborder", accept:"Accept task", decline:"Decline task",
-    offers:"Available tasks", active:"My active tasks", history:"History",
+    offers:"Available offers", active:"My active tasks", history:"History",
+    offerExpires:"Offer expires", offerPendingAcceptance:"Secure offer acceptance is not enabled yet",
     noOffers:"No available tasks", noActive:"No active tasks", noHistory:"No delivery history",
     connectTitle:"Courier account connection", tokenLabel:"Courier session token", connect:"Connect and load tasks",
     disconnect:"Disconnect", loading:"Connecting...", refresh:"Refresh tasks",
@@ -52,6 +54,7 @@ const translations = {
 
 let api = null;
 let tasks = [];
+let offers = [];
 let language = "ar";
 let activeTab = "offers";
 let busy = false;
@@ -90,7 +93,7 @@ function render() {
   document.querySelectorAll("[data-tab]").forEach(button =>
     button.classList.toggle("selected", button.dataset.tab === activeTab));
   const groups = getTaskGroups(tasks);
-  const list = groups[activeTab] ?? [];
+  const list = activeTab === "offers" ? offers : (groups[activeTab] ?? []);
   content.replaceChildren();
   if (!list.length) {
     const empty = document.createElement("p");
@@ -99,7 +102,32 @@ function render() {
     content.append(empty);
     return;
   }
-  list.forEach(task => content.append(renderTask(task)));
+  list.forEach(item => content.append(activeTab === "offers" ? renderOffer(item) : renderTask(item)));
+}
+
+function renderOffer(offer) {
+  const card = document.createElement("article");
+  card.className = "task-card";
+  const header = document.createElement("div");
+  header.className = "task-header";
+  const id = document.createElement("strong");
+  id.textContent = offer.id;
+  const status = document.createElement("span");
+  status.className = "status";
+  status.textContent = statusText("offered");
+  header.append(id, status);
+  const details = document.createElement("div");
+  details.className = "route";
+  const suborder = document.createElement("p");
+  suborder.textContent = `${t("suborder")}: ${offer.suborderId}`;
+  const expiry = document.createElement("p");
+  expiry.textContent = `${t("offerExpires")}: ${new Date(offer.expiresAtUtc).toLocaleString(language === "ar" ? "ar-SA" : "en")}`;
+  details.append(suborder, expiry);
+  const note = document.createElement("p");
+  note.className = "next-step";
+  note.textContent = t("offerPendingAcceptance");
+  card.append(header, details, note);
+  return card;
 }
 
 function makeButton(label, action, taskId, className = "primary") {
@@ -164,8 +192,9 @@ function renderTask(task) {
 
 async function loadTasks() {
   if (!api) return;
-  const result = await api.listTasks();
-  tasks = result;
+  const [taskResult, offerResult] = await Promise.all([api.listTasks(), api.listOffers()]);
+  tasks = taskResult;
+  offers = offerResult;
   render();
 }
 
@@ -184,6 +213,7 @@ form.addEventListener("submit", async event => {
   } catch (error) {
     api = null;
     tasks = [];
+    offers = [];
     render();
     notify(error instanceof Error ? error.message : t("connectionRequired"));
   } finally {
@@ -195,6 +225,7 @@ form.addEventListener("submit", async event => {
 $("#disconnect-button").addEventListener("click", () => {
   api = null;
   tasks = [];
+  offers = [];
   render();
   notify(t("disconnected"));
 });
