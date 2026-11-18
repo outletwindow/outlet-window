@@ -286,6 +286,10 @@ jobs:
         env:
           PGPASSWORD: ci_only_password
         run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0066_courier_one_active_assignment_per_suborder.integration.sql
+      - name: Verify durable courier profiles and dispatch eligibility constraints
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0067_courier_profiles_and_dispatch_eligibility.integration.sql
       - name: Validate automatic runtime Compose configuration
         env:
           DATABASE_URL: postgres://outlet_window:ci_only_password@127.0.0.1:5432/outlet_window_test
