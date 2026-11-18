@@ -25,7 +25,8 @@ describe("PostgresCourierDispatchOfferStore", () => {
     expect(query).toHaveBeenCalledWith(expect.stringContaining("expires_at > $3"), [
       "tenant-1", "courier-1", now, 100
     ]);
-    expect(query.mock.calls[0]?.[0]).toContain("tenant_id = $1 AND courier_id = $2");
+    const calls = query.mock.calls as unknown as Array<[string, unknown[]]>;
+    expect(calls[0]?.[0]).toContain("tenant_id = $1 AND courier_id = $2");
   });
 
   it("returns an empty inbox without inventing offers", async () => {
