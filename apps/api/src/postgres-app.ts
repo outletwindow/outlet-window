@@ -244,7 +244,8 @@ export function buildPostgresApp(options: PostgresApiOptions) {
         "0062_moyasar_single_refund_per_payment",
         "0063_courier_delivery_tasks",
         "0064_courier_delivery_proof_uploads",
-        "0065_courier_dispatch_offers"
+        "0065_courier_dispatch_offers",
+        "0066_courier_one_active_assignment_per_suborder"
       ];
       const result = await options.pool.query<{ version: string }>(
         "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",
