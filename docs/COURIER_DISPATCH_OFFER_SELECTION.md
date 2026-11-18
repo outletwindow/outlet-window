@@ -37,3 +37,20 @@ This function only recommends courier IDs for task offers. It does not create as
 ## Remaining production dependency
 
 The repository currently has no durable courier profile/availability/vehicle-capacity source to implement the eligibility adapter against. Until that data model and trusted resolver are supplied, acceptance intentionally remains fail-closed; decline and expiry handling are available. No customer address or personal data is exposed in the offer inbox.
+
+
+## Persisted courier eligibility (migration 0067)
+
+Acceptance now uses `PostgresCourierDispatchOfferEligibility` by default in the PostgreSQL API composition root. It rechecks all of the following on the same transaction client before creating a delivery task:
+
+- The courier has an active IAM identity and an active, verified `courier_profiles` record.
+- Availability is explicitly enabled and its heartbeat was updated within the last two minutes.
+- The courier has an active, verified vehicle whose type is allowed and whose weight and volume capacities meet the dispatch requirement.
+- The courier has an active, approved membership in the exact merchant tenant's service area.
+- The courier's active task count is below the profile's configured concurrent-task limit.
+
+The profile and availability rows are locked during the check, serializing simultaneous acceptance attempts by the same courier. The workload count includes active assignments across tenants, so a courier cannot exceed their global concurrent-task limit by accepting work from multiple merchants.
+
+Migration `0067_courier_profiles_and_dispatch_eligibility` adds the profile, availability, vehicle, service-area membership and trusted per-suborder dispatch-requirement tables. Dispatch requirements are immutable snapshots and must be written by the trusted dispatch service; merchant-editable suborder metadata is not used as an authority for vehicle or package requirements.
+
+Provisioning remains an administrative workflow: a courier must have an IAM identity, be reviewed and verified, have a verified vehicle, an approved service-area membership, and a fresh availability heartbeat. No default courier or test eligibility is seeded in production. Until those records and a dispatch requirement exist, acceptance safely returns an ineligible result. Availability must be refreshed at least every two minutes.
