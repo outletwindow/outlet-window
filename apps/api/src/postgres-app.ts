@@ -161,7 +161,7 @@ export function buildPostgresApp(options: PostgresApiOptions) {
       : {}),
     courierDispatchOffers: new PostgresCourierDispatchOfferStore(options.pool),
     courierDispatchOfferCommands: new PostgresCourierDispatchOfferCommandStore(
-      options.pool, options.courierDispatchOfferEligibility, options.now
+      options.pool, options.courierDispatchOfferEligibility ?? new PostgresCourierDispatchOfferEligibility(), options.now
     ),
     customerPaymentAdjustments: options.customerPaymentAdjustments ?? (() => {
       const store = new PostgresPaymentAdjustmentStore(options.pool, options.now);
