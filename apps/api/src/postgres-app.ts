@@ -27,6 +27,7 @@ import { PostgresFulfillmentProviderScopeAuthorizer } from "../../../packages/do
 import { PostgresMerchantOrderItemPreparationStore } from "../../../packages/domain/src/postgres-merchant-order-item-preparation.js";
 import { PostgresCourierTaskStore } from "../../../packages/domain/src/postgres-courier-task-store.js";
 import { PostgresCourierDispatchOfferStore } from "../../../packages/domain/src/postgres-courier-dispatch-offer-store.js";
+import { PostgresCourierDispatchOfferCommandStore, type CourierDispatchOfferEligibility } from "../../../packages/domain/src/postgres-courier-dispatch-offer-command-store.js";
 import { PostgresCourierDeliveryEvidenceService, type CourierProofObjectStorage } from "../../../packages/domain/src/postgres-courier-delivery-evidence.js";
 import { createHmac } from "node:crypto";
 import { PostgresPaymentIntentStore } from "../../../packages/domain/src/postgres-payment-intent-store.js";
@@ -64,6 +65,7 @@ export interface PostgresApiOptions {
   sallaOAuthFlow?: SallaOAuthFlow;
   courierDeliveryEvidence?: AppOptions["courierDeliveryEvidence"];
   courierProofObjectStorage?: CourierProofObjectStorage;
+  courierDispatchOfferEligibility?: CourierDispatchOfferEligibility;
 }
 
 /**
@@ -157,6 +159,9 @@ export function buildPostgresApp(options: PostgresApiOptions) {
           options.now) }
       : {}),
     courierDispatchOffers: new PostgresCourierDispatchOfferStore(options.pool),
+    courierDispatchOfferCommands: new PostgresCourierDispatchOfferCommandStore(
+      options.pool, options.courierDispatchOfferEligibility, options.now
+    ),
     customerPaymentAdjustments: options.customerPaymentAdjustments ?? (() => {
       const store = new PostgresPaymentAdjustmentStore(options.pool, options.now);
       const providerKey = process.env.PAYMENT_ADJUSTMENT_PROVIDER_KEY;
