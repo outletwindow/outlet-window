@@ -120,4 +120,14 @@ export * from "./verified-inventory-provider-reservation-adapter.js";
 export * from "./postgres-external-inventory-reservation-evidence-store.js";
 export * from "./ledger-backed-inventory-provider-reservation-adapter.js";
 
+export * from "./courier-task.js";
+export * from "./postgres-courier-task-store.js";
+
 export * from "./courier-dispatch.js";
+export * from "./courier-dispatch-offer.js";
+export * from "./postgres-courier-dispatch-offer-store.js";
+export * from "./postgres-courier-dispatch-offer-command-store.js";
+export * from "./postgres-courier-dispatch-offer-eligibility.js";
+export * from "./postgres-courier-availability-store.js";
+
+export * from "./postgres-courier-admin-store.js";

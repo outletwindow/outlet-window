@@ -9,6 +9,7 @@ import { PostgresIntegrationRegistryStore } from "../../../packages/domain/src/p
 import { createMoyasarWebhookVerifier } from "../../../packages/domain/src/moyasar-payment-webhook-verifier.js";
 import { moyasarPaymentCaptureDecoder } from "../../../packages/domain/src/moyasar-payment-capture-decoder.js";
 import { createMoyasarCheckoutRuntimeConfig } from "./moyasar-checkout-runtime-config.js";
+import { S3CourierProofObjectStorage } from "../../../packages/domain/src/s3-courier-proof-object-storage.js";
 
 const port = Number.parseInt(process.env.PORT ?? "3000", 10);
 const host = process.env.HOST ?? "0.0.0.0";
@@ -77,11 +78,34 @@ const sallaOAuthFlow = sallaOAuthConfigured && pool
     )
   : undefined;
 
+const proofStorageEnvironment = [
+  process.env.COURIER_PROOF_S3_ENDPOINT,
+  process.env.COURIER_PROOF_S3_BUCKET,
+  process.env.COURIER_PROOF_S3_REGION,
+  process.env.COURIER_PROOF_S3_ACCESS_KEY_ID,
+  process.env.COURIER_PROOF_S3_SECRET_ACCESS_KEY
+];
+const proofStorageConfigured = proofStorageEnvironment.every(value => typeof value === "string" && value.length > 0);
+if (proofStorageEnvironment.some(Boolean) && !proofStorageConfigured) {
+  throw new Error("Courier proof storage requires endpoint, bucket, region, access key ID and secret access key together");
+}
+const courierProofObjectStorage = proofStorageConfigured
+  ? new S3CourierProofObjectStorage({
+      endpoint: process.env.COURIER_PROOF_S3_ENDPOINT!,
+      bucket: process.env.COURIER_PROOF_S3_BUCKET!,
+      region: process.env.COURIER_PROOF_S3_REGION!,
+      accessKeyId: process.env.COURIER_PROOF_S3_ACCESS_KEY_ID!,
+      secretAccessKey: process.env.COURIER_PROOF_S3_SECRET_ACCESS_KEY!,
+      ...(process.env.COURIER_PROOF_S3_SESSION_TOKEN ? { sessionToken: process.env.COURIER_PROOF_S3_SESSION_TOKEN } : {})
+    })
+  : undefined;
+
 const app = pool
   ? buildPostgresApp({
       pool,
       digestToken: async secret => createHash("sha256").update(secret, "utf8").digest("hex"),
       grantsForAssignments,
+      ...(courierProofObjectStorage === undefined ? {} : { courierProofObjectStorage }),
       paymentWebhookSecretResolver: async providerKey =>
         providerKey === "moyasar" ? (process.env.MOYASAR_WEBHOOK_SECRET ?? null) : null,
       paymentCaptureDecoders: new Map([["moyasar", moyasarPaymentCaptureDecoder]]),

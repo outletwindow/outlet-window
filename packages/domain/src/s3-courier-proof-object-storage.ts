@@ -1,0 +1,137 @@
+import { createHash, createHmac } from "node:crypto";
+import type { CourierProofObjectStorage } from "./postgres-courier-delivery-evidence.js";
+
+export interface S3CourierProofStorageConfig {
+  endpoint: string;
+  bucket: string;
+  region: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  sessionToken?: string;
+}
+
+type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
+const sha256 = (value: string) => createHash("sha256").update(value, "utf8").digest("hex");
+const amzDate = (date: Date) => date.toISOString().replace(/[:-]|\.\d{3}/g, "");
+const encodePath = (value: string) => value.split("/").map(part => encodeURIComponent(part).replace(/[!'()*]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)).join("/");
+const encodeQuery = (value: string) => encodeURIComponent(value).replace(/[!'()*]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+
+function signingKey(secret: string, date: string, region: string): Buffer {
+  const dateKey = createHmac("sha256", `AWS4${secret}`).update(date, "utf8").digest();
+  const regionKey = createHmac("sha256", dateKey).update(region, "utf8").digest();
+  const serviceKey = createHmac("sha256", regionKey).update("s3", "utf8").digest();
+  return createHmac("sha256", serviceKey).update("aws4_request", "utf8").digest();
+}
+
+/**
+ * S3-compatible private object storage adapter (AWS S3 / Cloudflare R2).
+ * Upload URLs are short-lived, single-object PUT URLs. Finalization downloads
+ * the private object and calculates SHA-256 from its actual bytes.
+ */
+export class S3CourierProofObjectStorage implements CourierProofObjectStorage {
+  private readonly endpoint: URL;
+  constructor(
+    private readonly config: S3CourierProofStorageConfig,
+    private readonly fetchImpl: FetchLike = fetch,
+    private readonly now: () => Date = () => new Date()
+  ) {
+    this.endpoint = new URL(config.endpoint);
+    if (this.endpoint.search || this.endpoint.hash) throw new Error("Courier proof storage endpoint cannot include query or fragment");
+    if (this.endpoint.protocol !== "https:") throw new Error("Courier proof storage endpoint must use HTTPS");
+    if (!/^[a-z0-9][a-z0-9.-]{2,62}$/.test(config.bucket)) throw new Error("Invalid courier proof storage bucket");
+    if (!/^[a-z0-9-]{1,64}$/.test(config.region)) throw new Error("Invalid courier proof storage region");
+  }
+
+  private objectUrl(objectKey: string): URL {
+    const url = new URL(this.endpoint);
+    url.pathname = `${url.pathname.replace(/\/$/, "")}/${encodePath(this.config.bucket)}/${encodePath(objectKey)}`;
+    return url;
+  }
+
+  async createUploadUrl(input: {
+    objectKey: string;
+    contentType: "image/jpeg" | "image/png" | "image/webp";
+    contentLength: number;
+    contentSha256: string;
+    expiresAtUtc: string;
+  }): Promise<string> {
+    if (!Number.isSafeInteger(input.contentLength) || input.contentLength < 1 || input.contentLength > 10 * 1024 * 1024 ||
+        !/^[a-f0-9]{64}$/.test(input.contentSha256)) {
+      throw new Error("Invalid courier proof upload constraints");
+    }
+    const url = this.objectUrl(input.objectKey);
+    const now = this.now();
+    const expiresAt = new Date(input.expiresAtUtc).getTime();
+    if (!Number.isFinite(expiresAt) || expiresAt <= now.getTime()) {
+      throw new Error("Courier proof upload URL expiry must be in the future");
+    }
+    const date = amzDate(now);
+    const day = date.slice(0, 8);
+    const scope = `${day}/${this.config.region}/s3/aws4_request`;
+    const signedHeaders = "content-length;content-type;host;if-none-match";
+    const expires = Math.min(300, Math.floor((expiresAt - now.getTime()) / 1000));
+    const params: Record<string, string> = {
+      "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
+      "X-Amz-Credential": `${this.config.accessKeyId}/${scope}`,
+      "X-Amz-Date": date,
+      "X-Amz-Expires": String(expires),
+      "X-Amz-SignedHeaders": signedHeaders
+    };
+    if (this.config.sessionToken) params["X-Amz-Security-Token"] = this.config.sessionToken;
+    const canonicalQuery = Object.entries(params).sort(([a],[b]) => a.localeCompare(b))
+      .map(([key,value]) => `${encodeQuery(key)}=${encodeQuery(value)}`).join("&");
+    const canonicalHeaders = `content-length:${input.contentLength}\ncontent-type:${input.contentType}\nhost:${url.host}\nif-none-match:*\n`;
+    const canonicalRequest = ["PUT", url.pathname, canonicalQuery, canonicalHeaders, signedHeaders, "UNSIGNED-PAYLOAD"].join("\n");
+    const stringToSign = ["AWS4-HMAC-SHA256", date, scope, sha256(canonicalRequest)].join("\n");
+    const signature = createHmac("sha256", signingKey(this.config.secretAccessKey, day, this.config.region))
+      .update(stringToSign, "utf8").digest("hex");
+    url.search = `${canonicalQuery}&X-Amz-Signature=${signature}`;
+    return url.toString();
+  }
+
+  async inspectObject(input: { objectKey: string }): Promise<
+    | { exists: false }
+    | { exists: true; contentType: string; contentLength: number; contentSha256: string }
+  > {
+    const url = this.objectUrl(input.objectKey);
+    const date = amzDate(this.now());
+    const day = date.slice(0, 8);
+    const scope = `${day}/${this.config.region}/s3/aws4_request`;
+    const payloadHash = sha256("");
+    const headers: Record<string, string> = {
+      host: url.host,
+      "x-amz-content-sha256": payloadHash,
+      "x-amz-date": date
+    };
+    if (this.config.sessionToken) headers["x-amz-security-token"] = this.config.sessionToken;
+    const signedHeaders = Object.keys(headers).sort().join(";");
+    const canonicalHeaders = Object.keys(headers).sort().map(key => `${key}:${headers[key]!.trim()}\n`).join("");
+    const canonicalRequest = ["GET", url.pathname, "", canonicalHeaders, signedHeaders, payloadHash].join("\n");
+    const stringToSign = ["AWS4-HMAC-SHA256", date, scope, sha256(canonicalRequest)].join("\n");
+    const signature = createHmac("sha256", signingKey(this.config.secretAccessKey, day, this.config.region))
+      .update(stringToSign, "utf8").digest("hex");
+    const authorization = `AWS4-HMAC-SHA256 Credential=${this.config.accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+    const requestHeaders: Record<string, string> = { ...headers, authorization };
+    delete requestHeaders.host;
+    const response = await this.fetchImpl(url, { method: "GET", headers: requestHeaders, redirect: "error" });
+    if (response.status === 404) return { exists: false };
+    if (!response.ok) throw new Error("Courier proof storage inspection failed");
+
+    const contentType = response.headers.get("content-type");
+    const declaredLength = Number(response.headers.get("content-length"));
+    if (!contentType || !Number.isSafeInteger(declaredLength) ||
+        declaredLength < 1 || declaredLength > 10 * 1024 * 1024) {
+      throw new Error("Courier proof object has invalid trusted metadata");
+    }
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.length !== declaredLength || bytes.length > 10 * 1024 * 1024) {
+      throw new Error("Courier proof object length does not match its metadata");
+    }
+    return {
+      exists: true,
+      contentType: contentType.split(";")[0]!.trim(),
+      contentLength: bytes.length,
+      contentSha256: createHash("sha256").update(bytes).digest("hex")
+    };
+  }
+}

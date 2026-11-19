@@ -25,6 +25,14 @@ import { PostgresBranchInventoryReservationLifecycle } from "../../../packages/d
 import { PostgresFulfillmentHandoverInbox } from "../../../packages/domain/src/postgres-fulfillment-handover-inbox.js";
 import { PostgresFulfillmentProviderScopeAuthorizer } from "../../../packages/domain/src/postgres-fulfillment-provider-scope-authorizer.js";
 import { PostgresMerchantOrderItemPreparationStore } from "../../../packages/domain/src/postgres-merchant-order-item-preparation.js";
+import { PostgresCourierTaskStore } from "../../../packages/domain/src/postgres-courier-task-store.js";
+import { PostgresCourierDispatchOfferStore } from "../../../packages/domain/src/postgres-courier-dispatch-offer-store.js";
+import { PostgresCourierDispatchOfferCommandStore, type CourierDispatchOfferEligibility } from "../../../packages/domain/src/postgres-courier-dispatch-offer-command-store.js";
+import { PostgresCourierDispatchOfferEligibility } from "../../../packages/domain/src/postgres-courier-dispatch-offer-eligibility.js";
+import { PostgresCourierAvailabilityStore } from "../../../packages/domain/src/postgres-courier-availability-store.js";
+import { PostgresCourierAdminStore } from "../../../packages/domain/src/postgres-courier-admin-store.js";
+import { PostgresCourierDeliveryEvidenceService, type CourierProofObjectStorage } from "../../../packages/domain/src/postgres-courier-delivery-evidence.js";
+import { createHmac } from "node:crypto";
 import { PostgresPaymentIntentStore } from "../../../packages/domain/src/postgres-payment-intent-store.js";
 import { PostgresCustomerPaymentIntentCheckout } from "../../../packages/domain/src/postgres-customer-payment-intent-checkout.js";
 import { PostgresCustomerCartStore } from "../../../packages/domain/src/postgres-customer-cart-store.js";
@@ -58,6 +66,9 @@ export interface PostgresApiOptions {
   fulfillmentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
   fulfillmentWebhookAuthorizationResolver?: NonNullable<AppOptions["fulfillmentWebhookAuthorizationResolver"]>;
   sallaOAuthFlow?: SallaOAuthFlow;
+  courierDeliveryEvidence?: AppOptions["courierDeliveryEvidence"];
+  courierProofObjectStorage?: CourierProofObjectStorage;
+  courierDispatchOfferEligibility?: CourierDispatchOfferEligibility;
 }
 
 /**
@@ -140,6 +151,22 @@ export function buildPostgresApp(options: PostgresApiOptions) {
       paymentWebhookSecretResolver: options.paymentWebhookSecretResolver
     }),
     orderTransitions: new PostgresOrderTransitionStore(options.pool),
+    ...((options.courierDeliveryEvidence ?? (options.courierProofObjectStorage
+      ? new PostgresCourierDeliveryEvidenceService(options.pool, options.courierProofObjectStorage, options.now)
+      : undefined)) === undefined ? {} : {
+        courierDeliveryEvidence: options.courierDeliveryEvidence ?? new PostgresCourierDeliveryEvidenceService(options.pool, options.courierProofObjectStorage!, options.now)
+      }),
+    ...(typeof process.env.COURIER_PICKUP_CODE_PEPPER === "string" && process.env.COURIER_PICKUP_CODE_PEPPER.length >= 32
+      ? { courierTasks: new PostgresCourierTaskStore(options.pool,
+          async code => createHmac("sha256", process.env.COURIER_PICKUP_CODE_PEPPER!).update(code, "utf8").digest("hex"),
+          options.now) }
+      : {}),
+    courierAvailability: new PostgresCourierAvailabilityStore(options.pool, options.now),
+    courierAdminProfiles: new PostgresCourierAdminStore(options.pool, options.now),
+    courierDispatchOffers: new PostgresCourierDispatchOfferStore(options.pool),
+    courierDispatchOfferCommands: new PostgresCourierDispatchOfferCommandStore(
+      options.pool, options.courierDispatchOfferEligibility ?? new PostgresCourierDispatchOfferEligibility(), options.now
+    ),
     customerPaymentAdjustments: options.customerPaymentAdjustments ?? (() => {
       const store = new PostgresPaymentAdjustmentStore(options.pool, options.now);
       const providerKey = process.env.PAYMENT_ADJUSTMENT_PROVIDER_KEY;
@@ -219,7 +246,12 @@ export function buildPostgresApp(options: PostgresApiOptions) {
         "0059_payment_refund_balance_reservations",
         "0060_payment_refund_webhook_reconciliation_state",
         "0061_payment_adjustment_reference_optional",
-        "0062_moyasar_single_refund_per_payment"
+        "0062_moyasar_single_refund_per_payment",
+        "0063_courier_delivery_tasks",
+        "0064_courier_delivery_proof_uploads",
+        "0065_courier_dispatch_offers",
+        "0066_courier_one_active_assignment_per_suborder",
+        "0067_courier_profiles_and_dispatch_eligibility"
       ];
       const result = await options.pool.query<{ version: string }>(
         "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",

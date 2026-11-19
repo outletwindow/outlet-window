@@ -21,6 +21,7 @@ import type { BranchInventoryRecord } from "../../../packages/domain/src/postgre
 import type { InventoryReservationFinalizeResult } from "../../../packages/domain/src/postgres-branch-inventory-reservation-lifecycle.js";
 import type { RecordPreparationCheckInput, RecordPreparationCheckResult } from "../../../packages/domain/src/postgres-merchant-order-item-preparation.js";
 import type { CreateCustomerCheckoutInput, CustomerCheckoutResult } from "../../../packages/domain/src/postgres-customer-checkout.js";
+import type { CourierTaskStatus } from "../../../packages/domain/src/courier-task.js";
 
 export interface SallaOAuthFlow {
   begin(input: { tenantId: string; integrationId: string }): Promise<{ authorizationUrl: string }>;
@@ -122,6 +123,23 @@ export interface OrderTransitionWriter {
   >;
 }
 
+export interface CourierDeliveryEvidenceService {
+  requestProofUpload(input: {
+    tenantId: string; taskId: string; courierId: string;
+    contentType: "image/jpeg" | "image/png" | "image/webp";
+    contentLength: number; contentSha256: string;
+  }): Promise<
+    | { outcome: "upload_created"; uploadId: string; uploadUrl: string; expiresAtUtc: string }
+    | { outcome: "not_found" | "task_not_ready" | "upload_unavailable" }
+  >;
+  finalizeProofUpload(input: {
+    tenantId: string; taskId: string; courierId: string; uploadId: string;
+  }): Promise<
+    | { outcome: "verified"; evidenceId: string; verifiedAtUtc: string }
+    | { outcome: "not_found" | "task_not_ready" | "upload_missing" | "checksum_mismatch" | "invalid_upload" }
+  >;
+}
+
 export interface AppOptions {
   serviceName?: string;
   version?: string;
@@ -137,6 +155,32 @@ export interface AppOptions {
   /** Durable audit writer. Protected operations are not executed if their audit write fails. */
   auditEvents?: AuditEventWriter;
   orderTransitions?: OrderTransitionWriter;
+  courierDeliveryEvidence?: CourierDeliveryEvidenceService;
+  courierTasks?: {
+    listForCourier(input: { tenantId: string; courierId: string; limit?: number }): Promise<import("../../../packages/domain/src/courier-task.js").CourierTask[]>;
+    transition(input: { tenantId: string; taskId: string; courierId: string; nextStatus: CourierTaskStatus; expectedVersion: number; pickupCode?: string; reason?: string }): Promise<import("../../../packages/domain/src/postgres-courier-task-store.js").CourierTaskTransitionOutcome>;
+  };
+  courierDispatchOffers?: {
+    listForCourier(input: { tenantId: string; courierId: string; limit?: number }): Promise<import("../../../packages/domain/src/postgres-courier-dispatch-offer-store.js").CourierDispatchOfferSummary[]>;
+  };
+  courierDispatchOfferCommands?: {
+    respond(input: {
+      tenantId: string; offerId: string; courierId: string; expectedVersion: number;
+      decision: "accepted" | "declined"; reason?: string;
+    }): Promise<import("../../../packages/domain/src/postgres-courier-dispatch-offer-command-store.js").CourierDispatchOfferResponse>;
+  };
+  courierAdminProfiles?: {
+    listProfiles(input?: { status?: "pending" | "active" | "suspended"; limit?: number }): Promise<import("../../../packages/domain/src/postgres-courier-admin-store.js").CourierAdminProfile[]>;
+    createProfile(input: { courierId: string; maxConcurrentTasks: number }): Promise<"created" | "identity_not_found" | "identity_not_eligible" | "already_exists">;
+    reviewProfile(input: { courierId: string; decision: "approve" | "reject" | "suspend" | "reinstate"; reviewerId: string }): Promise<"updated" | "not_found" | "invalid_transition">;
+    registerVehicle(input: { vehicleId: string; courierId: string; vehicleType: "motorcycle" | "car" | "van"; capacityWeightGrams: number; capacityVolumeLiters: number }): Promise<"created" | "courier_not_found" | "courier_not_active" | "already_exists">;
+    reviewVehicle(input: { vehicleId: string; decision: "approve" | "reject"; reviewerId: string }): Promise<"updated" | "not_found" | "invalid_transition">;
+    grantServiceArea(input: { courierId: string; tenantId: string; serviceAreaId: string; reviewerId: string }): Promise<"granted" | "courier_not_found" | "courier_not_active" | "service_area_not_active">;
+    revokeServiceArea(input: { courierId: string; tenantId: string; serviceAreaId: string }): Promise<"revoked" | "not_found">;
+  };
+  courierAvailability?: {
+    setAvailability(input: { courierId: string; available: boolean }): Promise<import("../../../packages/domain/src/postgres-courier-availability-store.js").CourierAvailabilityUpdate>;
+  };
   merchantOrderItemPreparation?: { record(input: RecordPreparationCheckInput): Promise<RecordPreparationCheckResult> };
   customerDeliveryDestinations?: CustomerDeliveryDestinationService;
   customerPaymentAdjustments?: CustomerPaymentAdjustmentActions;
@@ -290,6 +334,431 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     version: "v1",
     status: "foundation"
   }));
+
+  app.put<{ Body: unknown }>("/api/v1/courier/availability", async (request, reply) => {
+    const auth = await authorizeRequest(request, options, actor => ({
+      resource: "courier.delivery_task", action: "update",
+      scope: { merchantId: actor.grants.find(g => g.resource === "courier.delivery_task" && g.actions.includes("update") && g.scope.merchantId)?.scope.merchantId ?? "" }
+    }));
+    if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
+    if (!(auth.actor.roles ?? [auth.actor.role]).includes("courier")) return reply.code(403).send({ error: "courier_only" });
+    if (!options.courierAvailability) return reply.code(503).send({ error: "courier_availability_unavailable" });
+    const body = request.body as Record<string, unknown> | null;
+    if (!body || typeof body.available !== "boolean" || Object.keys(body).some(key => key !== "available")) {
+      return reply.code(400).send({ error: "invalid_courier_availability" });
+    }
+    const result = await options.courierAvailability.setAvailability({
+      courierId: auth.actor.id, available: body.available
+    });
+    if (result.outcome === "not_found") return reply.code(404).send({ error: "courier_profile_not_found" });
+    if (result.outcome === "not_eligible") return reply.code(409).send({ error: "courier_profile_not_eligible" });
+    return reply.code(200).send(result);
+  });
+
+  app.get("/api/v1/courier/offers", async (request, reply) => {
+    const auth = await authorizeRequest(request, options, actor => ({
+      resource: "courier.delivery_task", action: "read",
+      scope: { merchantId: actor.grants.find(g => g.resource === "courier.delivery_task" && g.actions.includes("read") && g.scope.merchantId)?.scope.merchantId ?? "" }
+    }));
+    if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
+    if (!(auth.actor.roles ?? [auth.actor.role]).includes("courier")) return reply.code(403).send({ error: "courier_only" });
+    if (!options.courierDispatchOffers) return reply.code(503).send({ error: "courier_dispatch_offers_unavailable" });
+    const tenantIds = [...new Set(auth.actor.grants
+      .filter(g => g.resource === "courier.delivery_task" && g.actions.includes("read") && g.scope.merchantId)
+      .map(g => g.scope.merchantId!))];
+    const offers = (await Promise.all(tenantIds.map(tenantId =>
+      options.courierDispatchOffers!.listForCourier({ tenantId, courierId: auth.actor!.id, limit: 100 })
+    ))).flat();
+    return reply.code(200).send({ offers });
+  });
+
+  app.post<{ Params: { offerId: string }; Body: unknown }>(
+    "/api/v1/courier/offers/:offerId/respond", async (request, reply) => {
+      const auth = await authorizeRequest(request, options, actor => ({
+        resource: "courier.delivery_task", action: "update",
+        scope: { merchantId: actor.grants.find(g => g.resource === "courier.delivery_task" && g.actions.includes("update") && g.scope.merchantId)?.scope.merchantId ?? "" }
+      }));
+      if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
+      if (!(auth.actor.roles ?? [auth.actor.role]).includes("courier")) return reply.code(403).send({ error: "courier_only" });
+      if (!options.courierDispatchOfferCommands) return reply.code(503).send({ error: "courier_dispatch_offer_commands_unavailable" });
+      if (!/^[A-Za-z0-9_-]{8,128}$/.test(request.params.offerId)) {
+        return reply.code(400).send({ error: "invalid_courier_dispatch_offer_id" });
+      }
+      const body = request.body as Record<string, unknown> | null;
+      if (!body || !["accepted", "declined"].includes(String(body.decision)) ||
+          !Number.isSafeInteger(body.expectedVersion) || (body.expectedVersion as number) < 1 ||
+          (body.decision === "declined" && (typeof body.reason !== "string" || !body.reason.trim() || body.reason.length > 500)) ||
+          (body.decision === "accepted" && body.reason !== undefined)) {
+        return reply.code(400).send({ error: "invalid_courier_dispatch_offer_response" });
+      }
+      const tenantIds = [...new Set(auth.actor.grants
+        .filter(g => g.resource === "courier.delivery_task" && g.actions.includes("update") && g.scope.merchantId)
+        .map(g => g.scope.merchantId!))];
+      for (const tenantId of tenantIds) {
+        const result = await options.courierDispatchOfferCommands.respond({
+          tenantId, offerId: request.params.offerId, courierId: auth.actor.id,
+          expectedVersion: body.expectedVersion as number,
+          decision: body.decision as "accepted" | "declined",
+          ...(body.reason === undefined ? {} : { reason: body.reason as string })
+        });
+        if (result.outcome === "not_found") continue;
+        if (result.outcome === "eligibility_unavailable") return reply.code(503).send({ error: "courier_eligibility_unavailable" });
+        if (result.outcome === "courier_ineligible") return reply.code(409).send({ error: "courier_no_longer_eligible" });
+        if (result.outcome === "already_assigned") return reply.code(409).send({ error: "courier_suborder_already_assigned" });
+        if (result.outcome === "conflict") return reply.code(409).send({ error: "courier_dispatch_offer_conflict" });
+        if (result.outcome === "expired") return reply.code(409).send({ error: "courier_dispatch_offer_expired" });
+        return reply.code(200).send(result);
+      }
+      return reply.code(404).send({ error: "courier_dispatch_offer_not_found" });
+    }
+  );
+
+  app.get("/api/v1/courier/tasks", async (request, reply) => {
+    const auth = await authorizeRequest(request, options, actor => ({
+      resource: "courier.delivery_task", action: "read",
+      scope: { merchantId: actor.grants.find(g => g.resource === "courier.delivery_task" && g.actions.includes("read") && g.scope.merchantId)?.scope.merchantId ?? "" }
+    }));
+    if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
+    if (!(auth.actor.roles ?? [auth.actor.role]).includes("courier")) return reply.code(403).send({ error: "courier_only" });
+    if (!options.courierTasks) return reply.code(503).send({ error: "courier_tasks_unavailable" });
+    const merchantIds = [...new Set(auth.actor.grants
+      .filter(g => g.resource === "courier.delivery_task" && g.actions.includes("read") && g.scope.merchantId)
+      .map(g => g.scope.merchantId!))];
+    const tasks = (await Promise.all(merchantIds.map(tenantId =>
+      options.courierTasks!.listForCourier({ tenantId, courierId: auth.actor!.id, limit: 100 })
+    ))).flat();
+    return reply.code(200).send({ tasks });
+  });
+
+  app.post<{ Params: { taskId: string }; Body: unknown }>(
+    "/api/v1/courier/tasks/:taskId/proof-upload", async (request, reply) => {
+      const auth = await authorizeRequest(request, options, actor => ({
+        resource: "courier.delivery_task", action: "update",
+        scope: { merchantId: actor.grants.find(g => g.resource === "courier.delivery_task" && g.actions.includes("update") && g.scope.merchantId)?.scope.merchantId ?? "" }
+      }));
+      if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
+      if (!(auth.actor.roles ?? [auth.actor.role]).includes("courier")) return reply.code(403).send({ error: "courier_only" });
+      if (!options.courierDeliveryEvidence) return reply.code(503).send({ error: "courier_delivery_evidence_unavailable" });
+      const body = request.body as Record<string, unknown> | null;
+      const contentTypes = ["image/jpeg", "image/png", "image/webp"] as const;
+      if (!body || !contentTypes.includes(body.contentType as typeof contentTypes[number]) ||
+          !Number.isSafeInteger(body.contentLength) || (body.contentLength as number) < 1 ||
+          (body.contentLength as number) > 10 * 1024 * 1024 ||
+          typeof body.contentSha256 !== "string" || !/^[a-f0-9]{64}$/.test(body.contentSha256)) {
+        return reply.code(400).send({ error: "invalid_delivery_proof_upload" });
+      }
+      const tenantIds = [...new Set(auth.actor.grants
+        .filter(g => g.resource === "courier.delivery_task" && g.actions.includes("update") && g.scope.merchantId)
+        .map(g => g.scope.merchantId!))];
+      for (const tenantId of tenantIds) {
+        const result = await options.courierDeliveryEvidence.requestProofUpload({
+          tenantId, taskId: request.params.taskId, courierId: auth.actor.id,
+          contentType: body.contentType as typeof contentTypes[number],
+          contentLength: body.contentLength as number, contentSha256: body.contentSha256
+        });
+        if (result.outcome === "not_found") continue;
+        if (result.outcome === "task_not_ready") return reply.code(409).send({ error: "courier_task_not_ready_for_delivery_proof" });
+        if (result.outcome === "upload_unavailable") return reply.code(503).send({ error: "delivery_proof_storage_unavailable" });
+        if (result.outcome !== "upload_created") return reply.code(503).send({ error: "delivery_proof_upload_unavailable" });
+        return reply.code(201).send({
+          uploadId: result.uploadId, uploadUrl: result.uploadUrl, expiresAtUtc: result.expiresAtUtc,
+          requiredHeaders: { "content-type": body.contentType, "if-none-match": "*" }
+        });
+      }
+      return reply.code(404).send({ error: "courier_task_not_found" });
+    }
+  );
+
+  app.post<{ Params: { taskId: string; uploadId: string }; Body: unknown }>(
+    "/api/v1/courier/tasks/:taskId/proof-upload/:uploadId/complete", async (request, reply) => {
+      const auth = await authorizeRequest(request, options, actor => ({
+        resource: "courier.delivery_task", action: "update",
+        scope: { merchantId: actor.grants.find(g => g.resource === "courier.delivery_task" && g.actions.includes("update") && g.scope.merchantId)?.scope.merchantId ?? "" }
+      }));
+      if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
+      if (!(auth.actor.roles ?? [auth.actor.role]).includes("courier")) return reply.code(403).send({ error: "courier_only" });
+      if (!options.courierDeliveryEvidence) return reply.code(503).send({ error: "courier_delivery_evidence_unavailable" });
+      if (!/^[a-zA-Z0-9_-]{8,128}$/.test(request.params.uploadId)) {
+        return reply.code(400).send({ error: "invalid_delivery_proof_upload_id" });
+      }
+      const tenantIds = [...new Set(auth.actor.grants
+        .filter(g => g.resource === "courier.delivery_task" && g.actions.includes("update") && g.scope.merchantId)
+        .map(g => g.scope.merchantId!))];
+      for (const tenantId of tenantIds) {
+        const result = await options.courierDeliveryEvidence.finalizeProofUpload({
+          tenantId, taskId: request.params.taskId, courierId: auth.actor.id, uploadId: request.params.uploadId
+        });
+        if (result.outcome === "not_found") continue;
+        if (result.outcome === "task_not_ready") return reply.code(409).send({ error: "courier_task_not_ready_for_delivery_proof" });
+        if (result.outcome === "upload_missing") return reply.code(409).send({ error: "delivery_proof_object_missing" });
+        if (result.outcome === "checksum_mismatch") return reply.code(422).send({ error: "delivery_proof_checksum_mismatch" });
+        if (result.outcome === "invalid_upload") return reply.code(422).send({ error: "delivery_proof_upload_invalid" });
+        if (result.outcome !== "verified") return reply.code(503).send({ error: "delivery_proof_verification_unavailable" });
+        return reply.code(200).send({ outcome: result.outcome, evidenceId: result.evidenceId, verifiedAtUtc: result.verifiedAtUtc });
+      }
+      return reply.code(404).send({ error: "courier_task_not_found" });
+    }
+  );
+
+  app.patch<{ Params: { taskId: string }; Body: unknown }>(
+    "/api/v1/courier/tasks/:taskId/status", async (request, reply) => {
+      const auth = await authorizeRequest(request, options, actor => ({
+        resource: "courier.delivery_task", action: "update",
+        scope: { merchantId: actor.grants.find(g => g.resource === "courier.delivery_task" && g.actions.includes("update") && g.scope.merchantId)?.scope.merchantId ?? "" }
+      }));
+      if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
+      if (!(auth.actor.roles ?? [auth.actor.role]).includes("courier")) return reply.code(403).send({ error: "courier_only" });
+      if (!options.courierTasks) return reply.code(503).send({ error: "courier_tasks_unavailable" });
+      const body = request.body as Record<string, unknown> | null;
+      const statuses: CourierTaskStatus[] = ["accepted","heading_to_pickup","arrived_at_pickup","picked_up","in_transit","arrived_at_dropoff","delivered","declined","failed"];
+      if (!body || typeof body.status !== "string" || !statuses.includes(body.status as CourierTaskStatus) ||
+          !Number.isSafeInteger(body.expectedVersion) || (body.expectedVersion as number) < 1 ||
+          (body.pickupCode !== undefined && (typeof body.pickupCode !== "string" || body.pickupCode.length > 100)) ||
+          (body.reason !== undefined && (typeof body.reason !== "string" || body.reason.length > 500))) {
+        return reply.code(400).send({ error: "invalid_courier_task_transition" });
+      }
+      const tenantIds = [...new Set(auth.actor.grants
+        .filter(g => g.resource === "courier.delivery_task" &&
+          g.actions.includes("update") && g.scope.merchantId)
+        .map(g => g.scope.merchantId!))];
+      if (!tenantIds.length) return reply.code(403).send({ error: "courier_tenant_scope_missing" });
+      const transitionInput = {
+        taskId: request.params.taskId, courierId: auth.actor.id,
+        nextStatus: body.status as CourierTaskStatus, expectedVersion: body.expectedVersion as number,
+        ...(typeof body.pickupCode === "string" ? { pickupCode: body.pickupCode } : {}),
+        ...(typeof body.reason === "string" ? { reason: body.reason } : {})
+      };
+      // Probe only explicitly granted tenant scopes; stop on the first definitive result.
+      for (const tenantId of tenantIds) {
+        const result = await options.courierTasks.transition({ tenantId, ...transitionInput });
+        if (result.outcome === "not_found") continue;
+        if (result.outcome === "conflict") return reply.code(409).send({ error: "courier_task_version_conflict" });
+        if (result.outcome === "rejected") return reply.code(422).send({ error: result.reason ?? "courier_task_transition_rejected" });
+        if (result.outcome === "updated") return reply.code(200).send({ task: result.task });
+      }
+      return reply.code(404).send({ error: "courier_task_not_found" });
+    }
+  );
+
+  // Courier onboarding and approval are restricted to platform administrators.
+  app.get<{ Querystring: { status?: string; limit?: string } }>("/api/v1/platform/couriers", async (request, reply) => {
+    const auth = await authorizeRequest(request, options, {
+      resource: "platform.courier_profile", action: "read", scope: { platform: true }
+    });
+    if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
+    const roles = new Set([auth.actor.role, ...(auth.actor.roles ?? [])]);
+    if (![...roles].some(role => role === "platform_owner" || role === "platform_admin")) {
+      return reply.code(403).send({ error: "platform_admin_only" });
+    }
+    if (!options.courierAdminProfiles) return reply.code(503).send({ error: "courier_admin_unavailable" });
+    const status = request.query.status;
+    if (status !== undefined && !["pending", "active", "suspended"].includes(status)) {
+      return reply.code(400).send({ error: "invalid_courier_profile_status" });
+    }
+    const parsedLimit = request.query.limit === undefined ? 100 : Number(request.query.limit);
+    if (!Number.isInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 200) {
+      return reply.code(400).send({ error: "invalid_limit" });
+    }
+    const profiles = await options.courierAdminProfiles.listProfiles({
+      ...(status === undefined ? {} : { status: status as "pending" | "active" | "suspended" }),
+      limit: parsedLimit
+    });
+    return reply.code(200).send({ profiles });
+  });
+
+  app.post<{ Body: unknown }>("/api/v1/platform/couriers", async (request, reply) => {
+    const auth = await authorizeRequest(request, options, {
+      resource: "platform.courier_profile", action: "create", scope: { platform: true }
+    });
+    if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
+    const roles = new Set([auth.actor.role, ...(auth.actor.roles ?? [])]);
+    if (![...roles].some(role => role === "platform_owner" || role === "platform_admin")) {
+      return reply.code(403).send({ error: "platform_admin_only" });
+    }
+    if (!options.courierAdminProfiles || !options.auditEvents) return reply.code(503).send({ error: "courier_admin_unavailable" });
+    const body = request.body as Record<string, unknown> | null;
+    if (!body || typeof body.courierId !== "string" || !/^[A-Za-z0-9._:-]{1,160}$/.test(body.courierId) ||
+        !Number.isSafeInteger(body.maxConcurrentTasks ?? 1) || Number(body.maxConcurrentTasks ?? 1) < 1 || Number(body.maxConcurrentTasks ?? 1) > 20 ||
+        Object.keys(body).some(key => !["courierId", "maxConcurrentTasks"].includes(key))) {
+      return reply.code(400).send({ error: "invalid_courier_profile" });
+    }
+    const auditBase = {
+      id: randomUUID(), category: "courier_governance", occurredAt: new Date().toISOString(),
+      actor: { id: auth.actor.id, type: "platform_user" as const, role: auth.actor.role },
+      action: "platform.courier_profile.create", resourceType: "courier_profile",
+      resourceId: body.courierId, correlationId: request.id, source: "api", severity: "high" as const,
+      metadata: { maxConcurrentTasks: Number(body.maxConcurrentTasks ?? 1) }
+    };
+    await options.auditEvents.append(createAuditEvent({ ...auditBase, type: "courier_profile.creation.requested", outcome: "pending" }));
+    const outcome = await options.courierAdminProfiles.createProfile({
+      courierId: body.courierId, maxConcurrentTasks: Number(body.maxConcurrentTasks ?? 1)
+    });
+    await options.auditEvents.append(createAuditEvent({
+      ...auditBase, id: randomUUID(),
+      type: outcome === "created" ? "courier_profile.created" : "courier_profile.creation_rejected",
+      outcome: outcome === "created" ? "success" : "failure"
+    }));
+    if (outcome === "identity_not_found") return reply.code(404).send({ error: "courier_identity_not_found" });
+    if (outcome === "identity_not_eligible") return reply.code(409).send({ error: "courier_identity_not_eligible" });
+    if (outcome === "already_exists") return reply.code(409).send({ error: "courier_profile_already_exists" });
+    return reply.code(201).send({ outcome, courierId: body.courierId, accountStatus: "pending", verificationStatus: "pending" });
+  });
+
+  app.post<{ Params: { courierId: string }; Body: unknown }>(
+    "/api/v1/platform/couriers/:courierId/review", async (request, reply) => {
+      const auth = await authorizeRequest(request, options, {
+        resource: "platform.courier_profile", action: "approve", scope: { platform: true }
+      });
+      if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
+      const roles = new Set([auth.actor.role, ...(auth.actor.roles ?? [])]);
+      if (![...roles].some(role => role === "platform_owner" || role === "platform_admin")) {
+        return reply.code(403).send({ error: "platform_admin_only" });
+      }
+      if (!options.courierAdminProfiles || !options.auditEvents) return reply.code(503).send({ error: "courier_admin_unavailable" });
+      if (!/^[A-Za-z0-9._:-]{1,160}$/.test(request.params.courierId)) return reply.code(400).send({ error: "invalid_courier_id" });
+      const body = request.body as Record<string, unknown> | null;
+      if (!body || !["approve", "reject", "suspend", "reinstate"].includes(String(body.decision)) ||
+          Object.keys(body).some(key => key !== "decision")) return reply.code(400).send({ error: "invalid_courier_review" });
+      const decision = body.decision as "approve" | "reject" | "suspend" | "reinstate";
+      const auditBase = {
+        id: randomUUID(), category: "courier_governance", occurredAt: new Date().toISOString(),
+        actor: { id: auth.actor.id, type: "platform_user" as const, role: auth.actor.role },
+        action: `platform.courier_profile.${decision}`, resourceType: "courier_profile",
+        resourceId: request.params.courierId, correlationId: request.id, source: "api", severity: "high" as const,
+        metadata: { decision }
+      };
+      await options.auditEvents.append(createAuditEvent({ ...auditBase, type: "courier_profile.review.requested", outcome: "pending" }));
+      const outcome = await options.courierAdminProfiles.reviewProfile({
+        courierId: request.params.courierId, decision, reviewerId: auth.actor.id
+      });
+      await options.auditEvents.append(createAuditEvent({
+        ...auditBase, id: randomUUID(),
+        type: outcome === "updated" ? "courier_profile.reviewed" : "courier_profile.review_rejected",
+        outcome: outcome === "updated" ? "success" : "failure"
+      }));
+      if (outcome === "not_found") return reply.code(404).send({ error: "courier_profile_not_found" });
+      if (outcome === "invalid_transition") return reply.code(409).send({ error: "courier_profile_review_conflict" });
+      return reply.code(200).send({ outcome, courierId: request.params.courierId, decision });
+    }
+  );
+
+  app.post<{ Body: unknown }>("/api/v1/platform/courier-vehicles", async (request, reply) => {
+    const auth = await authorizeRequest(request, options, {
+      resource: "platform.courier_profile", action: "create", scope: { platform: true }
+    });
+    if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
+    const roles = new Set([auth.actor.role, ...(auth.actor.roles ?? [])]);
+    if (![...roles].some(role => role === "platform_owner" || role === "platform_admin")) return reply.code(403).send({ error: "platform_admin_only" });
+    if (!options.courierAdminProfiles || !options.auditEvents) return reply.code(503).send({ error: "courier_admin_unavailable" });
+    const body = request.body as Record<string, unknown> | null;
+    if (!body || typeof body.courierId !== "string" || !/^[A-Za-z0-9._:-]{1,160}$/.test(body.courierId) ||
+        !["motorcycle", "car", "van"].includes(String(body.vehicleType)) ||
+        !Number.isSafeInteger(body.capacityWeightGrams) || Number(body.capacityWeightGrams) < 1 || Number(body.capacityWeightGrams) > 1_000_000 ||
+        !Number.isSafeInteger(body.capacityVolumeLiters) || Number(body.capacityVolumeLiters) < 1 || Number(body.capacityVolumeLiters) > 10_000 ||
+        Object.keys(body).some(key => !["courierId", "vehicleType", "capacityWeightGrams", "capacityVolumeLiters"].includes(key))) {
+      return reply.code(400).send({ error: "invalid_courier_vehicle" });
+    }
+    const vehicleId = randomUUID();
+    const outcome = await options.courierAdminProfiles.registerVehicle({
+      vehicleId, courierId: body.courierId, vehicleType: body.vehicleType as "motorcycle" | "car" | "van",
+      capacityWeightGrams: Number(body.capacityWeightGrams), capacityVolumeLiters: Number(body.capacityVolumeLiters)
+    });
+    await options.auditEvents.append(createAuditEvent({
+      id: randomUUID(), type: outcome === "created" ? "courier_vehicle.registration_created" : "courier_vehicle.registration_rejected",
+      category: "courier_governance", occurredAt: new Date().toISOString(),
+      actor: { id: auth.actor.id, type: "platform_user", role: auth.actor.role },
+      action: "platform.courier_vehicle.register", outcome: outcome === "created" ? "success" : "failure",
+      resourceType: "courier_vehicle", resourceId: vehicleId, correlationId: request.id, source: "api", severity: "high",
+      metadata: { courierId: body.courierId, vehicleType: body.vehicleType }
+    }));
+    if (outcome === "courier_not_found") return reply.code(404).send({ error: "courier_profile_not_found" });
+    if (outcome === "courier_not_active") return reply.code(409).send({ error: "courier_profile_not_active" });
+    if (outcome === "already_exists") return reply.code(409).send({ error: "courier_vehicle_already_exists" });
+    return reply.code(201).send({ outcome, vehicleId, verificationStatus: "pending", active: false });
+  });
+
+  app.post<{ Params: { vehicleId: string }; Body: unknown }>("/api/v1/platform/courier-vehicles/:vehicleId/review", async (request, reply) => {
+    const auth = await authorizeRequest(request, options, {
+      resource: "platform.courier_profile", action: "approve", scope: { platform: true }
+    });
+    if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
+    const roles = new Set([auth.actor.role, ...(auth.actor.roles ?? [])]);
+    if (![...roles].some(role => role === "platform_owner" || role === "platform_admin")) return reply.code(403).send({ error: "platform_admin_only" });
+    if (!options.courierAdminProfiles || !options.auditEvents) return reply.code(503).send({ error: "courier_admin_unavailable" });
+    if (!/^[A-Za-z0-9._:-]{1,160}$/.test(request.params.vehicleId)) return reply.code(400).send({ error: "invalid_vehicle_id" });
+    const body = request.body as Record<string, unknown> | null;
+    if (!body || !["approve", "reject"].includes(String(body.decision)) || Object.keys(body).some(key => key !== "decision")) {
+      return reply.code(400).send({ error: "invalid_vehicle_review" });
+    }
+    const decision = body.decision as "approve" | "reject";
+    const outcome = await options.courierAdminProfiles.reviewVehicle({ vehicleId: request.params.vehicleId, decision, reviewerId: auth.actor.id });
+    await options.auditEvents.append(createAuditEvent({
+      id: randomUUID(), type: outcome === "updated" ? "courier_vehicle.reviewed" : "courier_vehicle.review_rejected",
+      category: "courier_governance", occurredAt: new Date().toISOString(),
+      actor: { id: auth.actor.id, type: "platform_user", role: auth.actor.role },
+      action: `platform.courier_vehicle.${decision}`, outcome: outcome === "updated" ? "success" : "failure",
+      resourceType: "courier_vehicle", resourceId: request.params.vehicleId,
+      correlationId: request.id, source: "api", severity: "high", metadata: { decision }
+    }));
+    if (outcome === "not_found") return reply.code(404).send({ error: "courier_vehicle_not_found" });
+    if (outcome === "invalid_transition") return reply.code(409).send({ error: "courier_vehicle_review_conflict" });
+    return reply.code(200).send({ outcome, vehicleId: request.params.vehicleId, decision, active: decision === "approve" });
+  });
+
+  app.post<{ Body: unknown }>("/api/v1/platform/courier-service-area-memberships/grant", async (request, reply) => {
+    const auth = await authorizeRequest(request, options, {
+      resource: "platform.courier_profile", action: "manage_access", scope: { platform: true }
+    });
+    if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
+    const roles = new Set([auth.actor.role, ...(auth.actor.roles ?? [])]);
+    if (![...roles].some(role => role === "platform_owner" || role === "platform_admin")) return reply.code(403).send({ error: "platform_admin_only" });
+    if (!options.courierAdminProfiles || !options.auditEvents) return reply.code(503).send({ error: "courier_admin_unavailable" });
+    const body = request.body as Record<string, unknown> | null;
+    const keys = ["courierId", "tenantId", "serviceAreaId"] as const;
+    if (!body || keys.some(key => typeof body[key] !== "string" || !/^[A-Za-z0-9._:-]{1,160}$/.test(body[key] as string)) ||
+        Object.keys(body).some(key => !keys.includes(key as typeof keys[number]))) return reply.code(400).send({ error: "invalid_courier_service_area_membership" });
+    const input = { courierId: body.courierId as string, tenantId: body.tenantId as string, serviceAreaId: body.serviceAreaId as string };
+    const outcome = await options.courierAdminProfiles.grantServiceArea({ ...input, reviewerId: auth.actor.id });
+    await options.auditEvents.append(createAuditEvent({
+      id: randomUUID(), type: outcome === "granted" ? "courier_service_area.granted" : "courier_service_area.grant_rejected",
+      category: "courier_governance", occurredAt: new Date().toISOString(),
+      actor: { id: auth.actor.id, type: "platform_user", role: auth.actor.role },
+      action: "platform.courier_service_area.grant", outcome: outcome === "granted" ? "success" : "failure",
+      resourceType: "courier_service_area_membership", resourceId: input.serviceAreaId, tenantId: input.tenantId,
+      correlationId: request.id, source: "api", severity: "high", metadata: { courierId: input.courierId }
+    }));
+    if (outcome === "courier_not_found") return reply.code(404).send({ error: "courier_profile_not_found" });
+    if (outcome === "courier_not_active") return reply.code(409).send({ error: "courier_profile_not_active" });
+    if (outcome === "service_area_not_active") return reply.code(409).send({ error: "service_area_not_active" });
+    return reply.code(201).send({ outcome, ...input, active: true });
+  });
+
+  app.post<{ Body: unknown }>("/api/v1/platform/courier-service-area-memberships/revoke", async (request, reply) => {
+    const auth = await authorizeRequest(request, options, {
+      resource: "platform.courier_profile", action: "manage_access", scope: { platform: true }
+    });
+    if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
+    const roles = new Set([auth.actor.role, ...(auth.actor.roles ?? [])]);
+    if (![...roles].some(role => role === "platform_owner" || role === "platform_admin")) return reply.code(403).send({ error: "platform_admin_only" });
+    if (!options.courierAdminProfiles || !options.auditEvents) return reply.code(503).send({ error: "courier_admin_unavailable" });
+    const body = request.body as Record<string, unknown> | null;
+    const keys = ["courierId", "tenantId", "serviceAreaId"] as const;
+    if (!body || keys.some(key => typeof body[key] !== "string" || !/^[A-Za-z0-9._:-]{1,160}$/.test(body[key] as string)) ||
+        Object.keys(body).some(key => !keys.includes(key as typeof keys[number]))) return reply.code(400).send({ error: "invalid_courier_service_area_membership" });
+    const input = { courierId: body.courierId as string, tenantId: body.tenantId as string, serviceAreaId: body.serviceAreaId as string };
+    const outcome = await options.courierAdminProfiles.revokeServiceArea(input);
+    await options.auditEvents.append(createAuditEvent({
+      id: randomUUID(), type: outcome === "revoked" ? "courier_service_area.revoked" : "courier_service_area.revoke_not_found",
+      category: "courier_governance", occurredAt: new Date().toISOString(),
+      actor: { id: auth.actor.id, type: "platform_user", role: auth.actor.role },
+      action: "platform.courier_service_area.revoke", outcome: outcome === "revoked" ? "success" : "failure",
+      resourceType: "courier_service_area_membership", resourceId: input.serviceAreaId, tenantId: input.tenantId,
+      correlationId: request.id, source: "api", severity: "high", metadata: { courierId: input.courierId }
+    }));
+    if (outcome === "not_found") return reply.code(404).send({ error: "courier_service_area_membership_not_found" });
+    return reply.code(200).send({ outcome, ...input, active: false });
+  });
+
   // Only platform administrators can authorize external inventory providers for a branch.
   app.post<{ Body: unknown }>(
     "/api/v1/platform/inventory-provider-capabilities/hard-reservation/approve",
