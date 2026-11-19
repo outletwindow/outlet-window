@@ -74,3 +74,18 @@ Platform owners and platform administrators with the platform-scoped `platform.c
 - `POST /api/v1/platform/couriers/:courierId/review` with `approve`, `reject`, `suspend`, or `reinstate`. Invalid state transitions fail with 409.
 
 Approval is recorded with the reviewing administrator and timestamp. Suspending or rejecting a courier also forces persisted availability offline. The create and review endpoints require the durable audit writer and append requested plus outcome events. Vehicle verification and service-area membership administration are still separate follow-up work; a profile approval alone does not make a courier eligible to accept dispatch offers.
+
+
+## Vehicle review and service-area administration
+
+Platform administrators can register a vehicle against an already approved courier profile. New vehicles are always stored as pending and inactive. The review endpoint supports a one-time approve/reject decision; approval records the reviewer and activates the verified vehicle, while rejection keeps it inactive and forces courier availability offline.
+
+Service-area membership grants require an active, verified courier profile and an active service area within the exact tenant whose effective window includes the approval time. The reviewer and approval timestamp are persisted. Membership revocation is tenant- and service-area-scoped and only disables the matching active membership.
+
+Admin API routes:
+- `POST /api/v1/platform/courier-vehicles`
+- `POST /api/v1/platform/courier-vehicles/:vehicleId/review`
+- `POST /api/v1/platform/courier-service-area-memberships/grant`
+- `POST /api/v1/platform/courier-service-area-memberships/revoke`
+
+All routes require a platform owner/admin role, a matching platform-scoped permission grant, and a durable audit writer. These APIs are backend governance endpoints; a graphical admin console and production evidence/document upload workflow remain future work.
