@@ -63,3 +63,14 @@ Authenticated couriers with the `courier.delivery_task:update` grant can call `P
 Going online requires an active IAM identity, an active and verified courier profile, and at least one active verified vehicle. The server persists the availability heartbeat timestamp. Dispatch eligibility considers a courier online only while that heartbeat is no older than two minutes, so the courier application must refresh it periodically while online. Going offline is permitted even when the profile or vehicle is no longer eligible, allowing suspended or deactivated couriers to clear their online state.
 
 Responses distinguish a missing profile (404) from a profile that cannot go online (409). This endpoint does not approve profiles, vehicles, or service-area memberships; those remain controlled review operations.
+
+
+## Platform courier onboarding API
+
+Platform owners and platform administrators with the platform-scoped `platform.courier_profile` grants can use:
+
+- `GET /api/v1/platform/couriers` to list profiles, optionally filtered by `pending`, `active`, or `suspended`.
+- `POST /api/v1/platform/couriers` to create a pending profile for an existing active human IAM identity. The endpoint never creates or activates an IAM identity and never trusts a role supplied by the caller.
+- `POST /api/v1/platform/couriers/:courierId/review` with `approve`, `reject`, `suspend`, or `reinstate`. Invalid state transitions fail with 409.
+
+Approval is recorded with the reviewing administrator and timestamp. Suspending or rejecting a courier also forces persisted availability offline. The create and review endpoints require the durable audit writer and append requested plus outcome events. Vehicle verification and service-area membership administration are still separate follow-up work; a profile approval alone does not make a courier eligible to accept dispatch offers.
