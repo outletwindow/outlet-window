@@ -30,6 +30,7 @@ import { PostgresCourierDispatchOfferStore } from "../../../packages/domain/src/
 import { PostgresCourierDispatchOfferCommandStore, type CourierDispatchOfferEligibility } from "../../../packages/domain/src/postgres-courier-dispatch-offer-command-store.js";
 import { PostgresCourierDispatchOfferEligibility } from "../../../packages/domain/src/postgres-courier-dispatch-offer-eligibility.js";
 import { PostgresCourierAvailabilityStore } from "../../../packages/domain/src/postgres-courier-availability-store.js";
+import { PostgresCourierAdminStore } from "../../../packages/domain/src/postgres-courier-admin-store.js";
 import { PostgresCourierDeliveryEvidenceService, type CourierProofObjectStorage } from "../../../packages/domain/src/postgres-courier-delivery-evidence.js";
 import { createHmac } from "node:crypto";
 import { PostgresPaymentIntentStore } from "../../../packages/domain/src/postgres-payment-intent-store.js";
@@ -161,6 +162,7 @@ export function buildPostgresApp(options: PostgresApiOptions) {
           options.now) }
       : {}),
     courierAvailability: new PostgresCourierAvailabilityStore(options.pool, options.now),
+    courierAdminProfiles: new PostgresCourierAdminStore(options.pool, options.now),
     courierDispatchOffers: new PostgresCourierDispatchOfferStore(options.pool),
     courierDispatchOfferCommands: new PostgresCourierDispatchOfferCommandStore(
       options.pool, options.courierDispatchOfferEligibility ?? new PostgresCourierDispatchOfferEligibility(), options.now
