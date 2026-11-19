@@ -204,3 +204,35 @@ test("rejects insecure or credential-bearing API endpoints", () => {
 test("allows local HTTP development endpoint", () => {
   assert.doesNotThrow(() => createCourierApi({ baseUrl: "http://localhost:3000", token }));
 });
+
+test("sets courier online state through the authenticated availability endpoint", async () => {
+  let request;
+  const api = createCourierApi({
+    token,
+    fetchImpl: async (url, init) => {
+      request = { url, init };
+      return response(200, {
+        outcome: "updated", available: true, updatedAtUtc: "2026-11-19T10:00:00.000Z"
+      });
+    }
+  });
+  const result = await api.setAvailability(true);
+  assert.equal(request.url, "/api/v1/courier/availability");
+  assert.equal(request.init.method, "PUT");
+  assert.deepEqual(JSON.parse(request.init.body), { available: true });
+  assert.equal(result.available, true);
+});
+
+test("validates courier availability values and server response", async () => {
+  let called = false;
+  const api = createCourierApi({
+    token,
+    fetchImpl: async () => { called = true; return response(200, { outcome: "updated", available: "yes" }); }
+  });
+  await assert.rejects(api.setAvailability("yes"), /invalid_courier_availability/);
+  assert.equal(called, false);
+  await assert.rejects(api.setAvailability(false), error =>
+    error instanceof CourierApiError && error.status === 502 &&
+    error.message === "invalid_courier_availability_response"
+  );
+});
