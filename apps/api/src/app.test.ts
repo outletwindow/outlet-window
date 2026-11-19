@@ -1512,3 +1512,93 @@ describe("courier availability endpoint", () => {
     } finally { await api.close(); }
   });
 });
+
+
+describe("platform courier governance endpoints", () => {
+  const admin: Actor = {
+    id: "platform-admin-1", role: "platform_admin", active: true,
+    grants: [{
+      resource: "platform.courier_profile", actions: ["read", "create", "approve", "manage_access"],
+      scope: { platform: true }
+    }]
+  };
+  const auditEvents = { append: vi.fn(async () => "inserted" as const) };
+
+  it("creates a pending courier profile only through a platform administrator", async () => {
+    const createProfile = vi.fn(async () => "created" as const);
+    const api = buildApp({
+      resolveActor: async () => admin, auditEvents,
+      courierAdminProfiles: {
+        listProfiles: vi.fn(async () => []), createProfile,
+        reviewProfile: vi.fn(async () => "updated" as const),
+        registerVehicle: vi.fn(async () => "created" as const),
+        reviewVehicle: vi.fn(async () => "updated" as const),
+        grantServiceArea: vi.fn(async () => "granted" as const),
+        revokeServiceArea: vi.fn(async () => "revoked" as const)
+      }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "POST", url: "/api/v1/platform/couriers",
+        payload: { courierId: "courier-new", maxConcurrentTasks: 2 }
+      });
+      expect(response.statusCode).toBe(201);
+      expect(response.json()).toMatchObject({
+        outcome: "created", courierId: "courier-new", accountStatus: "pending", verificationStatus: "pending"
+      });
+      expect(createProfile).toHaveBeenCalledWith({ courierId: "courier-new", maxConcurrentTasks: 2 });
+      expect(auditEvents.append).toHaveBeenCalled();
+    } finally { await api.close(); }
+  });
+
+  it("denies merchant actors access to platform courier governance", async () => {
+    const createProfile = vi.fn();
+    const api = buildApp({
+      resolveActor: async () => ({ ...admin, role: "merchant_owner" as const, grants: [] }),
+      courierAdminProfiles: {
+        listProfiles: vi.fn(async () => []), createProfile,
+        reviewProfile: vi.fn(async () => "updated" as const),
+        registerVehicle: vi.fn(async () => "created" as const),
+        reviewVehicle: vi.fn(async () => "updated" as const),
+        grantServiceArea: vi.fn(async () => "granted" as const),
+        revokeServiceArea: vi.fn(async () => "revoked" as const)
+      }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "POST", url: "/api/v1/platform/couriers",
+        payload: { courierId: "courier-new" }
+      });
+      expect(response.statusCode).toBe(403);
+      expect(createProfile).not.toHaveBeenCalled();
+    } finally { await api.close(); }
+  });
+
+  it("registers a pending vehicle through the platform governance adapter", async () => {
+    const registerVehicle = vi.fn(async () => "created" as const);
+    const api = buildApp({
+      resolveActor: async () => admin, auditEvents,
+      courierAdminProfiles: {
+        listProfiles: vi.fn(async () => []), createProfile: vi.fn(async () => "created" as const),
+        reviewProfile: vi.fn(async () => "updated" as const), registerVehicle,
+        reviewVehicle: vi.fn(async () => "updated" as const),
+        grantServiceArea: vi.fn(async () => "granted" as const),
+        revokeServiceArea: vi.fn(async () => "revoked" as const)
+      }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "POST", url: "/api/v1/platform/courier-vehicles",
+        payload: { courierId: "courier-1", vehicleType: "car", capacityWeightGrams: 100000, capacityVolumeLiters: 500 }
+      });
+      expect(response.statusCode).toBe(201);
+      expect(response.json()).toMatchObject({ outcome: "created", verificationStatus: "pending", active: false });
+      expect(registerVehicle).toHaveBeenCalledWith(expect.objectContaining({
+        courierId: "courier-1", vehicleType: "car", capacityWeightGrams: 100000, capacityVolumeLiters: 500
+      }));
+    } finally { await api.close(); }
+  });
+});
