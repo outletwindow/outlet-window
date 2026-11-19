@@ -4,7 +4,7 @@ import { getTaskGroups, getNextTaskAction } from "./tasks.js";
 const translations = {
   ar: {
     role:"تطبيق المندوب", greeting:"أهلاً بك في Outlet Window", subtitle:"مهام التوصيل الخاصة بك في مكان واحد",
-    available:"متصل بالخدمة", today:"ملخص المهام", completed:"طلبات مكتملة", earnings:"الأرباح",
+    available:"متصل بالخدمة", online:"متاح لاستقبال الطلبات", offline:"متوقف عن استقبال الطلبات", goOnline:"تفعيل استقبال الطلبات", goOffline:"إيقاف استقبال الطلبات", heartbeatFailed:"انقطع تحديث حالة التوفر؛ أعد الاتصال بالإنترنت", today:"ملخص المهام", completed:"طلبات مكتملة", earnings:"الأرباح",
     pickup:"الاستلام", dropoff:"التسليم", order:"الطلب", suborder:"الطلب الفرعي", accept:"قبول المهمة", decline:"رفض المهمة",
     offers:"العروض المتاحة", active:"مهامي الحالية", history:"السجل",
     offerExpires:"ينتهي العرض", offerPendingAcceptance:"يمكنك الرد على العرض؛ التعيين يتم بعد التحقق من الأهلية",
@@ -29,7 +29,7 @@ const translations = {
   },
   en: {
     role:"Courier app", greeting:"Welcome to Outlet Window", subtitle:"Your delivery tasks in one place",
-    available:"Connected", today:"Task summary", completed:"Completed orders", earnings:"Earnings",
+    available:"Connected", online:"Available for dispatch", offline:"Not accepting orders", goOnline:"Go online", goOffline:"Go offline", heartbeatFailed:"Availability heartbeat failed; reconnect to the internet", today:"Task summary", completed:"Completed orders", earnings:"Earnings",
     pickup:"Pickup", dropoff:"Drop-off", order:"Order", suborder:"Suborder", accept:"Accept task", decline:"Decline task",
     offers:"Available offers", active:"My active tasks", history:"History",
     offerExpires:"Offer expires", offerPendingAcceptance:"Respond to the offer; assignment follows an eligibility check",
@@ -60,6 +60,8 @@ let offers = [];
 let language = "ar";
 let activeTab = "offers";
 let busy = false;
+let courierOnline = false;
+let heartbeatTimer = null;
 const $ = selector => document.querySelector(selector);
 const content = $("#task-list");
 const toast = $("#toast");
@@ -92,6 +94,10 @@ function render() {
   $("#disconnect-button").hidden = !api;
   $("#refresh-button").hidden = !api;
   $("#task-area").hidden = !api;
+  $("#availability-toggle").hidden = !api;
+  $("#availability-toggle").textContent = t(courierOnline ? "goOffline" : "goOnline");
+  $("#availability-toggle").setAttribute("aria-pressed", String(courierOnline));
+  $("#availability-state").textContent = t(courierOnline ? "online" : "offline");
   document.querySelectorAll("[data-tab]").forEach(button =>
     button.classList.toggle("selected", button.dataset.tab === activeTab));
   const groups = getTaskGroups(tasks);
@@ -196,6 +202,27 @@ function renderTask(task) {
   return card;
 }
 
+function stopAvailabilityHeartbeat() {
+  if (heartbeatTimer !== null) window.clearInterval(heartbeatTimer);
+  heartbeatTimer = null;
+}
+
+function startAvailabilityHeartbeat() {
+  stopAvailabilityHeartbeat();
+  heartbeatTimer = window.setInterval(async () => {
+    if (!api || !courierOnline || busy || document.visibilityState === "hidden") return;
+    try {
+      await api.setAvailability(true);
+    } catch {
+      stopAvailabilityHeartbeat();
+      courierOnline = false;
+      try { await api?.setAvailability(false); } catch { /* server-side heartbeat expiry is the fallback */ }
+      render();
+      notify(t("heartbeatFailed"));
+    }
+  }, 60_000);
+}
+
 async function loadTasks() {
   if (!api) return;
   const [taskResult, offerResult] = await Promise.all([api.listTasks(), api.listOffers()]);
@@ -212,6 +239,9 @@ form.addEventListener("submit", async event => {
     setBusy(true);
     const configuredApiUrl = document.querySelector('meta[name="outlet-window-api-base-url"]')?.content?.trim() ?? "";
     api = createCourierApi({ baseUrl: configuredApiUrl, token });
+    await api.setAvailability(false);
+    courierOnline = false;
+    stopAvailabilityHeartbeat();
     await loadTasks();
     tokenInput.value = "";
     connectionState.textContent = t("available");
@@ -228,12 +258,42 @@ form.addEventListener("submit", async event => {
   }
 });
 
-$("#disconnect-button").addEventListener("click", () => {
+$("#disconnect-button").addEventListener("click", async () => {
+  stopAvailabilityHeartbeat();
+  if (api && courierOnline) { try { await api.setAvailability(false); } catch { /* heartbeat expires automatically */ } }
+  courierOnline = false;
   api = null;
   tasks = [];
   offers = [];
   render();
   notify(t("disconnected"));
+});
+
+$("#availability-toggle").addEventListener("click", async () => {
+  if (!api || busy) return;
+  const next = !courierOnline;
+  try {
+    setBusy(true);
+    await api.setAvailability(next);
+    courierOnline = next;
+    if (next) startAvailabilityHeartbeat(); else stopAvailabilityHeartbeat();
+    notify(t(next ? "online" : "offline"));
+  } catch (error) {
+    if (error instanceof CourierApiError && error.status === 409) notify(t("heartbeatFailed"));
+    else notify(error instanceof Error ? error.message : t("failed"));
+  } finally { setBusy(false); render(); }
+});
+
+document.addEventListener("visibilitychange", async () => {
+  if (document.visibilityState !== "visible" || !api || !courierOnline || busy) return;
+  try { await api.setAvailability(true); }
+  catch {
+    stopAvailabilityHeartbeat();
+    courierOnline = false;
+    try { await api?.setAvailability(false); } catch { /* heartbeat expiry is the fallback */ }
+    render();
+    notify(t("heartbeatFailed"));
+  }
 });
 
 $("#refresh-button").addEventListener("click", async () => {
