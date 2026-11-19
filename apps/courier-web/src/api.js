@@ -52,6 +52,17 @@ export function createCourierApi({ baseUrl = "", token, fetchImpl = globalThis.f
   }
 
   return Object.freeze({
+    async setAvailability(available) {
+      if (typeof available !== "boolean") throw new TypeError("invalid_courier_availability");
+      const payload = await request("/api/v1/courier/availability", {
+        method: "PUT", body: JSON.stringify({ available })
+      });
+      if (!payload || payload.outcome !== "updated" || payload.available !== available ||
+          typeof payload.updatedAtUtc !== "string" || !Number.isFinite(Date.parse(payload.updatedAtUtc))) {
+        throw new CourierApiError("invalid_courier_availability_response", 502, payload);
+      }
+      return payload;
+    },
     async listTasks() {
       const payload = await request("/api/v1/courier/tasks");
       if (!payload || !Array.isArray(payload.tasks)) {
