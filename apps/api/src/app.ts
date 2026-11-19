@@ -169,6 +169,11 @@ export interface AppOptions {
       decision: "accepted" | "declined"; reason?: string;
     }): Promise<import("../../../packages/domain/src/postgres-courier-dispatch-offer-command-store.js").CourierDispatchOfferResponse>;
   };
+  courierAdminProfiles?: {
+    listProfiles(input?: { status?: "pending" | "active" | "suspended"; limit?: number }): Promise<import("../../../packages/domain/src/postgres-courier-admin-store.js").CourierAdminProfile[]>;
+    createProfile(input: { courierId: string; maxConcurrentTasks: number }): Promise<"created" | "identity_not_found" | "identity_not_eligible" | "already_exists">;
+    reviewProfile(input: { courierId: string; decision: "approve" | "reject" | "suspend" | "reinstate"; reviewerId: string }): Promise<"updated" | "not_found" | "invalid_transition">;
+  };
   courierAvailability?: {
     setAvailability(input: { courierId: string; available: boolean }): Promise<import("../../../packages/domain/src/postgres-courier-availability-store.js").CourierAvailabilityUpdate>;
   };
