@@ -16,3 +16,8 @@
 .route p{margin:4px 0;color:var(--muted);overflow-wrap:anywhere}
 #refresh-button{border:1px solid var(--line);border-radius:999px;background:white;color:var(--ink);padding:8px 13px;font-weight:700}
 @media(max-width:700px){.connection{padding:17px}.section-heading{align-items:flex-start;flex-direction:column}.connection .actions{flex-direction:column}}
+
+.availability-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:16px 0;padding:14px 16px;background:#fff;border:1px solid var(--line);border-radius:14px}
+.availability-controls span{color:var(--muted);font-weight:700}
+.availability-controls button{border-radius:999px;padding:9px 16px;font-weight:750}
+@media(max-width:520px){.availability-controls{align-items:stretch;flex-direction:column}.availability-controls button{width:100%}}
