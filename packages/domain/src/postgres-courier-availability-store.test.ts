@@ -19,6 +19,7 @@ describe("PostgresCourierAvailabilityStore", () => {
 
   it("updates availability and heartbeat for an active verified courier with a verified vehicle", async () => {
     const { pool, query } = makePool([
+      {},
       { rows: [{ account_status: "active", verification_status: "verified" }] },
       { rows: [{ id: "vehicle-1" }] },
       { rows: [{ updated_at: "2026-11-19T10:00:00.000Z" }] }
@@ -34,6 +35,7 @@ describe("PostgresCourierAvailabilityStore", () => {
 
   it("does not turn on availability for an unverified courier", async () => {
     const { pool, query } = makePool([
+      {},
       { rows: [{ account_status: "pending", verification_status: "pending" }] }
     ]);
     const store = new PostgresCourierAvailabilityStore(pool, now);
@@ -45,6 +47,7 @@ describe("PostgresCourierAvailabilityStore", () => {
 
   it("requires a verified active vehicle before going online", async () => {
     const { pool, query } = makePool([
+      {},
       { rows: [{ account_status: "active", verification_status: "verified" }] },
       { rows: [] }
     ]);
@@ -55,7 +58,7 @@ describe("PostgresCourierAvailabilityStore", () => {
   });
 
   it("returns not found when the authenticated identity has no courier profile", async () => {
-    const { pool, query } = makePool([{ rows: [] }]);
+    const { pool, query } = makePool([{}, { rows: [] }]);
     const store = new PostgresCourierAvailabilityStore(pool, now);
     await expect(store.setAvailability({ courierId: "courier-1", available: false }))
       .resolves.toEqual({ outcome: "not_found" });
@@ -64,6 +67,7 @@ describe("PostgresCourierAvailabilityStore", () => {
 
   it("allows an approved courier to go offline without requiring a vehicle check", async () => {
     const { pool, query } = makePool([
+      {},
       { rows: [{ account_status: "suspended", verification_status: "rejected" }] },
       { rows: [{ updated_at: "2026-11-19T10:00:00.000Z" }] }
     ]);
