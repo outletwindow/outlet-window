@@ -536,6 +536,108 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     }
   );
 
+  // Courier onboarding and approval are restricted to platform administrators.
+  app.get<{ Querystring: { status?: string; limit?: string } }>("/api/v1/platform/couriers", async (request, reply) => {
+    const auth = await authorizeRequest(request, options, {
+      resource: "platform.courier_profile", action: "read", scope: { platform: true }
+    });
+    if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
+    const roles = new Set([auth.actor.role, ...(auth.actor.roles ?? [])]);
+    if (![...roles].some(role => role === "platform_owner" || role === "platform_admin")) {
+      return reply.code(403).send({ error: "platform_admin_only" });
+    }
+    if (!options.courierAdminProfiles) return reply.code(503).send({ error: "courier_admin_unavailable" });
+    const status = request.query.status;
+    if (status !== undefined && !["pending", "active", "suspended"].includes(status)) {
+      return reply.code(400).send({ error: "invalid_courier_profile_status" });
+    }
+    const parsedLimit = request.query.limit === undefined ? 100 : Number(request.query.limit);
+    if (!Number.isInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 200) {
+      return reply.code(400).send({ error: "invalid_limit" });
+    }
+    const profiles = await options.courierAdminProfiles.listProfiles({
+      ...(status === undefined ? {} : { status: status as "pending" | "active" | "suspended" }),
+      limit: parsedLimit
+    });
+    return reply.code(200).send({ profiles });
+  });
+
+  app.post<{ Body: unknown }>("/api/v1/platform/couriers", async (request, reply) => {
+    const auth = await authorizeRequest(request, options, {
+      resource: "platform.courier_profile", action: "create", scope: { platform: true }
+    });
+    if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
+    const roles = new Set([auth.actor.role, ...(auth.actor.roles ?? [])]);
+    if (![...roles].some(role => role === "platform_owner" || role === "platform_admin")) {
+      return reply.code(403).send({ error: "platform_admin_only" });
+    }
+    if (!options.courierAdminProfiles || !options.auditEvents) return reply.code(503).send({ error: "courier_admin_unavailable" });
+    const body = request.body as Record<string, unknown> | null;
+    if (!body || typeof body.courierId !== "string" || !/^[A-Za-z0-9._:-]{1,160}$/.test(body.courierId) ||
+        !Number.isSafeInteger(body.maxConcurrentTasks ?? 1) || Number(body.maxConcurrentTasks ?? 1) < 1 || Number(body.maxConcurrentTasks ?? 1) > 20 ||
+        Object.keys(body).some(key => !["courierId", "maxConcurrentTasks"].includes(key))) {
+      return reply.code(400).send({ error: "invalid_courier_profile" });
+    }
+    const auditBase = {
+      id: randomUUID(), category: "courier_governance", occurredAt: new Date().toISOString(),
+      actor: { id: auth.actor.id, type: "platform_user" as const, role: auth.actor.role },
+      action: "platform.courier_profile.create", resourceType: "courier_profile",
+      resourceId: body.courierId, correlationId: request.id, source: "api", severity: "high" as const,
+      metadata: { maxConcurrentTasks: Number(body.maxConcurrentTasks ?? 1) }
+    };
+    await options.auditEvents.append(createAuditEvent({ ...auditBase, type: "courier_profile.creation.requested", outcome: "pending" }));
+    const outcome = await options.courierAdminProfiles.createProfile({
+      courierId: body.courierId, maxConcurrentTasks: Number(body.maxConcurrentTasks ?? 1)
+    });
+    await options.auditEvents.append(createAuditEvent({
+      ...auditBase, id: randomUUID(),
+      type: outcome === "created" ? "courier_profile.created" : "courier_profile.creation_rejected",
+      outcome: outcome === "created" ? "success" : "failure"
+    }));
+    if (outcome === "identity_not_found") return reply.code(404).send({ error: "courier_identity_not_found" });
+    if (outcome === "identity_not_eligible") return reply.code(409).send({ error: "courier_identity_not_eligible" });
+    if (outcome === "already_exists") return reply.code(409).send({ error: "courier_profile_already_exists" });
+    return reply.code(201).send({ outcome, courierId: body.courierId, accountStatus: "pending", verificationStatus: "pending" });
+  });
+
+  app.post<{ Params: { courierId: string }; Body: unknown }>(
+    "/api/v1/platform/couriers/:courierId/review", async (request, reply) => {
+      const auth = await authorizeRequest(request, options, {
+        resource: "platform.courier_profile", action: "approve", scope: { platform: true }
+      });
+      if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
+      const roles = new Set([auth.actor.role, ...(auth.actor.roles ?? [])]);
+      if (![...roles].some(role => role === "platform_owner" || role === "platform_admin")) {
+        return reply.code(403).send({ error: "platform_admin_only" });
+      }
+      if (!options.courierAdminProfiles || !options.auditEvents) return reply.code(503).send({ error: "courier_admin_unavailable" });
+      if (!/^[A-Za-z0-9._:-]{1,160}$/.test(request.params.courierId)) return reply.code(400).send({ error: "invalid_courier_id" });
+      const body = request.body as Record<string, unknown> | null;
+      if (!body || !["approve", "reject", "suspend", "reinstate"].includes(String(body.decision)) ||
+          Object.keys(body).some(key => key !== "decision")) return reply.code(400).send({ error: "invalid_courier_review" });
+      const decision = body.decision as "approve" | "reject" | "suspend" | "reinstate";
+      const auditBase = {
+        id: randomUUID(), category: "courier_governance", occurredAt: new Date().toISOString(),
+        actor: { id: auth.actor.id, type: "platform_user" as const, role: auth.actor.role },
+        action: `platform.courier_profile.${decision}`, resourceType: "courier_profile",
+        resourceId: request.params.courierId, correlationId: request.id, source: "api", severity: "high" as const,
+        metadata: { decision }
+      };
+      await options.auditEvents.append(createAuditEvent({ ...auditBase, type: "courier_profile.review.requested", outcome: "pending" }));
+      const outcome = await options.courierAdminProfiles.reviewProfile({
+        courierId: request.params.courierId, decision, reviewerId: auth.actor.id
+      });
+      await options.auditEvents.append(createAuditEvent({
+        ...auditBase, id: randomUUID(),
+        type: outcome === "updated" ? "courier_profile.reviewed" : "courier_profile.review_rejected",
+        outcome: outcome === "updated" ? "success" : "failure"
+      }));
+      if (outcome === "not_found") return reply.code(404).send({ error: "courier_profile_not_found" });
+      if (outcome === "invalid_transition") return reply.code(409).send({ error: "courier_profile_review_conflict" });
+      return reply.code(200).send({ outcome, courierId: request.params.courierId, decision });
+    }
+  );
+
   // Only platform administrators can authorize external inventory providers for a branch.
   app.post<{ Body: unknown }>(
     "/api/v1/platform/inventory-provider-capabilities/hard-reservation/approve",
