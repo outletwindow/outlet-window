@@ -1440,3 +1440,75 @@ describe("courier dispatch offer responses", () => {
     } finally { await nonCourierApp.close(); }
   });
 });
+
+
+describe("courier availability endpoint", () => {
+  const courier: Actor = {
+    id: "courier-availability-1", role: "courier", active: true,
+    grants: [{
+      resource: "courier.delivery_task", actions: ["update"],
+      scope: { merchantId: "merchant-availability-1" }
+    }]
+  };
+
+  it("updates the authenticated courier availability and heartbeat", async () => {
+    const setAvailability = vi.fn(async (input: { courierId: string; available: boolean }) => ({
+      outcome: "updated" as const, available: input.available, updatedAtUtc: "2026-11-19T10:00:00.000Z"
+    }));
+    const api = buildApp({ resolveActor: async () => courier, courierAvailability: { setAvailability } });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "PUT", url: "/api/v1/courier/availability", payload: { available: true }
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({
+        outcome: "updated", available: true, updatedAtUtc: "2026-11-19T10:00:00.000Z"
+      });
+      expect(setAvailability).toHaveBeenCalledWith({ courierId: courier.id, available: true });
+    } finally { await api.close(); }
+  });
+
+  it("rejects malformed availability payloads", async () => {
+    const setAvailability = vi.fn();
+    const api = buildApp({ resolveActor: async () => courier, courierAvailability: { setAvailability } });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "PUT", url: "/api/v1/courier/availability",
+        payload: { available: true, courierId: "attacker-controlled" }
+      });
+      expect(response.statusCode).toBe(400);
+      expect(setAvailability).not.toHaveBeenCalled();
+    } finally { await api.close(); }
+  });
+
+  it("does not allow a non-courier to change courier availability", async () => {
+    const setAvailability = vi.fn();
+    const api = buildApp({
+      resolveActor: async () => ({ ...courier, role: "customer" as const }),
+      courierAvailability: { setAvailability }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "PUT", url: "/api/v1/courier/availability", payload: { available: true }
+      });
+      expect(response.statusCode).toBe(403);
+      expect(setAvailability).not.toHaveBeenCalled();
+    } finally { await api.close(); }
+  });
+
+  it("does not enable an unapproved courier", async () => {
+    const setAvailability = vi.fn(async () => ({ outcome: "not_eligible" as const }));
+    const api = buildApp({ resolveActor: async () => courier, courierAvailability: { setAvailability } });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "PUT", url: "/api/v1/courier/availability", payload: { available: true }
+      });
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toEqual({ error: "courier_profile_not_eligible" });
+    } finally { await api.close(); }
+  });
+});
