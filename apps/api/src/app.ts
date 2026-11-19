@@ -169,6 +169,9 @@ export interface AppOptions {
       decision: "accepted" | "declined"; reason?: string;
     }): Promise<import("../../../packages/domain/src/postgres-courier-dispatch-offer-command-store.js").CourierDispatchOfferResponse>;
   };
+  courierAvailability?: {
+    setAvailability(input: { courierId: string; available: boolean }): Promise<import("../../../packages/domain/src/postgres-courier-availability-store.js").CourierAvailabilityUpdate>;
+  };
   merchantOrderItemPreparation?: { record(input: RecordPreparationCheckInput): Promise<RecordPreparationCheckResult> };
   customerDeliveryDestinations?: CustomerDeliveryDestinationService;
   customerPaymentAdjustments?: CustomerPaymentAdjustmentActions;
@@ -322,6 +325,26 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     version: "v1",
     status: "foundation"
   }));
+
+  app.put<{ Body: unknown }>("/api/v1/courier/availability", async (request, reply) => {
+    const auth = await authorizeRequest(request, options, actor => ({
+      resource: "courier.delivery_task", action: "update",
+      scope: { merchantId: actor.grants.find(g => g.resource === "courier.delivery_task" && g.actions.includes("update") && g.scope.merchantId)?.scope.merchantId ?? "" }
+    }));
+    if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
+    if (!(auth.actor.roles ?? [auth.actor.role]).includes("courier")) return reply.code(403).send({ error: "courier_only" });
+    if (!options.courierAvailability) return reply.code(503).send({ error: "courier_availability_unavailable" });
+    const body = request.body as Record<string, unknown> | null;
+    if (!body || typeof body.available !== "boolean" || Object.keys(body).some(key => key !== "available")) {
+      return reply.code(400).send({ error: "invalid_courier_availability" });
+    }
+    const result = await options.courierAvailability.setAvailability({
+      courierId: auth.actor.id, available: body.available
+    });
+    if (result.outcome === "not_found") return reply.code(404).send({ error: "courier_profile_not_found" });
+    if (result.outcome === "not_eligible") return reply.code(409).send({ error: "courier_profile_not_eligible" });
+    return reply.code(200).send(result);
+  });
 
   app.get("/api/v1/courier/offers", async (request, reply) => {
     const auth = await authorizeRequest(request, options, actor => ({
