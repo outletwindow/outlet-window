@@ -65,4 +65,50 @@ describe("PostgresCourierAdminStore", () => {
       .resolves.toBe("invalid_transition");
     expect(query).toHaveBeenCalledWith("ROLLBACK");
   });
+
+  it("registers a vehicle as pending and inactive for an approved courier", async () => {
+    const { pool, query } = makePool([
+      {}, { rows: [{ account_status: "active", verification_status: "verified" }] },
+      { rows: [{ id: "vehicle-1" }] }, {}
+    ]);
+    const store = new PostgresCourierAdminStore(pool, now);
+    await expect(store.registerVehicle({
+      vehicleId: "vehicle-1", courierId: "courier-1", vehicleType: "car",
+      capacityWeightGrams: 100000, capacityVolumeLiters: 500
+    })).resolves.toBe("created");
+    expect(query.mock.calls[2]?.[0]).toContain("'pending',$4,$5,false");
+    expect(query).toHaveBeenCalledWith("COMMIT");
+  });
+
+  it("approves a pending vehicle and records reviewer identity", async () => {
+    const { pool, query } = makePool([
+      {}, { rows: [{ verification_status: "pending", courier_id: "courier-1" }] }, {}, {}
+    ]);
+    const store = new PostgresCourierAdminStore(pool, now);
+    await expect(store.reviewVehicle({ vehicleId: "vehicle-1", decision: "approve", reviewerId: "admin-1" }))
+      .resolves.toBe("updated");
+    expect(query.mock.calls[2]?.[0]).toContain("verified_by = CASE WHEN $3 THEN $4");
+  });
+
+  it("grants a service area only when the courier and area are eligible", async () => {
+    const { pool, query } = makePool([
+      {}, { rows: [{ account_status: "active", verification_status: "verified" }] },
+      { rows: [{ id: "area-1" }] }, {}, {}
+    ]);
+    const store = new PostgresCourierAdminStore(pool, now);
+    await expect(store.grantServiceArea({
+      courierId: "courier-1", tenantId: "tenant-1", serviceAreaId: "area-1", reviewerId: "admin-1"
+    })).resolves.toBe("granted");
+    expect(query.mock.calls[2]?.[0]).toContain("status = 'active'");
+    expect(query.mock.calls[3]?.[0]).toContain("ON CONFLICT (courier_id, tenant_id, service_area_id)");
+  });
+
+  it("revokes only an active service-area membership", async () => {
+    const { pool } = makePool([]);
+    (pool as unknown as { query: ReturnType<typeof vi.fn> }).query.mockResolvedValue({ rows: [], rowCount: 1 });
+    const store = new PostgresCourierAdminStore(pool, now);
+    await expect(store.revokeServiceArea({ courierId: "courier-1", tenantId: "tenant-1", serviceAreaId: "area-1" }))
+      .resolves.toBe("revoked");
+  });
+
 });
