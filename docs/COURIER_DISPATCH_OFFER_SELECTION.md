@@ -54,3 +54,12 @@ The profile and availability rows are locked during the check, serializing simul
 Migration `0067_courier_profiles_and_dispatch_eligibility` adds the profile, availability, vehicle, service-area membership and trusted per-suborder dispatch-requirement tables. Dispatch requirements are immutable snapshots and must be written by the trusted dispatch service; merchant-editable suborder metadata is not used as an authority for vehicle or package requirements.
 
 Provisioning remains an administrative workflow: a courier must have an IAM identity, be reviewed and verified, have a verified vehicle, an approved service-area membership, and a fresh availability heartbeat. No default courier or test eligibility is seeded in production. Until those records and a dispatch requirement exist, acceptance safely returns an ineligible result. Availability must be refreshed at least every two minutes.
+
+
+## Courier availability API
+
+Authenticated couriers with the `courier.delivery_task:update` grant can call `PUT /api/v1/courier/availability` with exactly one field: `available: true|false`. The courier ID is always taken from the authenticated principal; client-supplied courier IDs are rejected.
+
+Going online requires an active IAM identity, an active and verified courier profile, and at least one active verified vehicle. The server persists the availability heartbeat timestamp. Dispatch eligibility considers a courier online only while that heartbeat is no older than two minutes, so the courier application must refresh it periodically while online. Going offline is permitted even when the profile or vehicle is no longer eligible, allowing suspended or deactivated couriers to clear their online state.
+
+Responses distinguish a missing profile (404) from a profile that cannot go online (409). This endpoint does not approve profiles, vehicles, or service-area memberships; those remain controlled review operations.
