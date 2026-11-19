@@ -17,7 +17,7 @@ export class PostgresCourierAvailabilityStore {
       const profile = await client.query<{ account_status: string; verification_status: string }>(
         `SELECT p.account_status, p.verification_status
          FROM courier_profiles p
-         JOIN identities i ON i.id = p.courier_id
+         JOIN identities i ON i.id = p.courier_id AND i.principal_type = 'human'
          WHERE p.courier_id = $1 AND i.status = 'active'
          FOR UPDATE OF p`,
         [input.courierId]
