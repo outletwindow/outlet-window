@@ -16,7 +16,7 @@ export class PostgresCourierDispatchOfferEligibility implements CourierDispatchO
     const eligible = await input.client.query<{ max_concurrent_tasks: number }>(
       `SELECT p.max_concurrent_tasks
        FROM courier_profiles p
-       JOIN identities i ON i.id = p.courier_id AND i.status = 'active'
+       JOIN identities i ON i.id = p.courier_id AND i.status = 'active' AND i.principal_type = 'human'
        JOIN courier_availability a ON a.courier_id = p.courier_id
        JOIN courier_dispatch_requirements r
          ON r.tenant_id = $1 AND r.suborder_id = $3
