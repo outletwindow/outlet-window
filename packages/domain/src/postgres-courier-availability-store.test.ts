@@ -28,7 +28,7 @@ describe("PostgresCourierAvailabilityStore", () => {
     await expect(store.setAvailability({ courierId: "courier-1", available: true })).resolves.toEqual({
       outcome: "updated", available: true, updatedAtUtc: "2026-11-19T10:00:00.000Z"
     });
-    expect(query.mock.calls[0]?.[0]).toContain("FOR UPDATE OF p");
+    expect(query.mock.calls[1]?.[0]).toContain("FOR UPDATE OF p");
     expect(query.mock.calls[3]?.[0]).toContain("ON CONFLICT (courier_id) DO UPDATE");
     expect(query).toHaveBeenCalledWith("COMMIT");
   });
