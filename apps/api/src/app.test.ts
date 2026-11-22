@@ -1692,6 +1692,28 @@ describe("merchant courier pickup-code issuance API", () => {
     } finally { await api.close(); }
   });
 
+  it("returns 429 with a retry hint when pickup-code issuance is throttled", async () => {
+    const issue = vi.fn(async () => ({ outcome: "rate_limited" as const }));
+    const api = buildApp({
+      resolveActor: async () => owner,
+      resolveMerchantTenantId: async () => "tenant-1",
+      courierPickupCodeIssuer: { issue }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "POST",
+        url: "/api/v1/merchants/merchant-1/branches/branch-1/orders/order-1/suborders/suborder-1/pickup-code",
+        payload: { taskId: "task-1" }
+      });
+      expect(response.statusCode).toBe(429);
+      expect(response.headers["retry-after"]).toBe("900");
+      expect(response.json()).toEqual({
+        error: "pickup_code_issuance_rate_limited", retryAfterSeconds: 900
+      });
+    } finally { await api.close(); }
+  });
+
   it("denies cross-branch requests before calling the pickup-code issuer", async () => {
     const issue = vi.fn();
     const api = buildApp({
