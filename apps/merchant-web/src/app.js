@@ -153,7 +153,8 @@ $("#load-orders-button").addEventListener("click", async () => {
   }
 });
 $("#order-select").addEventListener("change", event => {
-  const order = eligibleOrders[Number(event.currentTarget.value)];
+  const selectedIndex = event.currentTarget.value;
+  const order = selectedIndex === "" ? null : eligibleOrders[Number(selectedIndex)];
   const ready = Boolean(order);
   form.elements.orderId.value = order?.orderId ?? "";
   form.elements.suborderId.value = order?.suborderId ?? "";
