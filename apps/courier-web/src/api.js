@@ -74,7 +74,7 @@ export function createCourierApi({ baseUrl = "", token, fetchImpl = globalThis.f
       const payload = await request("/api/v1/courier/offers");
       if (!payload || !Array.isArray(payload.offers) || payload.offers.some(offer =>
         !offer || typeof offer.id !== "string" || typeof offer.suborderId !== "string" ||
-        offer.status !== "offered" || !Number.isSafeInteger(offer.version) ||
+        offer.status !== "offered" || !Number.isSafeInteger(offer.version) || offer.version < 1 ||
         typeof offer.offeredAtUtc !== "string" || !Number.isFinite(Date.parse(offer.offeredAtUtc)) ||
         typeof offer.expiresAtUtc !== "string" || !Number.isFinite(Date.parse(offer.expiresAtUtc))
       )) {
