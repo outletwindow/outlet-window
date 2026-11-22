@@ -10,11 +10,12 @@ Implemented on `feat/courier-app-foundation`:
 - Credential creation and an append-only merchant issuance audit row commit in the same transaction.
 - A merchant-scoped API endpoint requires `merchant.order:update` for the exact merchant, branch, and order, and restricts issuance to merchant staff roles.
 - Migration `0068_courier_pickup_code_issuance_audit` is registered in the migration runner and readiness checks.
-- Unit tests cover secure code formatting, digest-only persistence, full relationship scoping, reissue, missing task, role rejection, and audit-failure rollback.
+- Domain unit tests cover secure code formatting, digest-only persistence, full relationship scoping, reissue, missing task, role rejection, and audit-failure rollback.
+- API tests cover exact branch authorization, merchant-role restriction, malformed task identifiers, and one-time response shape.
 
 Still outstanding:
 - Merchant web UI to request and display the one-time code.
-- API-level integration tests proving authorization denials and that courier responses never contain code material.
+- End-to-end PostgreSQL integration tests, including a negative assertion that courier responses never contain code material.
 - Issuance rate limiting/cooldown and operational monitoring.
 - End-to-end PostgreSQL migration and runtime verification in CI.
 
