@@ -290,6 +290,11 @@ jobs:
         env:
           PGPASSWORD: ci_only_password
         run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0067_courier_profiles_and_dispatch_eligibility.integration.sql
+
+      - name: Verify immutable merchant pickup-code issuance audit
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0068_courier_pickup_code_issuance_audit.integration.sql
       - name: Validate automatic runtime Compose configuration
         env:
           DATABASE_URL: postgres://outlet_window:ci_only_password@127.0.0.1:5432/outlet_window_test
