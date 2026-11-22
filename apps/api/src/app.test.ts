@@ -1781,3 +1781,97 @@ describe("merchant courier pickup-code issuance API", () => {
     } finally { await employeeApi.close(); }
   });
 });
+
+
+describe("merchant branch orders API", () => {
+  it("returns branch-scoped orders and the latest pickup task for authorized merchant staff", async () => {
+    const merchant: Actor = {
+      id: "merchant-staff-1", role: "merchant_admin", active: true,
+      grants: [{
+        resource: "merchant.order", actions: ["read"],
+        scope: { merchantId: "merchant-1", branchId: "branch-1" }
+      }]
+    };
+    const listForBranch = vi.fn(async () => [{
+      orderId: "order-1", suborderId: "suborder-1", merchantId: "merchant-1",
+      branchId: "branch-1", orderStatus: "confirmed", suborderStatus: "ready_for_pickup",
+      subtotalMinor: 12500, currency: "SAR", itemCount: 2,
+      createdAtUtc: "2026-11-22T06:00:00.000Z",
+      task: { id: "task-1", status: "arrived_at_pickup", version: 3 }
+    }]);
+    const api = buildApp({
+      resolveActor: async () => merchant,
+      resolveMerchantTenantId: async id => id === "merchant-1" ? "tenant-1" : null,
+      merchantOrderReader: { listForBranch }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "GET",
+        url: "/api/v1/merchants/merchant-1/branches/branch-1/orders?status=ready_for_pickup&limit=25"
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json().orders[0]).toMatchObject({
+        orderId: "order-1", suborderId: "suborder-1",
+        task: { id: "task-1", status: "arrived_at_pickup", version: 3 }
+      });
+      expect(listForBranch).toHaveBeenCalledWith({
+        tenantId: "tenant-1", merchantId: "merchant-1", branchId: "branch-1",
+        status: "ready_for_pickup", limit: 25
+      });
+    } finally { await api.close(); }
+  });
+
+  it("rejects an out-of-scope branch before reading orders", async () => {
+    const merchant: Actor = {
+      id: "merchant-staff-2", role: "merchant_admin", active: true,
+      grants: [{
+        resource: "merchant.order", actions: ["read"],
+        scope: { merchantId: "merchant-1", branchId: "branch-1" }
+      }]
+    };
+    const listForBranch = vi.fn(async () => []);
+    const api = buildApp({
+      resolveActor: async () => merchant,
+      resolveMerchantTenantId: async () => "tenant-1",
+      merchantOrderReader: { listForBranch }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "GET",
+        url: "/api/v1/merchants/merchant-1/branches/branch-other/orders"
+      });
+      expect(response.statusCode).toBe(403);
+      expect(listForBranch).not.toHaveBeenCalled();
+    } finally { await api.close(); }
+  });
+
+  it("rejects invalid order status and limit parameters", async () => {
+    const merchant: Actor = {
+      id: "merchant-staff-3", role: "merchant_admin", active: true,
+      grants: [{
+        resource: "merchant.order", actions: ["read"],
+        scope: { merchantId: "merchant-1", branchId: "branch-1" }
+      }]
+    };
+    const listForBranch = vi.fn(async () => []);
+    const api = buildApp({
+      resolveActor: async () => merchant,
+      resolveMerchantTenantId: async () => "tenant-1",
+      merchantOrderReader: { listForBranch }
+    });
+    await api.ready();
+    try {
+      const invalidStatus = await api.inject({
+        method: "GET", url: "/api/v1/merchants/merchant-1/branches/branch-1/orders?status=not-a-status"
+      });
+      const invalidLimit = await api.inject({
+        method: "GET", url: "/api/v1/merchants/merchant-1/branches/branch-1/orders?limit=500"
+      });
+      expect(invalidStatus.statusCode).toBe(400);
+      expect(invalidLimit.statusCode).toBe(400);
+      expect(listForBranch).not.toHaveBeenCalled();
+    } finally { await api.close(); }
+  });
+});
