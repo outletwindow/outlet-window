@@ -85,6 +85,8 @@ export class PostgresCourierPickupCodeIssuer {
                WHEN courier_pickup_code_issue_limits.window_started_at <= $4::timestamptz - interval '15 minutes'
                THEN $4 ELSE courier_pickup_code_issue_limits.window_started_at END,
              issue_count = CASE
+               WHEN courier_pickup_code_issue_limits.blocked_until > $4
+               THEN courier_pickup_code_issue_limits.issue_count
                WHEN courier_pickup_code_issue_limits.window_started_at <= $4::timestamptz - interval '15 minutes'
                THEN 1 ELSE courier_pickup_code_issue_limits.issue_count + 1 END,
              blocked_until = CASE
