@@ -135,6 +135,12 @@ export class PostgresCourierTaskStore {
         ...(input.reason === undefined ? {} : { reason: input.reason })
       });
       if (!transition.ok) {
+        // Persist failed pickup attempts. Rolling back here would silently reset the
+        // failed_attempts counter and disable the credential's brute-force limit.
+        if (transition.reason === "pickup_code_not_verified") {
+          await client.query("COMMIT");
+          return { outcome: "rejected", reason: transition.reason };
+        }
         await client.query("ROLLBACK");
         return { outcome: transition.reason === "version_conflict" ? "conflict" : "rejected", reason: transition.reason };
       }
