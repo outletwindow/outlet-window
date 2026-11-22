@@ -1603,8 +1603,8 @@ describe("platform courier governance endpoints", () => {
   });
   it("lists courier vehicles only for a platform administrator", async () => {
     const listVehicles = vi.fn(async () => [{
-      vehicleId: "vehicle-1", courierId: "courier-1", vehicleType: "car",
-      verificationStatus: "pending", capacityWeightGrams: 50000, capacityVolumeLiters: 200,
+      vehicleId: "vehicle-1", courierId: "courier-1", vehicleType: "car" as const,
+      verificationStatus: "pending" as const, capacityWeightGrams: 50000, capacityVolumeLiters: 200,
       active: false, createdAtUtc: "2026-11-22T00:00:00.000Z", updatedAtUtc: "2026-11-22T00:00:00.000Z"
     }]);
     const api = buildApp({
