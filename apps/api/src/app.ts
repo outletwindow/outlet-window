@@ -524,7 +524,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       const statuses: CourierTaskStatus[] = ["accepted","heading_to_pickup","arrived_at_pickup","picked_up","in_transit","arrived_at_dropoff","delivered","declined","failed"];
       if (!body || typeof body.status !== "string" || !statuses.includes(body.status as CourierTaskStatus) ||
           !Number.isSafeInteger(body.expectedVersion) || (body.expectedVersion as number) < 1 ||
-          (body.pickupCode !== undefined && (typeof body.pickupCode !== "string" || !/^\\d{8}$/.test(body.pickupCode))) ||
+          (body.pickupCode !== undefined && (typeof body.pickupCode !== "string" || !/^\d{8}$/.test(body.pickupCode))) ||
           (body.reason !== undefined && (typeof body.reason !== "string" || body.reason.length > 500))) {
         return reply.code(400).send({ error: "invalid_courier_task_transition" });
       }
