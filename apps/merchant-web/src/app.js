@@ -141,8 +141,9 @@ form.addEventListener("submit", async event => {
       }
     }, 60_000);
   } catch (error) {
-    const message = error instanceof MerchantApiError ? tr(error.message) : tr(error.message);
-    notify(message || tr("errors").failed, true);
+    const serverMessage = error instanceof MerchantApiError ? error.message : error.message;
+    const message = copy[language].errors[serverMessage] ?? serverMessage;
+    notify(message || copy[language].errors.failed, true);
   } finally {
     button.disabled = false;
     button.textContent = tr("issue");
