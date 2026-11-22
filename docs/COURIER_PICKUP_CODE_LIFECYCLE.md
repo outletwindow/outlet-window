@@ -12,12 +12,14 @@ Implemented on `feat/courier-app-foundation`:
 - Migration `0068_courier_pickup_code_issuance_audit` is registered in the migration runner and readiness checks.
 - Domain unit tests cover secure code formatting, digest-only persistence, full relationship scoping, reissue, missing task, role rejection, and audit-failure rollback.
 - API tests cover exact branch authorization, merchant-role restriction, malformed task identifiers, and one-time response shape.
+- A separate `apps/merchant-web` portal now provides Arabic/English session activation, scoped task details, code issuance, copy action, and automatic screen hiding after 60 seconds. The session token is held in page memory only; it is not stored in browser storage.
+- The merchant portal has a static build script and API-client tests for HTTPS, scoped identifiers, authorization errors, and response validation.
 
 Still outstanding:
-- Merchant web UI to request and display the one-time code.
 - End-to-end PostgreSQL integration tests, including a negative assertion that courier responses never contain code material.
 - Issuance rate limiting/cooldown and operational monitoring.
 - End-to-end PostgreSQL migration and runtime verification in CI.
+- Deploy and serve the new merchant portal from an approved web host with the production API origin configured.
 
 Do not treat the workflow as production-ready until the remaining items and all CI stages pass.
 
