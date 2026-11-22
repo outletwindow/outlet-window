@@ -72,6 +72,6 @@ test("lists pending vehicles from the platform administration endpoint", async (
   }});
   const vehicles = await api.listVehicles("pending");
   assert.equal(vehicles.length, 1);
-  assert.match(request.url, /courier-vehicles\\?limit=200&status=pending/);
+  assert.match(request.url, /courier-vehicles\?limit=200&status=pending/);
   assert.equal(request.init.headers.authorization, `Bearer ${token}`);
 });
