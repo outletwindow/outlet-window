@@ -1241,6 +1241,34 @@ describe("courier delivery task API", () => {
     }
   });
 
+  it("rejects malformed pickup codes before attempting a task transition", async () => {
+    const courier: Actor = {
+      id: "courier-pickup-format", role: "courier", active: true,
+      grants: [{
+        resource: "courier.delivery_task", actions: ["update"],
+        scope: { merchantId: "merchant-pickup-format" }
+      }]
+    };
+    const transition = vi.fn(async () => ({ outcome: "not_found" as const }));
+    const api = buildApp({ resolveActor: async () => courier, courierTasks: {
+      listForCourier: vi.fn(async () => []), transition
+    } });
+    await api.ready();
+    try {
+      for (const pickupCode of ["1234567", "123456789", "12A45678", " 1234567"]) {
+        const response = await api.inject({
+          method: "PATCH", url: "/api/v1/courier/tasks/task-pickup-format/status",
+          payload: { status: "picked_up", expectedVersion: 1, pickupCode }
+        });
+        expect(response.statusCode).toBe(400);
+        expect(response.json()).toEqual({ error: "invalid_courier_task_transition" });
+      }
+      expect(transition).not.toHaveBeenCalled();
+    } finally {
+      await api.close();
+    }
+  });
+
   it("updates tasks across every explicitly granted merchant tenant", async () => {
     const courier: Actor = {
       id: "courier-multi-tenant", role: "courier", active: true,
