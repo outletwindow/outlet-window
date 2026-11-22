@@ -122,6 +122,7 @@ export * from "./ledger-backed-inventory-provider-reservation-adapter.js";
 
 export * from "./courier-task.js";
 export * from "./postgres-courier-task-store.js";
+export * from "./postgres-courier-pickup-code-issuer.js";
 
 export * from "./courier-dispatch.js";
 export * from "./courier-dispatch-offer.js";
