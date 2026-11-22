@@ -251,7 +251,8 @@ export function buildPostgresApp(options: PostgresApiOptions) {
         "0064_courier_delivery_proof_uploads",
         "0065_courier_dispatch_offers",
         "0066_courier_one_active_assignment_per_suborder",
-        "0067_courier_profiles_and_dispatch_eligibility"
+        "0067_courier_profiles_and_dispatch_eligibility",
+        "0068_courier_pickup_code_issuance_audit"
       ];
       const result = await options.pool.query<{ version: string }>(
         "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",
