@@ -635,6 +635,7 @@ describe("Outlet Window API foundation", () => {
         payload: { latitude: 27.01, longitude: 49.65, totalMinor: 1, branchId: "attacker-branch" }
       });
       expect(changed.statusCode).toBe(200);
+      expect(changed.json().task).not.toHaveProperty("pickupCode");
       expect(changed.json()).toMatchObject({
         outcome: "updated", branchChanged: true,
         delivery: { branchId: "branch-new", totalMinor: 51500, quoteReference: "server-quote" }
@@ -1209,13 +1210,14 @@ describe("courier delivery task API", () => {
     };
     const listForCourier = vi.fn(async (input: { tenantId: string; courierId: string }) => [{
       id: "task-1", tenantId: input.tenantId, orderId: "order-1", suborderId: "suborder-1",
-      courierId: input.courierId, status: "offered" as const, version: 1, updatedAtUtc: new Date().toISOString()
+      courierId: input.courierId, status: "offered" as const, version: 1, updatedAtUtc: new Date().toISOString(),
+      pickupCode: "00427193"
     }]);
     const transition = vi.fn(async () => ({
       outcome: "updated" as const,
       task: { id: "task-1", tenantId: "merchant-courier-1", orderId: "order-1",
         suborderId: "suborder-1", courierId: courier.id, status: "accepted" as const,
-        version: 2, updatedAtUtc: new Date().toISOString() }
+        version: 2, updatedAtUtc: new Date().toISOString(), pickupCode: "00427193" }
     }));
     const api = buildApp({ resolveActor: async () => courier, courierTasks: { listForCourier, transition } });
     await api.ready();
@@ -1223,6 +1225,7 @@ describe("courier delivery task API", () => {
       const listed = await api.inject({ method: "GET", url: "/api/v1/courier/tasks" });
       expect(listed.statusCode).toBe(200);
       expect(listed.json().tasks).toHaveLength(1);
+      expect(listed.json().tasks[0]).not.toHaveProperty("pickupCode");
       expect(listForCourier).toHaveBeenCalledWith({
         tenantId: "merchant-courier-1", courierId: courier.id, limit: 100
       });
