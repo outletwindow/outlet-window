@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { PostgresPool, PostgresQueryResult } from "./postgres-iam-store.js";
 import { PostgresCourierPickupCodeIssuer } from "./postgres-courier-pickup-code-issuer.js";
 
-function fakePool(options: { task?: boolean; existingCredential?: boolean; failAudit?: boolean } = {}) {
+function fakePool(options: { task?: boolean; existingCredential?: boolean; failAudit?: boolean; rateLimited?: boolean } = {}) {
   const statements: string[] = [];
   const calls: Array<{ sql: string; values?: readonly unknown[] }> = [];
   const query = vi.fn(async <Row>(sql: string, values?: readonly unknown[]) => {
@@ -13,6 +13,13 @@ function fakePool(options: { task?: boolean; existingCredential?: boolean; failA
         task_id: "task-1", task_status: "arrived_at_pickup", suborder_status: "ready_for_pickup"
       }];
       return { rows: rows as Row[], rowCount: rows.length } as PostgresQueryResult<Row>;
+    }
+    if (sql.includes("INSERT INTO courier_pickup_code_issue_limits")) {
+      const rows = [{
+        issue_count: options.rateLimited ? 4 : 1,
+        blocked_until: options.rateLimited ? "2026-11-22T05:15:00.000Z" : null
+      }];
+      return { rows: rows as Row[], rowCount: 1 } as PostgresQueryResult<Row>;
     }
     if (sql.includes("UPDATE courier_pickup_code_credentials")) {
       const rows = options.existingCredential ? [{ id: "old-credential" }] : [];
@@ -54,6 +61,20 @@ describe("PostgresCourierPickupCodeIssuer", () => {
     expect(db.statements.some(sql => sql.includes("INSERT INTO courier_pickup_code_issuance_audit"))).toBe(true);
     expect(db.statements.at(-1)).toBe("COMMIT");
     expect(db.client.release).toHaveBeenCalledOnce();
+  });
+
+  it("commits and rejects issuance after the durable three-per-fifteen-minute limit", async () => {
+    const db = fakePool({ rateLimited: true });
+    const digestCode = vi.fn(async () => "b".repeat(64));
+    const result = await new PostgresCourierPickupCodeIssuer(
+      db.pool, digestCode, () => new Date("2026-11-22T05:05:00.000Z")
+    ).issue(input);
+
+    expect(result).toEqual({ outcome: "rate_limited" });
+    expect(db.statements).toContain("COMMIT");
+    expect(db.statements).not.toContain("ROLLBACK");
+    expect(db.statements.some(sql => sql.includes("INSERT INTO courier_pickup_code_credentials"))).toBe(false);
+    expect(digestCode).not.toHaveBeenCalled();
   });
 
   it("locks and scopes the task through tenant, merchant, branch, order and suborder", async () => {
