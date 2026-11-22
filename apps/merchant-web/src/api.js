@@ -25,6 +25,40 @@ export function createMerchantApi({ baseUrl = "", token, fetchImpl = globalThis.
   const validId = value => typeof value === "string" && ID_PATTERN.test(value);
 
   return Object.freeze({
+    async listOrders({ merchantId, branchId, status, limit = 50 }) {
+      if (![merchantId, branchId].every(validId)) throw new TypeError("invalid_merchant_order_scope");
+      if (status !== undefined && (typeof status !== "string" || !/^[a-z_]{2,80}$/.test(status))) {
+        throw new TypeError("invalid_merchant_order_status");
+      }
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new TypeError("invalid_merchant_order_limit");
+      const query = new URLSearchParams({ limit: String(limit) });
+      if (status !== undefined) query.set("status", status);
+      const path = ["/api/v1/merchants/", encodeURIComponent(merchantId),
+        "/branches/", encodeURIComponent(branchId), "/orders?", query.toString()].join("");
+      const response = await fetchImpl(root + path, {
+        method: "GET",
+        headers: { accept: "application/json", authorization: `Bearer ${token}` }
+      });
+      let payload = null;
+      try { payload = await response.json(); } catch { /* handled as an invalid API response */ }
+      if (!response.ok) {
+        throw new MerchantApiError(
+          typeof payload?.error === "string" ? payload.error : "merchant_api_request_failed",
+          response.status, payload
+        );
+      }
+      if (!payload || !Array.isArray(payload.orders) || payload.orders.length > limit ||
+          payload.orders.some(order => !order || !validId(order.orderId) ||
+            !validId(order.suborderId) || order.merchantId !== merchantId ||
+            order.branchId !== branchId || typeof order.suborderStatus !== "string" ||
+            !Number.isSafeInteger(order.subtotalMinor) || !Number.isSafeInteger(order.itemCount) ||
+            !Number.isFinite(Date.parse(order.createdAtUtc)) ||
+            (order.task !== null && (!order.task || !validId(order.task.id) ||
+              typeof order.task.status !== "string" || !Number.isSafeInteger(order.task.version)))) {
+        throw new MerchantApiError("invalid_merchant_orders_response", 502, payload);
+      }
+      return Object.freeze(payload.orders.map(order => Object.freeze(order)));
+    },
     async issuePickupCode({ merchantId, branchId, orderId, suborderId, taskId }) {
       if (![merchantId, branchId, orderId, suborderId, taskId].every(validId)) {
         throw new TypeError("invalid_pickup_code_scope");
