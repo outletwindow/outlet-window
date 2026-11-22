@@ -2,9 +2,23 @@
 
 ## Status
 
-The database credential table and courier-side digest verification exist. The courier transition rejects an invalid code and commits the failed-attempt counter so the attempt limit cannot be bypassed by transaction rollback.
+Implemented on `feat/courier-app-foundation`:
+- PostgreSQL issuer generates an eight-digit code with a cryptographically secure random source.
+- Issuance locks the courier task and merchant suborder and verifies tenant, merchant, branch, order, suborder, and task relationships.
+- Issuance is allowed only while the suborder is `ready_for_pickup` and the courier task is in an eligible assigned/pickup state.
+- Only an HMAC digest is stored; reissue revokes the prior live credential.
+- Credential creation and an append-only merchant issuance audit row commit in the same transaction.
+- A merchant-scoped API endpoint requires `merchant.order:update` for the exact merchant, branch, and order, and restricts issuance to merchant staff roles.
+- Migration `0068_courier_pickup_code_issuance_audit` is registered in the migration runner and readiness checks.
+- Unit tests cover secure code formatting, digest-only persistence, full relationship scoping, reissue, missing task, role rejection, and audit-failure rollback.
 
-The end-to-end issuance and merchant handoff are not yet implemented. In particular, there is no merchant-authorized API that issues a code, no audited issuance event, and no merchant UI that displays the code to store staff. Do not treat pickup verification as production-ready until these pieces are delivered and tested.
+Still outstanding:
+- Merchant web UI to request and display the one-time code.
+- API-level integration tests proving authorization denials and that courier responses never contain code material.
+- Issuance rate limiting/cooldown and operational monitoring.
+- End-to-end PostgreSQL migration and runtime verification in CI.
+
+Do not treat the workflow as production-ready until the remaining items and all CI stages pass.
 
 ## Required lifecycle
 
