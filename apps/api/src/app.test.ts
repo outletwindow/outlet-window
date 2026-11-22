@@ -1626,3 +1626,105 @@ describe("platform courier governance endpoints", () => {
   });
 
 });
+
+describe("merchant courier pickup-code issuance API", () => {
+  const owner: Actor = {
+    id: "merchant-owner-issuer", role: "merchant_owner", active: true,
+    grants: [{
+      resource: "merchant.order", actions: ["update"],
+      scope: { merchantId: "merchant-1", branchId: "branch-1", orderId: "order-1" }
+    }]
+  };
+
+  it("returns the one-time code only after exact merchant order authorization and issuer success", async () => {
+    const issue = vi.fn(async () => ({
+      outcome: "issued" as const, code: "00427193", expiresAtUtc: "2026-11-22T05:15:00.000Z"
+    }));
+    const api = buildApp({
+      resolveActor: async () => owner,
+      resolveMerchantTenantId: async merchantId => merchantId === "merchant-1" ? "tenant-1" : null,
+      courierPickupCodeIssuer: { issue }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "POST",
+        url: "/api/v1/merchants/merchant-1/branches/branch-1/orders/order-1/suborders/suborder-1/pickup-code",
+        payload: { taskId: "task-1" }
+      });
+      expect(response.statusCode).toBe(201);
+      expect(response.json()).toEqual({
+        outcome: "issued", code: "00427193", expiresAtUtc: "2026-11-22T05:15:00.000Z"
+      });
+      expect(issue).toHaveBeenCalledWith({
+        tenantId: "tenant-1", merchantId: "merchant-1", branchId: "branch-1",
+        orderId: "order-1", suborderId: "suborder-1", taskId: "task-1",
+        actorId: owner.id, actorRole: "merchant_owner"
+      });
+    } finally { await api.close(); }
+  });
+
+  it("denies cross-branch requests before calling the pickup-code issuer", async () => {
+    const issue = vi.fn();
+    const api = buildApp({
+      resolveActor: async () => owner,
+      resolveMerchantTenantId: async () => "tenant-1",
+      courierPickupCodeIssuer: { issue }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "POST",
+        url: "/api/v1/merchants/merchant-1/branches/branch-2/orders/order-1/suborders/suborder-1/pickup-code",
+        payload: { taskId: "task-1" }
+      });
+      expect(response.statusCode).toBe(403);
+      expect(issue).not.toHaveBeenCalled();
+    } finally { await api.close(); }
+  });
+
+  it("rejects courier actors and malformed task identifiers", async () => {
+    const courier: Actor = {
+      id: "courier-1", role: "courier", active: true,
+      grants: [{
+        resource: "merchant.order", actions: ["update"],
+        scope: { merchantId: "merchant-1", branchId: "branch-1", orderId: "order-1" }
+      }]
+    };
+    const issue = vi.fn();
+    const api = buildApp({
+      resolveActor: async () => courier,
+      resolveMerchantTenantId: async () => "tenant-1",
+      courierPickupCodeIssuer: { issue }
+    });
+    await api.ready();
+    try {
+      const denied = await api.inject({
+        method: "POST",
+        url: "/api/v1/merchants/merchant-1/branches/branch-1/orders/order-1/suborders/suborder-1/pickup-code",
+        payload: { taskId: "task-1" }
+      });
+      expect(denied.statusCode).toBe(403);
+      expect(issue).not.toHaveBeenCalled();
+    } finally { await api.close(); }
+
+    const employee: Actor = {
+      ...owner, role: "merchant_employee"
+    };
+    const employeeApi = buildApp({
+      resolveActor: async () => employee,
+      resolveMerchantTenantId: async () => "tenant-1",
+      courierPickupCodeIssuer: { issue }
+    });
+    await employeeApi.ready();
+    try {
+      const malformed = await employeeApi.inject({
+        method: "POST",
+        url: "/api/v1/merchants/merchant-1/branches/branch-1/orders/order-1/suborders/suborder-1/pickup-code",
+        payload: { taskId: "bad id", plaintextCode: "client-controlled" }
+      });
+      expect(malformed.statusCode).toBe(400);
+      expect(issue).not.toHaveBeenCalled();
+    } finally { await employeeApi.close(); }
+  });
+});
