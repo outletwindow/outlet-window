@@ -37,9 +37,15 @@
       <form id="issue-form" class="form-grid">
         <label><span data-copy="merchant">معرّف التاجر</span><input name="merchantId" maxlength="160" required disabled></label>
         <label><span data-copy="branch">معرّف الفرع</span><input name="branchId" maxlength="160" required disabled></label>
-        <label><span data-copy="order">معرّف الطلب</span><input name="orderId" maxlength="160" required disabled></label>
-        <label><span data-copy="suborder">معرّف طلب المتجر</span><input name="suborderId" maxlength="160" required disabled></label>
-        <label class="wide"><span data-copy="task">معرّف مهمة المندوب</span><input name="taskId" maxlength="160" required disabled></label>
+        <button id="load-orders-button" class="secondary wide" type="button" disabled data-copy="loadOrders">تحميل طلبات الفرع</button>
+        <label class="wide"><span data-copy="selectOrder">اختر الطلب الجاهز للاستلام</span>
+          <select id="order-select" disabled required>
+            <option value="">حمّل الطلبات أولاً</option>
+          </select>
+        </label>
+        <input type="hidden" name="orderId" disabled>
+        <input type="hidden" name="suborderId" disabled>
+        <input type="hidden" name="taskId" disabled>
         <button id="issue-button" class="primary wide" type="submit" disabled data-copy="issue">إصدار رمز الاستلام</button>
       </form>
       <div id="code-result" class="code-result" hidden aria-live="polite">
