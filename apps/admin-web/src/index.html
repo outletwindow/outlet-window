@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#174b55">
+  <meta name="description" content="Outlet Window platform administration">
+  <meta name="outlet-window-api-base-url" content="">
+  <title>Outlet Window | لوحة الإدارة</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#"><span class="mark">OW</span><span>Outlet Window</span></a>
+    <div class="top-actions"><span class="admin-label">إدارة المنصة</span><button id="language-toggle" class="language" type="button">English</button></div>
+  </header>
+  <main>
+    <section class="hero">
+      <div><span class="eyebrow">PLATFORM OPERATIONS</span><h1 data-copy="title">إدارة المندوبين</h1><p data-copy="subtitle">مراجعة ملفات المندوبين واعتماد المركبات وصلاحيات مناطق الخدمة</p></div>
+      <span class="secure">● <span data-copy="secure">صلاحيات إدارية محمية</span></span>
+    </section>
+    <section class="panel connection">
+      <div class="panel-heading"><div><span class="eyebrow">SECURE SESSION</span><h2 data-copy="connectTitle">الاتصال بواجهة المنصة</h2></div><span id="connection-state" class="state">غير متصل</span></div>
+      <form id="connect-form" class="form-grid">
+        <label><span data-copy="apiUrl">رابط API</span><input id="api-base-url" type="url" placeholder="https://api.example.com" autocomplete="url"></label>
+        <label class="wide"><span data-copy="token">رمز جلسة مسؤول المنصة</span><input id="session-token" type="password" required autocomplete="off" spellcheck="false"></label>
+        <p class="hint wide" data-copy="sessionNote">لا يتم حفظ رمز الجلسة؛ يبقى في ذاكرة الصفحة فقط. استخدم جلسة مسؤول مخولة.</p>
+        <div class="actions wide"><button class="primary" type="submit" id="connect-button" data-copy="connect">اتصال</button><button class="secondary" type="button" id="disconnect-button" hidden data-copy="disconnect">قطع الاتصال</button></div>
+      </form>
+    </section>
+    <section id="workspace" hidden>
+      <div class="toolbar"><div><span class="eyebrow">COURIER GOVERNANCE</span><h2 data-copy="directory">سجل المندوبين</h2></div><div class="toolbar-actions"><select id="status-filter" aria-label="Filter couriers"><option value="">كل الحالات</option><option value="pending">قيد المراجعة</option><option value="active">نشط</option><option value="suspended">موقوف</option></select><button id="refresh-button" class="secondary" type="button" data-copy="refresh">تحديث</button></div></div>
+      <div id="profile-list" class="profile-grid" aria-live="polite"></div>
+      <div class="management-grid">
+        <section class="panel"><div class="panel-heading"><div><span class="eyebrow">ONBOARDING</span><h2 data-copy="createProfile">إنشاء ملف مندوب</h2></div></div>
+          <form id="profile-form" class="stack">
+            <label><span data-copy="courierId">معرّف حساب المندوب</span><input name="courierId" required maxlength="160" pattern="[A-Za-z0-9._:-]+" placeholder="identity-id"></label>
+            <label><span data-copy="maxTasks">الحد الأقصى للمهام المتزامنة</span><input name="maxConcurrentTasks" type="number" min="1" max="20" value="1" required></label>
+            <button class="primary" type="submit" data-copy="create">إنشاء بانتظار المراجعة</button>
+          </form>
+        </section>
+        <section class="panel"><div class="panel-heading"><div><span class="eyebrow">VEHICLE REVIEW</span><h2 data-copy="vehicle">تسجيل مركبة</h2></div></div>
+          <form id="vehicle-form" class="stack">
+            <label><span data-copy="courierId">معرّف المندوب</span><input name="courierId" required maxlength="160" pattern="[A-Za-z0-9._:-]+"></label>
+            <label><span data-copy="vehicleType">نوع المركبة</span><select name="vehicleType"><option value="motorcycle">دراجة نارية</option><option value="car">سيارة</option><option value="van">شاحنة صغيرة</option></select></label>
+            <div class="two"><label><span data-copy="weight">الحمولة (غرام)</span><input name="capacityWeightGrams" type="number" min="1" max="1000000" required></label><label><span data-copy="volume">الحجم (لتر)</span><input name="capacityVolumeLiters" type="number" min="1" max="10000" required></label></div>
+            <button class="primary" type="submit" data-copy="register">تسجيل مركبة معلّقة</button>
+            <p class="hint" data-copy="vehicleNote">بعد التسجيل سيظهر معرّف المركبة؛ أدخله في نموذج المراجعة لاعتمادها أو رفضها.</p>
+          </form>
+          <form id="vehicle-review-form" class="stack compact">
+            <label><span data-copy="vehicleId">معرّف المركبة</span><input name="vehicleId" required maxlength="160" pattern="[A-Za-z0-9._:-]+"></label>
+            <div class="two"><button class="primary" name="decision" value="approve" type="submit" data-copy="approveVehicle">اعتماد المركبة</button><button class="danger" name="decision" value="reject" type="submit" data-copy="reject">رفض</button></div>
+          </form>
+        </section>
+        <section class="panel"><div class="panel-heading"><div><span class="eyebrow">SERVICE ACCESS</span><h2 data-copy="serviceArea">صلاحية منطقة الخدمة</h2></div></div>
+          <form id="area-form" class="stack">
+            <label><span data-copy="courierId">معرّف المندوب</span><input name="courierId" required maxlength="160" pattern="[A-Za-z0-9._:-]+"></label>
+            <label><span data-copy="tenantId">معرّف التاجر / المستأجر</span><input name="tenantId" required maxlength="160" pattern="[A-Za-z0-9._:-]+"></label>
+            <label><span data-copy="areaId">معرّف منطقة الخدمة</span><input name="serviceAreaId" required maxlength="160" pattern="[A-Za-z0-9._:-]+"></label>
+            <div class="two"><button class="primary" type="submit" data-action="grant" data-copy="grant">منح الصلاحية</button><button class="danger" type="submit" data-action="revoke" data-copy="revoke">سحب الصلاحية</button></div>
+          </form>
+        </section>
+      </div>
+      <p class="notice" data-copy="notice">تنبيه: اعتماد الملف وحده لا يفعّل استقبال الطلبات. يلزم اعتماد مركبة ومنح منطقة خدمة نشطة. التحقق من المستندات المرفوعة غير متاح بعد في هذه الواجهة.</p>
+    </section>
+  </main>
+  <footer>© 2026 Outlet Window</footer>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>
