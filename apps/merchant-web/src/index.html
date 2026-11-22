@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102f36">
+  <title>Outlet Window | بوابة التاجر</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="Outlet Window"><span class="brand-mark">OW</span><span>Outlet Window</span></a>
+    <button id="language-toggle" class="language" type="button">English</button>
+  </header>
+  <main>
+    <section class="hero">
+      <p class="eyebrow">OUTLET WINDOW · MERCHANT</p>
+      <h1 data-copy="title">بوابة التاجر</h1>
+      <p data-copy="subtitle">إصدار رمز استلام آمن لمهمة المندوب</p>
+    </section>
+
+    <section class="panel">
+      <div class="section-heading">
+        <div><h2 data-copy="connect">جلسة التاجر</h2><p id="connection-state">غير متصل</p></div>
+        <button id="disconnect-button" class="quiet" type="button" hidden data-copy="disconnect">إنهاء الجلسة</button>
+      </div>
+      <form id="connect-form" class="form-grid">
+        <label><span data-copy="api">رابط API</span><input name="baseUrl" type="url" placeholder="https://api.example.com" required></label>
+        <label><span data-copy="token">رمز جلسة التاجر</span><input id="session-token" name="token" type="password" autocomplete="off" required></label>
+        <p class="hint wide" data-copy="session">لا نحفظ رمز الجلسة أو بيانات الطلب في المتصفح. استخدم جلسة موظف مخوّل.</p>
+        <button id="connect-button" class="primary wide" type="submit" data-copy="connectButton">تفعيل الجلسة</button>
+      </form>
+    </section>
+
+    <section class="panel">
+      <div class="section-heading"><div><h2 data-copy="scope">بيانات الطلب</h2><p>Merchant · Branch · Order · Task</p></div></div>
+      <form id="issue-form" class="form-grid">
+        <label><span data-copy="merchant">معرّف التاجر</span><input name="merchantId" maxlength="160" required disabled></label>
+        <label><span data-copy="branch">معرّف الفرع</span><input name="branchId" maxlength="160" required disabled></label>
+        <label><span data-copy="order">معرّف الطلب</span><input name="orderId" maxlength="160" required disabled></label>
+        <label><span data-copy="suborder">معرّف طلب المتجر</span><input name="suborderId" maxlength="160" required disabled></label>
+        <label class="wide"><span data-copy="task">معرّف مهمة المندوب</span><input name="taskId" maxlength="160" required disabled></label>
+        <button id="issue-button" class="primary wide" type="submit" disabled data-copy="issue">إصدار رمز الاستلام</button>
+      </form>
+      <div id="code-result" class="code-result" hidden aria-live="polite">
+        <p data-copy="issued">تم إصدار الرمز. اعرضه لموظف التسليم فقط.</p>
+        <strong id="pickup-code" dir="ltr"></strong>
+        <p id="expiry"></p>
+        <button id="copy-code" class="secondary" type="button" data-copy="copy">نسخ الرمز</button>
+      </div>
+      <div id="status" class="status" role="status" hidden></div>
+    </section>
+  </main>
+  <footer>Outlet Window · Secure merchant operations</footer>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
