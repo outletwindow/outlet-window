@@ -7,6 +7,7 @@ import {
 } from "../../../packages/domain/src/postgres-iam-store.js";
 import { buildApp, type AppOptions, type MerchantBranchReader, type CustomerDeliveryDestinationService, type CustomerPaymentAdjustmentActions, type MerchantCatalogRepository, type SallaOAuthFlow, type PaymentCaptureWebhookHandler, type PaymentRefundWebhookHandler } from "./app.js";
 import { PostgresMerchantBranchReader } from "../../../packages/domain/src/postgres-merchant-branch-reader.js";
+import { PostgresMerchantOrderReader } from "../../../packages/domain/src/postgres-merchant-order-reader.js";
 import { PostgresMerchantBranchWriter } from "../../../packages/domain/src/postgres-merchant-branch-writer.js";
 import { PostgresInventoryProviderBranchScopeStore } from "../../../packages/domain/src/postgres-inventory-provider-branch-scope-store.js";
 import { PostgresAuditEventStore } from "../../../packages/domain/src/postgres-audit-event-store.js";
@@ -112,6 +113,7 @@ export function buildPostgresApp(options: PostgresApiOptions) {
     ...(options.serviceName === undefined ? {} : { serviceName: options.serviceName }),
     ...(options.version === undefined ? {} : { version: options.version }),
     merchantBranches: options.merchantBranches ?? new PostgresMerchantBranchReader(options.pool),
+    merchantOrderReader: new PostgresMerchantOrderReader(options.pool),
     resolveMerchantTenantId: async (merchantId: string) => {
       const result = await options.pool.query<{ tenant_id: string }>(
         "SELECT tenant_id FROM merchants WHERE id = $1 AND status = 'active'",
