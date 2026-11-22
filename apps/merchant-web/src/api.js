@@ -54,7 +54,7 @@ export function createMerchantApi({ baseUrl = "", token, fetchImpl = globalThis.
             !Number.isSafeInteger(order.subtotalMinor) || !Number.isSafeInteger(order.itemCount) ||
             !Number.isFinite(Date.parse(order.createdAtUtc)) ||
             (order.task !== null && (!order.task || !validId(order.task.id) ||
-              typeof order.task.status !== "string" || !Number.isSafeInteger(order.task.version)))) {
+              typeof order.task.status !== "string" || !Number.isSafeInteger(order.task.version))))) {
         throw new MerchantApiError("invalid_merchant_orders_response", 502, payload);
       }
       return Object.freeze(payload.orders.map(order => Object.freeze(order)));
