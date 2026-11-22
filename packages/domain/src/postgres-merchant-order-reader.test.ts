@@ -3,7 +3,7 @@ import { PostgresMerchantOrderReader } from "./postgres-merchant-order-reader.js
 
 describe("PostgresMerchantOrderReader", () => {
   it("queries only the authenticated merchant tenant and branch and maps the latest task", async () => {
-    const query = vi.fn(async () => ({
+    const query = vi.fn(async (_sql: string, _params?: readonly unknown[]) => ({
       rowCount: 1,
       rows: [{
         order_id: "order-1", suborder_id: "suborder-1", merchant_id: "merchant-1",
@@ -33,7 +33,7 @@ describe("PostgresMerchantOrderReader", () => {
   });
 
   it("caps limits and supports orders without a courier task", async () => {
-    const query = vi.fn(async () => ({
+    const query = vi.fn(async (_sql: string, _params?: readonly unknown[]) => ({
       rowCount: 1,
       rows: [{
         order_id: "order-2", suborder_id: "suborder-2", merchant_id: "merchant-1",
