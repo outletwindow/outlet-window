@@ -635,7 +635,6 @@ describe("Outlet Window API foundation", () => {
         payload: { latitude: 27.01, longitude: 49.65, totalMinor: 1, branchId: "attacker-branch" }
       });
       expect(changed.statusCode).toBe(200);
-      expect(changed.json().task).not.toHaveProperty("pickupCode");
       expect(changed.json()).toMatchObject({
         outcome: "updated", branchChanged: true,
         delivery: { branchId: "branch-new", totalMinor: 51500, quoteReference: "server-quote" }
@@ -1235,6 +1234,7 @@ describe("courier delivery task API", () => {
         payload: { status: "accepted", expectedVersion: 1 }
       });
       expect(changed.statusCode).toBe(200);
+      expect(changed.json().task).not.toHaveProperty("pickupCode");
       expect(transition).toHaveBeenCalledWith({
         tenantId: "merchant-courier-1", taskId: "task-1", courierId: courier.id,
         nextStatus: "accepted", expectedVersion: 1
