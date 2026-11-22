@@ -156,6 +156,16 @@ export interface AppOptions {
   auditEvents?: AuditEventWriter;
   orderTransitions?: OrderTransitionWriter;
   courierDeliveryEvidence?: CourierDeliveryEvidenceService;
+  courierPickupCodeIssuer?: {
+    issue(input: {
+      tenantId: string; merchantId: string; branchId: string; orderId: string;
+      suborderId: string; taskId: string; actorId: string;
+      actorRole: "merchant_employee" | "branch_manager" | "merchant_admin" | "merchant_owner";
+    }): Promise<
+      | { outcome: "issued"; code: string; expiresAtUtc: string }
+      | { outcome: "not_found" | "not_ready" | "invalid_actor" }
+    >;
+  };
   courierTasks?: {
     listForCourier(input: { tenantId: string; courierId: string; limit?: number }): Promise<import("../../../packages/domain/src/courier-task.js").CourierTask[]>;
     transition(input: { tenantId: string; taskId: string; courierId: string; nextStatus: CourierTaskStatus; expectedVersion: number; pickupCode?: string; reason?: string }): Promise<import("../../../packages/domain/src/postgres-courier-task-store.js").CourierTaskTransitionOutcome>;
@@ -1234,6 +1244,39 @@ app.patch<{
     } });
   });
 
+
+  app.post<{
+    Params: { merchantId: string; branchId: string; orderId: string; suborderId: string };
+    Body: { taskId: string };
+  }>("/api/v1/merchants/:merchantId/branches/:branchId/orders/:orderId/suborders/:suborderId/pickup-code", async (request, reply) => {
+    const { merchantId, branchId, orderId, suborderId } = request.params;
+    const access = await authorizeRequest(request, options, {
+      resource: "merchant.order", action: "update", scope: { merchantId, branchId, orderId }
+    });
+    if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
+    const merchantRoles = ["merchant_employee", "branch_manager", "merchant_admin", "merchant_owner"] as const;
+    if (!merchantRoles.includes(access.actor.role as typeof merchantRoles[number])) {
+      return reply.code(403).send({ error: "merchant_role_required" });
+    }
+    if (!options.courierPickupCodeIssuer) return reply.code(503).send({ error: "pickup_code_issuance_unavailable" });
+    const body = request.body;
+    if (!body || typeof body.taskId !== "string" || !/^[A-Za-z0-9._:-]{1,160}$/.test(body.taskId) ||
+        Object.keys(body).some(key => key !== "taskId")) {
+      return reply.code(400).send({ error: "invalid_pickup_code_request" });
+    }
+    const tenantId = await options.resolveMerchantTenantId?.(merchantId);
+    if (!tenantId) return reply.code(404).send({ error: "merchant_not_found" });
+    const result = await options.courierPickupCodeIssuer.issue({
+      tenantId, merchantId, branchId, orderId, suborderId, taskId: body.taskId,
+      actorId: access.actor.id,
+      actorRole: access.actor.role as typeof merchantRoles[number]
+    });
+    if (result.outcome === "not_found") return reply.code(404).send({ error: "courier_task_not_found" });
+    if (result.outcome === "not_ready") return reply.code(409).send({ error: "suborder_or_task_not_ready" });
+    if (result.outcome === "invalid_actor") return reply.code(403).send({ error: "merchant_role_required" });
+    // This is the sole response that may contain the plaintext code. Never log it.
+    return reply.code(201).send({ outcome: result.outcome, code: result.code, expiresAtUtc: result.expiresAtUtc });
+  });
 
   app.post<{
     Params: { merchantId: string; branchId: string; orderId: string; suborderId: string; itemId: string };
