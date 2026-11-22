@@ -28,7 +28,8 @@ export class PostgresCourierDispatchOfferIssuer {
   }): Promise<CourierDispatchOfferIssueResult> {
     const now = this.now();
     const expiresAt = Date.parse(input.expiresAtUtc);
-    // A stable lock order prevents concurrent dispatch batches from deadlocking when they overlap couriers.\n    const ids = [...input.courierIds].sort((left, right) => left.localeCompare(right));
+    // Keep candidate lock acquisition deterministic across overlapping dispatch batches.
+    const ids: string[] = [...input.courierIds].sort((left, right) => left.localeCompare(right));
     if (!input.tenantId.trim() || !input.suborderId.trim() || !input.dispatcherId.trim() ||
         !Number.isFinite(now.getTime()) || !Number.isFinite(expiresAt) ||
         expiresAt <= now.getTime() || expiresAt - now.getTime() > 15 * 60_000 ||
