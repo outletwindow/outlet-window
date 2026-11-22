@@ -7,7 +7,7 @@ function fakePool(options: { task?: boolean; existingCredential?: boolean; failA
   const calls: Array<{ sql: string; values?: readonly unknown[] }> = [];
   const query = vi.fn(async <Row>(sql: string, values?: readonly unknown[]) => {
     statements.push(sql);
-    calls.push({ sql, values });
+    calls.push({ sql, ...(values === undefined ? {} : { values }) });
     if (sql.includes("SELECT t.id AS task_id")) {
       const rows = options.task === false ? [] : [{
         task_id: "task-1", task_status: "arrived_at_pickup", suborder_status: "ready_for_pickup"
