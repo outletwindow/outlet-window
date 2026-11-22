@@ -3,6 +3,7 @@ import { createMerchantApi, MerchantApiError } from "./api.js";
 let api = null;
 let visibleCode = null;
 let hideTimer = null;
+let eligibleOrders = [];
 const $ = selector => document.querySelector(selector);
 const form = $("#issue-form");
 const result = $("#code-result");
@@ -13,6 +14,8 @@ const copy = {
     connect:"جلسة التاجر", api:"رابط API", token:"رمز جلسة التاجر",
     session:"لا نحفظ رمز الجلسة أو بيانات الطلب في المتصفح. استخدم جلسة موظف مخوّل.",
     connectButton:"تفعيل الجلسة", disconnect:"إنهاء الجلسة", scope:"بيانات الطلب",
+    loadOrders:"تحميل طلبات الفرع", selectOrder:"اختر الطلب الجاهز للاستلام",
+    ordersPlaceholder:"حمّل الطلبات أولاً", noEligibleOrders:"لا توجد طلبات جاهزة للاستلام حالياً.",
     merchant:"معرّف التاجر", branch:"معرّف الفرع", order:"معرّف الطلب",
     suborder:"معرّف طلب المتجر", task:"معرّف مهمة المندوب",
     issue:"إصدار رمز الاستلام", wait:"جارٍ إصدار الرمز…",
@@ -38,6 +41,8 @@ const copy = {
     connect:"Merchant session", api:"API URL", token:"Merchant session token",
     session:"Session tokens and order details are not stored in the browser. Use an authorized merchant staff session.",
     connectButton:"Activate session", disconnect:"End session", scope:"Order details",
+    loadOrders:"Load branch orders", selectOrder:"Select a ready order",
+    ordersPlaceholder:"Load orders first", noEligibleOrders:"No orders are ready for pickup right now.",
     merchant:"Merchant ID", branch:"Branch ID", order:"Order ID",
     suborder:"Merchant suborder ID", task:"Courier task ID",
     issue:"Issue pickup code", wait:"Issuing code…",
@@ -79,8 +84,12 @@ function setConnected(connected) {
     : (language === "ar" ? "غير متصل" : "Not connected");
   $("#connect-button").hidden = connected;
   $("#disconnect-button").hidden = !connected;
-  form.querySelectorAll("input,button").forEach(node => { node.disabled = !connected; });
-  if (connected) $("#issue-button").disabled = false;
+  form.querySelectorAll("input,button,select").forEach(node => { node.disabled = !connected; });
+  if (connected) {
+    $("#order-select").disabled = false;
+    $("#load-orders-button").disabled = false;
+    $("#issue-button").disabled = true;
+  }
 }
 $("#language-toggle").addEventListener("click", () => {
   language = language === "ar" ? "en" : "ar";
@@ -109,8 +118,56 @@ $("#connect-form").addEventListener("submit", event => {
     notify(tr(error.message) || tr("errors").failed, true);
   }
 });
+$("#load-orders-button").addEventListener("click", async () => {
+  if (!api) { notify(tr("noSession"), true); return; }
+  const merchantId = String(form.elements.merchantId.value ?? "").trim();
+  const branchId = String(form.elements.branchId.value ?? "").trim();
+  const button = $("#load-orders-button");
+  button.disabled = true;
+  $("#order-select").replaceChildren(new Option(tr("ordersPlaceholder"), ""));
+  $("#issue-button").disabled = true;
+  eligibleOrders = [];
+  hideCode();
+  try {
+    const orders = await api.listOrders({ merchantId, branchId, status: "ready_for_pickup", limit: 100 });
+    eligibleOrders = orders.filter(order => order.task &&
+      ["accepted", "heading_to_pickup", "arrived_at_pickup"].includes(order.task.status));
+    const select = $("#order-select");
+    select.replaceChildren();
+    if (!eligibleOrders.length) {
+      select.add(new Option(tr("noEligibleOrders"), ""));
+      notify(tr("noEligibleOrders"));
+    } else {
+      select.add(new Option(tr("selectOrder"), ""));
+      eligibleOrders.forEach((order, index) => {
+        const label = `${order.orderId} · ${order.suborderId} · ${order.task.status}`;
+        select.add(new Option(label, String(index)));
+      });
+      notify(language === "ar" ? `تم تحميل ${eligibleOrders.length} طلب جاهز.` : `Loaded ${eligibleOrders.length} ready orders.`);
+    }
+  } catch (error) {
+    const key = error instanceof MerchantApiError ? error.message : error.message;
+    notify(copy[language].errors[key] ?? copy[language].errors.failed, true);
+  } finally {
+    button.disabled = false;
+  }
+});
+$("#order-select").addEventListener("change", event => {
+  const order = eligibleOrders[Number(event.currentTarget.value)];
+  const ready = Boolean(order);
+  form.elements.orderId.value = order?.orderId ?? "";
+  form.elements.suborderId.value = order?.suborderId ?? "";
+  form.elements.taskId.value = order?.task?.id ?? "";
+  form.elements.orderId.disabled = !ready;
+  form.elements.suborderId.disabled = !ready;
+  form.elements.taskId.disabled = !ready;
+  $("#issue-button").disabled = !ready;
+  hideCode();
+});
 $("#disconnect-button").addEventListener("click", () => {
   api = null;
+  eligibleOrders = [];
+  $("#order-select").replaceChildren(new Option(tr("ordersPlaceholder"), ""));
   hideCode();
   $("#connect-form").reset();
   setConnected(false);
