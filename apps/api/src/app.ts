@@ -1274,8 +1274,9 @@ app.patch<{
     if (result.outcome === "not_found") return reply.code(404).send({ error: "courier_task_not_found" });
     if (result.outcome === "not_ready") return reply.code(409).send({ error: "suborder_or_task_not_ready" });
     if (result.outcome === "invalid_actor") return reply.code(403).send({ error: "merchant_role_required" });
+    if (result.outcome !== "issued") return reply.code(409).send({ error: "pickup_code_issuance_rejected" });
     // This is the sole response that may contain the plaintext code. Never log it.
-    return reply.code(201).send({ outcome: result.outcome, code: result.code, expiresAtUtc: result.expiresAtUtc });
+    return reply.code(201).send({ outcome: "issued", code: result.code, expiresAtUtc: result.expiresAtUtc });
   });
 
   app.post<{
