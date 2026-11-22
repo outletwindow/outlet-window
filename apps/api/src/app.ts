@@ -22,6 +22,7 @@ import type { InventoryReservationFinalizeResult } from "../../../packages/domai
 import type { RecordPreparationCheckInput, RecordPreparationCheckResult } from "../../../packages/domain/src/postgres-merchant-order-item-preparation.js";
 import type { CreateCustomerCheckoutInput, CustomerCheckoutResult } from "../../../packages/domain/src/postgres-customer-checkout.js";
 import type { CourierTaskStatus } from "../../../packages/domain/src/courier-task.js";
+import type { MerchantOrderSummary } from "../../../packages/domain/src/postgres-merchant-order-reader.js";
 
 export interface SallaOAuthFlow {
   begin(input: { tenantId: string; integrationId: string }): Promise<{ authorizationUrl: string }>;
@@ -149,6 +150,7 @@ export interface AppOptions {
   actorResolution?: ActorResolutionDependencies;
   /** Repository adapter must apply merchantId and branchId predicates in its database query. */
   merchantBranches?: MerchantBranchReader;
+  merchantOrderReader?: { listForBranch(input: { tenantId: string; merchantId: string; branchId: string; status?: OrderStatus; limit?: number }): Promise<MerchantOrderSummary[]> };
   merchantBranchWriter?: MerchantBranchWriter;
   /** Optional dependency check used by readiness; failures keep the instance out of service. */
   readinessCheck?: () => Promise<boolean>;
@@ -1134,6 +1136,40 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   );
 
   // Authentication and authorization always precede adapter availability checks and data access.
+  app.get<{
+    Params: { merchantId: string; branchId: string };
+    Querystring: { status?: string; limit?: string };
+  }>("/api/v1/merchants/:merchantId/branches/:branchId/orders", async (request, reply) => {
+    const { merchantId, branchId } = request.params;
+    const access = await authorizeRequest(request, options, {
+      resource: "merchant.order", action: "read", scope: { merchantId, branchId }
+    });
+    if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
+    const merchantRoles = ["merchant_employee", "branch_manager", "merchant_admin", "merchant_owner"] as const;
+    if (!merchantRoles.includes(access.actor.role as typeof merchantRoles[number])) {
+      return reply.code(403).send({ error: "merchant_role_required" });
+    }
+    if (!options.merchantOrderReader || !options.resolveMerchantTenantId) {
+      return reply.code(503).send({ error: "merchant_order_reader_unavailable" });
+    }
+    const status = request.query.status;
+    if (status !== undefined && !ORDER_STATUSES.includes(status as OrderStatus)) {
+      return reply.code(400).send({ error: "invalid_order_status" });
+    }
+    const limit = request.query.limit === undefined ? 50 : Number(request.query.limit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+      return reply.code(400).send({ error: "invalid_limit" });
+    }
+    const tenantId = await options.resolveMerchantTenantId(merchantId);
+    if (!tenantId) return reply.code(404).send({ error: "merchant_not_found" });
+    const orders = await options.merchantOrderReader.listForBranch({
+      tenantId, merchantId, branchId,
+      ...(status === undefined ? {} : { status: status as OrderStatus }),
+      limit
+    });
+    return reply.code(200).send({ orders });
+  });
+
   app.get<{
     Params: { merchantId: string; branchId: string };
   }>("/api/v1/merchants/:merchantId/branches/:branchId/summary", async (request, reply) => {
