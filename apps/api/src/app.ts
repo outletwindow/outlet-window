@@ -163,7 +163,7 @@ export interface AppOptions {
       actorRole: "merchant_employee" | "branch_manager" | "merchant_admin" | "merchant_owner";
     }): Promise<
       | { outcome: "issued"; code: string; expiresAtUtc: string }
-      | { outcome: "not_found" | "not_ready" | "invalid_actor" }
+      | { outcome: "not_found" | "not_ready" | "invalid_actor" | "rate_limited" }
     >;
   };
   courierTasks?: {
@@ -1274,6 +1274,10 @@ app.patch<{
     if (result.outcome === "not_found") return reply.code(404).send({ error: "courier_task_not_found" });
     if (result.outcome === "not_ready") return reply.code(409).send({ error: "suborder_or_task_not_ready" });
     if (result.outcome === "invalid_actor") return reply.code(403).send({ error: "merchant_role_required" });
+    if (result.outcome === "rate_limited") {
+      reply.header("retry-after", "900");
+      return reply.code(429).send({ error: "pickup_code_issuance_rate_limited", retryAfterSeconds: 900 });
+    }
     if (result.outcome !== "issued") return reply.code(409).send({ error: "pickup_code_issuance_rejected" });
     // This is the sole response that may contain the plaintext code. Never log it.
     return reply.code(201).send({ outcome: "issued", code: result.code, expiresAtUtc: result.expiresAtUtc });
