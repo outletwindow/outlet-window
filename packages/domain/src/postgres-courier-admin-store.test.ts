@@ -15,6 +15,20 @@ function makePool(responses: Array<{ rows?: unknown[]; rowCount?: number }>) {
 describe("PostgresCourierAdminStore", () => {
   const now = () => new Date("2026-11-19T10:00:00.000Z");
 
+  it("lists vehicle records with verification and capacity fields", async () => {
+    const { pool, query } = makePool([{ rows: [{
+      id: "vehicle-1", courier_id: "courier-1", vehicle_type: "car", verification_status: "pending",
+      capacity_weight_grams: 80000, capacity_volume_liters: 300, active: false,
+      created_at: "2026-11-19T10:00:00.000Z", updated_at: "2026-11-19T10:00:00.000Z"
+    }] }]);
+    const store = new PostgresCourierAdminStore(pool, now);
+    await expect(store.listVehicles({ status: "pending", limit: 50 })).resolves.toMatchObject([{
+      vehicleId: "vehicle-1", courierId: "courier-1", vehicleType: "car", verificationStatus: "pending",
+      capacityWeightGrams: 80000, capacityVolumeLiters: 300, active: false
+    }]);
+    expect(query).toHaveBeenCalledWith(expect.stringContaining("FROM courier_vehicles"), ["pending", 50]);
+  });
+
   it("creates a pending profile only for an active human identity", async () => {
     const { pool, query } = makePool([
       {}, { rows: [{ id: "courier-1", principal_type: "human", status: "active" }] },

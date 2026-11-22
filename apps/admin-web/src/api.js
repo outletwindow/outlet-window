@@ -65,6 +65,18 @@ export function createAdminApi({ baseUrl = "", token, fetchImpl = globalThis.fet
         throw new TypeError("invalid_courier_vehicle");
       return send("/api/v1/platform/courier-vehicles", { courierId, vehicleType, capacityWeightGrams, capacityVolumeLiters });
     },
+    async listVehicles(status = "") {
+      if (status && !["pending", "verified", "rejected"].includes(status)) throw new TypeError("invalid_vehicle_status");
+      const query = new URLSearchParams({ limit: "200", ...(status ? { status } : {}) });
+      const payload = await request(`/api/v1/platform/courier-vehicles?${query}`);
+      if (!payload || !Array.isArray(payload.vehicles) || payload.vehicles.some(v =>
+        !v || !validId(v.vehicleId) || !validId(v.courierId) ||
+        !["motorcycle", "car", "van"].includes(v.vehicleType) ||
+        !["pending", "verified", "rejected"].includes(v.verificationStatus) ||
+        !Number.isSafeInteger(v.capacityWeightGrams) || !Number.isSafeInteger(v.capacityVolumeLiters) ||
+        typeof v.active !== "boolean")) throw new AdminApiError("invalid_admin_vehicles_response", 502, payload);
+      return payload.vehicles;
+    },
     async reviewVehicle(vehicleId, decision) {
       if (!validId(vehicleId) || !["approve", "reject"].includes(decision)) throw new TypeError("invalid_vehicle_review");
       return send(`/api/v1/platform/courier-vehicles/${encodeURIComponent(vehicleId)}/review`, { decision });

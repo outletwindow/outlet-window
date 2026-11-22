@@ -9,7 +9,7 @@ const copy = {
     vehicleId:"معرّف المركبة",approveVehicle:"اعتماد المركبة",reject:"رفض",serviceArea:"صلاحية منطقة الخدمة",tenantId:"معرّف التاجر / المستأجر",
     areaId:"معرّف منطقة الخدمة",grant:"منح الصلاحية",revoke:"سحب الصلاحية",notice:"تنبيه: اعتماد الملف وحده لا يفعّل استقبال الطلبات. يلزم اعتماد مركبة ومنح منطقة خدمة نشطة. التحقق من المستندات المرفوعة غير متاح بعد في هذه الواجهة.",
     connected:"متصل",notConnected:"غير متصل",loading:"جارٍ التنفيذ...",empty:"لا توجد ملفات مندوبين في هذا الفلتر",pending:"قيد المراجعة",active:"نشط",suspended:"موقوف",
-    verified:"موثّق",rejected:"مرفوض",approve:"اعتماد الملف",suspend:"إيقاف",reinstate:"إعادة تفعيل",created:"تم إنشاء ملف المندوب بانتظار المراجعة",
+    verified:"موثّق",rejected:"مرفوض",vehicleDirectory:"سجل المركبات",allVehicles:"كل المركبات",motorcycle:"دراجة نارية",car:"سيارة",van:"شاحنة صغيرة",weightCapacity:"الحمولة",volumeCapacity:"الحجم",approve:"اعتماد الملف",suspend:"إيقاف",reinstate:"إعادة تفعيل",created:"تم إنشاء ملف المندوب بانتظار المراجعة",
     vehicleCreated:"تم تسجيل المركبة. احتفظ بمعرّفها لمراجعتها",granted:"تم منح منطقة الخدمة",revoked:"تم سحب منطقة الخدمة",saved:"تم تنفيذ العملية",failed:"تعذر تنفيذ العملية",
     language:"English",filterAll:"كل الحالات",profileCreated:"إنشاء الملف",updated:"آخر تحديث",capacity:"المهام المتزامنة",vehicleIdLabel:"معرّف المركبة:"},
   en: {title:"Courier administration",subtitle:"Review courier profiles, verify vehicles and manage service-area access",secure:"Protected administrator access",
@@ -20,7 +20,7 @@ const copy = {
     vehicleId:"Vehicle ID",approveVehicle:"Approve vehicle",reject:"Reject",serviceArea:"Service-area access",tenantId:"Merchant / tenant ID",
     areaId:"Service-area ID",grant:"Grant access",revoke:"Revoke access",notice:"Note: profile approval alone does not enable dispatch. An approved vehicle and active service-area membership are also required. Uploaded document verification is not yet available in this interface.",
     connected:"Connected",notConnected:"Not connected",loading:"Working...",empty:"No courier profiles match this filter",pending:"Pending review",active:"Active",suspended:"Suspended",
-    verified:"Verified",rejected:"Rejected",approve:"Approve profile",suspend:"Suspend",reinstate:"Reinstate",created:"Courier profile created and awaiting review",
+    verified:"Verified",rejected:"Rejected",vehicleDirectory:"Vehicle directory",allVehicles:"All vehicles",motorcycle:"Motorcycle",car:"Car",van:"Van",weightCapacity:"Weight capacity",volumeCapacity:"Volume",approve:"Approve profile",suspend:"Suspend",reinstate:"Reinstate",created:"Courier profile created and awaiting review",
     vehicleCreated:"Vehicle registered. Keep its ID for review",granted:"Service area granted",revoked:"Service area revoked",saved:"Operation completed",failed:"Operation failed",
     language:"العربية",filterAll:"All statuses",profileCreated:"Profile created",updated:"Updated",capacity:"Concurrent tasks",vehicleIdLabel:"Vehicle ID:"}
 };
@@ -36,6 +36,7 @@ function translatePage() {
   document.querySelectorAll("[data-copy]").forEach(node => { node.textContent = tr(node.dataset.copy); });
   $("#language-toggle").textContent = tr("language");
   $("#status-filter").options[0].textContent = tr("filterAll");
+  $("#vehicle-status-filter").options[0].textContent = tr("allVehicles");
   $("#connection-state").textContent = api ? tr("connected") : tr("notConnected");
 }
 function makeButton(label, action, courierId, style = "secondary") {
@@ -61,10 +62,32 @@ function renderProfiles(profiles) {
     card.append(heading, verification, capacity, updated, actions); root.append(card);
   }
 }
+function renderVehicles(vehicles) {
+  const root = $("#vehicle-list"); root.replaceChildren();
+  if (!vehicles.length) { const p = document.createElement("p"); p.className = "empty"; p.textContent = tr("empty"); root.append(p); return; }
+  for (const vehicle of vehicles) {
+    const card = document.createElement("article"); card.className = "profile-card";
+    const heading = document.createElement("div"); heading.className = "profile-heading";
+    const id = document.createElement("strong"); id.textContent = vehicle.vehicleId;
+    const status = document.createElement("span"); status.className = `pill ${vehicle.verificationStatus === "verified" ? "active" : vehicle.verificationStatus === "rejected" ? "suspended" : "pending"}`;
+    status.textContent = tr(vehicle.verificationStatus); heading.append(id, status);
+    const owner = document.createElement("p"); owner.textContent = `${tr("courierId")}: ${vehicle.courierId}`;
+    const type = document.createElement("p"); type.textContent = tr(vehicle.vehicleType);
+    const capacity = document.createElement("p"); capacity.textContent = `${tr("weightCapacity")}: ${vehicle.capacityWeightGrams} g · ${tr("volumeCapacity")}: ${vehicle.capacityVolumeLiters} L`;
+    const active = document.createElement("small"); active.textContent = vehicle.active ? tr("active") : tr("pending");
+    const actions = document.createElement("div"); actions.className = "actions";
+    if (vehicle.verificationStatus === "pending") actions.append(
+      makeButton("approveVehicle", "approve-vehicle", vehicle.vehicleId, "primary"),
+      makeButton("reject", "reject-vehicle", vehicle.vehicleId, "danger"));
+    card.append(heading, owner, type, capacity, active, actions); root.append(card);
+  }
+}
 async function refresh() {
   if (!api) return;
-  const profiles = await api.listProfiles($("#status-filter").value);
-  renderProfiles(profiles);
+  const [profiles, vehicles] = await Promise.all([
+    api.listProfiles($("#status-filter").value), api.listVehicles($("#vehicle-status-filter").value)
+  ]);
+  renderProfiles(profiles); renderVehicles(vehicles);
 }
 function formData(form) { return Object.fromEntries(new FormData(form).entries()); }
 function explain(error) {
@@ -93,11 +116,21 @@ $("#disconnect-button").addEventListener("click", () => {
 $("#language-toggle").addEventListener("click", () => { language = language === "ar" ? "en" : "ar"; translatePage(); if (api) refresh().catch(error => notify(explain(error))); });
 $("#refresh-button").addEventListener("click", () => refresh().then(() => notify(tr("saved"))).catch(error => notify(explain(error))));
 $("#status-filter").addEventListener("change", () => refresh().catch(error => notify(explain(error))));
+$("#vehicle-status-filter").addEventListener("change", () => refresh().catch(error => notify(explain(error))));
+$("#vehicle-refresh-button").addEventListener("click", () => refresh().then(() => notify(tr("saved"))).catch(error => notify(explain(error))));
 $("#profile-list").addEventListener("click", async event => {
   const button = event.target.closest("button[data-action]"); if (!button || !api || busy) return;
-  const action = button.dataset.action; const decision = action === "approve" ? "approve" : action === "reject" ? "reject" : action;
-  try { setBusy(true); await api.reviewProfile(button.dataset.id, decision); await refresh(); notify(tr("saved")); }
-  catch (error) { notify(explain(error)); } finally { setBusy(false); }
+  const action = button.dataset.action;
+  try {
+    setBusy(true);
+    if (action === "approve-vehicle" || action === "reject-vehicle") {
+      await api.reviewVehicle(button.dataset.id, action === "approve-vehicle" ? "approve" : "reject");
+    } else {
+      const decision = action === "approve" ? "approve" : action === "reject" ? "reject" : action;
+      await api.reviewProfile(button.dataset.id, decision);
+    }
+    await refresh(); notify(tr("saved"));
+  } catch (error) { notify(explain(error)); } finally { setBusy(false); }
 });
 $("#profile-form").addEventListener("submit", async event => {
   event.preventDefault(); if (!api || busy) return;

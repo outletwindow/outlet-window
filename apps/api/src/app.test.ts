@@ -1529,7 +1529,7 @@ describe("platform courier governance endpoints", () => {
     const api = buildApp({
       resolveActor: async () => admin, auditEvents,
       courierAdminProfiles: {
-        listProfiles: vi.fn(async () => []), createProfile,
+        listVehicles: vi.fn(async () => []), listProfiles: vi.fn(async () => []), createProfile,
         reviewProfile: vi.fn(async () => "updated" as const),
         registerVehicle: vi.fn(async () => "created" as const),
         reviewVehicle: vi.fn(async () => "updated" as const),
@@ -1581,7 +1581,7 @@ describe("platform courier governance endpoints", () => {
     const api = buildApp({
       resolveActor: async () => admin, auditEvents,
       courierAdminProfiles: {
-        listProfiles: vi.fn(async () => []), createProfile: vi.fn(async () => "created" as const),
+        listVehicles: vi.fn(async () => []), listProfiles: vi.fn(async () => []), createProfile: vi.fn(async () => "created" as const),
         reviewProfile: vi.fn(async () => "updated" as const), registerVehicle,
         reviewVehicle: vi.fn(async () => "updated" as const),
         grantServiceArea: vi.fn(async () => "granted" as const),

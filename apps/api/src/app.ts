@@ -170,6 +170,7 @@ export interface AppOptions {
     }): Promise<import("../../../packages/domain/src/postgres-courier-dispatch-offer-command-store.js").CourierDispatchOfferResponse>;
   };
   courierAdminProfiles?: {
+    listVehicles(input?: { status?: "pending" | "verified" | "rejected"; limit?: number }): Promise<import("../../../packages/domain/src/postgres-courier-admin-store.js").CourierAdminVehicle[]>;
     listProfiles(input?: { status?: "pending" | "active" | "suspended"; limit?: number }): Promise<import("../../../packages/domain/src/postgres-courier-admin-store.js").CourierAdminProfile[]>;
     createProfile(input: { courierId: string; maxConcurrentTasks: number }): Promise<"created" | "identity_not_found" | "identity_not_eligible" | "already_exists">;
     reviewProfile(input: { courierId: string; decision: "approve" | "reject" | "suspend" | "reinstate"; reviewerId: string }): Promise<"updated" | "not_found" | "invalid_transition">;
@@ -641,6 +642,24 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       return reply.code(200).send({ outcome, courierId: request.params.courierId, decision });
     }
   );
+
+  app.get<{ Querystring: { status?: string; limit?: string } }>("/api/v1/platform/courier-vehicles", async (request, reply) => {
+    const auth = await authorizeRequest(request, options, {
+      resource: "platform.courier_profile", action: "read", scope: { platform: true }
+    });
+    if (!auth.actor) return sendAuthorizationFailure(reply, auth.statusCode, auth.decision.reason);
+    const roles = new Set([auth.actor.role, ...(auth.actor.roles ?? [])]);
+    if (![...roles].some(role => role === "platform_owner" || role === "platform_admin")) return reply.code(403).send({ error: "platform_admin_only" });
+    if (!options.courierAdminProfiles) return reply.code(503).send({ error: "courier_admin_unavailable" });
+    const status = request.query.status;
+    if (status !== undefined && !["pending", "verified", "rejected"].includes(status)) return reply.code(400).send({ error: "invalid_courier_vehicle_status" });
+    const parsedLimit = request.query.limit === undefined ? 100 : Number(request.query.limit);
+    if (!Number.isInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 200) return reply.code(400).send({ error: "invalid_limit" });
+    const vehicles = await options.courierAdminProfiles.listVehicles({
+      ...(status === undefined ? {} : { status: status as "pending" | "verified" | "rejected" }), limit: parsedLimit
+    });
+    return reply.code(200).send({ vehicles });
+  });
 
   app.post<{ Body: unknown }>("/api/v1/platform/courier-vehicles", async (request, reply) => {
     const auth = await authorizeRequest(request, options, {

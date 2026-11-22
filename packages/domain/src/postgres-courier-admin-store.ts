@@ -1,5 +1,11 @@
 import type { PostgresPool } from "./postgres-iam-store.js";
 
+export type CourierAdminVehicle = {
+  vehicleId: string; courierId: string; vehicleType: "motorcycle" | "car" | "van";
+  verificationStatus: "pending" | "verified" | "rejected"; capacityWeightGrams: number;
+  capacityVolumeLiters: number; active: boolean; createdAtUtc: string; updatedAtUtc: string;
+};
+
 export type CourierAdminProfile = {
   courierId: string;
   accountStatus: "pending" | "active" | "suspended";
@@ -30,6 +36,28 @@ const toProfile = (row: ProfileRow): CourierAdminProfile => ({
 /** Platform-admin operations for controlled courier onboarding and review. */
 export class PostgresCourierAdminStore {
   constructor(private readonly pool: PostgresPool, private readonly now: () => Date = () => new Date()) {}
+
+  async listVehicles(input: { status?: "pending" | "verified" | "rejected"; limit?: number } = {}): Promise<CourierAdminVehicle[]> {
+    const result = await this.pool.query<{
+      id: string; courier_id: string; vehicle_type: CourierAdminVehicle["vehicleType"];
+      verification_status: CourierAdminVehicle["verificationStatus"]; capacity_weight_grams: number;
+      capacity_volume_liters: number; active: boolean; created_at: Date | string; updated_at: Date | string;
+    }>(
+      `SELECT id, courier_id, vehicle_type, verification_status, capacity_weight_grams,
+              capacity_volume_liters, active, created_at, updated_at
+       FROM courier_vehicles
+       WHERE ($1::text IS NULL OR verification_status = $1)
+       ORDER BY created_at DESC, id
+       LIMIT $2`,
+      [input.status ?? null, input.limit ?? 100]
+    );
+    return result.rows.map(row => ({
+      vehicleId: row.id, courierId: row.courier_id, vehicleType: row.vehicle_type,
+      verificationStatus: row.verification_status, capacityWeightGrams: row.capacity_weight_grams,
+      capacityVolumeLiters: row.capacity_volume_liters, active: row.active,
+      createdAtUtc: new Date(row.created_at).toISOString(), updatedAtUtc: new Date(row.updated_at).toISOString()
+    }));
+  }
 
   async listProfiles(input: { status?: "pending" | "active" | "suspended"; limit?: number } = {}): Promise<CourierAdminProfile[]> {
     const result = await this.pool.query<ProfileRow>(

@@ -32,6 +32,8 @@
     <section id="workspace" hidden>
       <div class="toolbar"><div><span class="eyebrow">COURIER GOVERNANCE</span><h2 data-copy="directory">سجل المندوبين</h2></div><div class="toolbar-actions"><select id="status-filter" aria-label="Filter couriers"><option value="">كل الحالات</option><option value="pending">قيد المراجعة</option><option value="active">نشط</option><option value="suspended">موقوف</option></select><button id="refresh-button" class="secondary" type="button" data-copy="refresh">تحديث</button></div></div>
       <div id="profile-list" class="profile-grid" aria-live="polite"></div>
+      <div class="toolbar vehicle-toolbar"><div><span class="eyebrow">FLEET GOVERNANCE</span><h2 data-copy="vehicleDirectory">سجل المركبات</h2></div><div class="toolbar-actions"><select id="vehicle-status-filter" aria-label="Filter vehicles"><option value="">كل المركبات</option><option value="pending">قيد المراجعة</option><option value="verified">معتمدة</option><option value="rejected">مرفوضة</option></select><button id="vehicle-refresh-button" class="secondary" type="button" data-copy="refresh">تحديث</button></div></div>
+      <div id="vehicle-list" class="profile-grid" aria-live="polite"></div>
       <div class="management-grid">
         <section class="panel"><div class="panel-heading"><div><span class="eyebrow">ONBOARDING</span><h2 data-copy="createProfile">إنشاء ملف مندوب</h2></div></div>
           <form id="profile-form" class="stack">
