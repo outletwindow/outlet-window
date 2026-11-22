@@ -307,6 +307,20 @@ function sendAuthorizationFailure(
   });
 }
 
+/** Explicit API projection prevents persistence-only fields (including pickup credentials) from leaking. */
+function serializeCourierTask(task: import("../../../packages/domain/src/courier-task.js").CourierTask) {
+  return {
+    id: task.id,
+    tenantId: task.tenantId,
+    orderId: task.orderId,
+    suborderId: task.suborderId,
+    courierId: task.courierId,
+    status: task.status,
+    version: task.version,
+    updatedAtUtc: task.updatedAtUtc
+  };
+}
+
 export function buildApp(options: AppOptions = {}): FastifyInstance {
   const app = Fastify({
     logger: process.env.NODE_ENV !== "test",
@@ -438,7 +452,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     const tasks = (await Promise.all(merchantIds.map(tenantId =>
       options.courierTasks!.listForCourier({ tenantId, courierId: auth.actor!.id, limit: 100 })
     ))).flat();
-    return reply.code(200).send({ tasks });
+    return reply.code(200).send({ tasks: tasks.map(serializeCourierTask) });
   });
 
   app.post<{ Params: { taskId: string }; Body: unknown }>(
@@ -545,7 +559,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
         if (result.outcome === "not_found") continue;
         if (result.outcome === "conflict") return reply.code(409).send({ error: "courier_task_version_conflict" });
         if (result.outcome === "rejected") return reply.code(422).send({ error: result.reason ?? "courier_task_transition_rejected" });
-        if (result.outcome === "updated") return reply.code(200).send({ task: result.task });
+        if (result.outcome === "updated") return reply.code(200).send({ task: serializeCourierTask(result.task) });
       }
       return reply.code(404).send({ error: "courier_task_not_found" });
     }
