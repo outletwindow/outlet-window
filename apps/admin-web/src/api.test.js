@@ -60,3 +60,18 @@ test("surfaces API authorization errors without leaking the token", async () => 
   const api = createAdminApi({ token, fetchImpl: async () => response({ error:"platform_admin_only" }, false, 403) });
   await assert.rejects(() => api.listProfiles(), error => error instanceof AdminApiError && error.status === 403 && error.message === "platform_admin_only");
 });
+
+test("lists pending vehicles from the platform administration endpoint", async () => {
+  let request;
+  const api = createAdminApi({ token, fetchImpl: async (url, init) => {
+    request = { url, init };
+    return response({ vehicles: [{
+      vehicleId: "vehicle-1", courierId: "courier-1", vehicleType: "car",
+      verificationStatus: "pending", capacityWeightGrams: 50000, capacityVolumeLiters: 200, active: false
+    }] });
+  }});
+  const vehicles = await api.listVehicles("pending");
+  assert.equal(vehicles.length, 1);
+  assert.match(request.url, /courier-vehicles\\?limit=200&status=pending/);
+  assert.equal(request.init.headers.authorization, `Bearer ${token}`);
+});

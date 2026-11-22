@@ -1557,7 +1557,7 @@ describe("platform courier governance endpoints", () => {
     const api = buildApp({
       resolveActor: async () => ({ ...admin, role: "merchant_owner" as const, grants: [] }),
       courierAdminProfiles: {
-        listProfiles: vi.fn(async () => []), createProfile,
+        listVehicles: vi.fn(async () => []), listProfiles: vi.fn(async () => []), createProfile,
         reviewProfile: vi.fn(async () => "updated" as const),
         registerVehicle: vi.fn(async () => "created" as const),
         reviewVehicle: vi.fn(async () => "updated" as const),
@@ -1601,4 +1601,28 @@ describe("platform courier governance endpoints", () => {
       }));
     } finally { await api.close(); }
   });
+  it("lists courier vehicles only for a platform administrator", async () => {
+    const listVehicles = vi.fn(async () => [{
+      vehicleId: "vehicle-1", courierId: "courier-1", vehicleType: "car",
+      verificationStatus: "pending", capacityWeightGrams: 50000, capacityVolumeLiters: 200,
+      active: false, createdAtUtc: "2026-11-22T00:00:00.000Z", updatedAtUtc: "2026-11-22T00:00:00.000Z"
+    }]);
+    const api = buildApp({
+      resolveActor: async () => admin, auditEvents,
+      courierAdminProfiles: {
+        listVehicles, listProfiles: vi.fn(async () => []), createProfile: vi.fn(async () => "created" as const),
+        reviewProfile: vi.fn(async () => "updated" as const), registerVehicle: vi.fn(async () => "created" as const),
+        reviewVehicle: vi.fn(async () => "updated" as const), grantServiceArea: vi.fn(async () => "granted" as const),
+        revokeServiceArea: vi.fn(async () => "revoked" as const)
+      }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({ method: "GET", url: "/api/v1/platform/courier-vehicles?status=pending&limit=25" });
+      expect(response.statusCode).toBe(200);
+      expect(response.json().vehicles).toHaveLength(1);
+      expect(listVehicles).toHaveBeenCalledWith({ status: "pending", limit: 25 });
+    } finally { await api.close(); }
+  });
+
 });
