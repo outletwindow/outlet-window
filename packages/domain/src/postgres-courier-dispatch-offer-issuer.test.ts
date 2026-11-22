@@ -77,7 +77,7 @@ describe("PostgresCourierDispatchOfferIssuer", () => {
     const issuer = new PostgresCourierDispatchOfferIssuer(pool, { isEligible: async () => true }, now);
     await expect(issuer.issue(input)).rejects.toThrow("courier_dispatch_suborder_not_ready");
     expect(calls.some(call => call.sql.includes("INSERT INTO courier_dispatch_offers"))).toBe(false);
-    expect(query).toHaveBeenCalledWith("ROLLBACK");
+    expect(query.mock.calls.filter(([sql]) => sql === "ROLLBACK")).toHaveLength(1);
   });
 
   it("refuses invalid expiry, duplicate couriers, and oversized batches before opening a transaction", async () => {
