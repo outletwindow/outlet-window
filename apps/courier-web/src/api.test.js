@@ -35,7 +35,7 @@ test("lists offers and rejects malformed offer records", async () => {
   };
   const api = createCourierApi({ token, fetchImpl: async () => response({ offers: [offer] }) });
   assert.deepEqual(await api.listOffers(), [offer]);
-  const malformed = createCourierApi({ token, fetchImpl: async () => response({ offers: [{ ...offer, version: 0 }] }) });
+  const malformed = createCourierApi({ token, fetchImpl: async () => response({ offers: [{ ...offer, version: "not-a-version" }] }) });
   await assert.rejects(() => malformed.listOffers(), error =>
     error instanceof CourierApiError && error.status === 502 && error.message === "invalid_courier_offers_response");
 });
