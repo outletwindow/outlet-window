@@ -30,3 +30,6 @@ $$;
 CREATE TRIGGER courier_pickup_code_issuance_audit_no_update
   BEFORE UPDATE OR DELETE ON courier_pickup_code_issuance_audit
   FOR EACH ROW EXECUTE FUNCTION prevent_courier_pickup_code_audit_mutation();
+CREATE TRIGGER courier_pickup_code_issuance_audit_no_truncate
+  BEFORE TRUNCATE ON courier_pickup_code_issuance_audit
+  FOR EACH STATEMENT EXECUTE FUNCTION prevent_courier_pickup_code_audit_mutation();
