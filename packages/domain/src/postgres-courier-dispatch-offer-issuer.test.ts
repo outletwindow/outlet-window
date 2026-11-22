@@ -41,6 +41,21 @@ describe("PostgresCourierDispatchOfferIssuer", () => {
     expect(client.release).toHaveBeenCalledOnce();
   });
 
+  it("checks overlapping courier candidates in stable ID order", async () => {
+    const { pool } = createPool(sql => {
+      if (sql.includes("FROM merchant_suborders")) return { rows: [{ status: "ready_for_pickup" }] };
+      if (sql.includes("FROM courier_delivery_tasks")) return { rows: [] };
+      if (sql.includes("INSERT INTO courier_dispatch_offers")) return { rows: [{ id: "offer-created" }] };
+      return { rowCount: 1 };
+    });
+    const checked: string[] = [];
+    const issuer = new PostgresCourierDispatchOfferIssuer(pool, {
+      async isEligible({ courierId }) { checked.push(courierId); return true; }
+    }, now);
+    await issuer.issue({ ...input, courierIds: ["courier-z", "courier-a"] });
+    expect(checked).toEqual(["courier-a", "courier-z"]);
+  });
+
   it("skips a courier who already has a pending offer without duplicating it", async () => {
     const { pool, calls } = createPool(sql => {
       if (sql.includes("FROM merchant_suborders")) return { rows: [{ status: "ready_for_pickup" }] };
