@@ -9,7 +9,7 @@ export type MerchantPickupCodeRole =
 
 export type IssueCourierPickupCodeOutcome =
   | { outcome: "issued"; code: string; expiresAtUtc: string }
-  | { outcome: "not_found" | "not_ready" | "invalid_actor" };
+  | { outcome: "not_found" | "not_ready" | "invalid_actor" | "rate_limited" };
 
 const ALLOWED_ROLES = new Set<MerchantPickupCodeRole>([
   "merchant_employee", "branch_manager", "merchant_admin", "merchant_owner"
@@ -74,13 +74,43 @@ export class PostgresCourierPickupCodeIssuer {
         return { outcome: "not_ready" };
       }
 
+      const occurredAt = this.now();
+      if (!Number.isFinite(occurredAt.getTime())) throw new Error("invalid_clock");
+      const throttle = await client.query<{ issue_count: number; blocked_until: Date | string | null }>(
+        `INSERT INTO courier_pickup_code_issue_limits
+          (tenant_id, task_id, actor_id, window_started_at, issue_count, updated_at)
+         VALUES ($1,$2,$3,$4,1,$4)
+         ON CONFLICT (tenant_id, task_id, actor_id) DO UPDATE
+         SET window_started_at = CASE
+               WHEN courier_pickup_code_issue_limits.window_started_at <= $4::timestamptz - interval '15 minutes'
+               THEN $4 ELSE courier_pickup_code_issue_limits.window_started_at END,
+             issue_count = CASE
+               WHEN courier_pickup_code_issue_limits.window_started_at <= $4::timestamptz - interval '15 minutes'
+               THEN 1 ELSE courier_pickup_code_issue_limits.issue_count + 1 END,
+             blocked_until = CASE
+               WHEN courier_pickup_code_issue_limits.blocked_until > $4 THEN courier_pickup_code_issue_limits.blocked_until
+               WHEN courier_pickup_code_issue_limits.window_started_at <= $4::timestamptz - interval '15 minutes'
+               THEN NULL
+               WHEN courier_pickup_code_issue_limits.issue_count >= 3
+               THEN $4::timestamptz + interval '15 minutes'
+               ELSE NULL END,
+             updated_at = $4
+         RETURNING issue_count, blocked_until`,
+        [input.tenantId, input.taskId, input.actorId, occurredAt.toISOString()]
+      );
+      const throttleRow = throttle.rows[0];
+      if (!throttleRow) throw new Error("pickup_code_throttle_unavailable");
+      if (throttleRow.issue_count > 3 ||
+          (throttleRow.blocked_until !== null && new Date(throttleRow.blocked_until).getTime() > occurredAt.getTime())) {
+        await client.query("COMMIT");
+        return { outcome: "rate_limited" };
+      }
+
       const code = randomInt(0, 100_000_000).toString().padStart(8, "0");
       const digest = await this.digestCode(code);
       if (typeof digest !== "string" || !/^[a-f0-9]{64,256}$/i.test(digest)) {
         throw new Error("invalid_pickup_code_digest");
       }
-      const occurredAt = this.now();
-      if (!Number.isFinite(occurredAt.getTime())) throw new Error("invalid_clock");
       const expiresAt = new Date(occurredAt.getTime() + this.ttlMilliseconds);
       const revoked = await client.query<{ id: string }>(
         `UPDATE courier_pickup_code_credentials
