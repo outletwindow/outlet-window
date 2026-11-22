@@ -1794,7 +1794,7 @@ describe("merchant branch orders API", () => {
     };
     const listForBranch = vi.fn(async () => [{
       orderId: "order-1", suborderId: "suborder-1", merchantId: "merchant-1",
-      branchId: "branch-1", orderStatus: "confirmed", suborderStatus: "ready_for_pickup",
+      branchId: "branch-1", orderStatus: "confirmed", suborderStatus: "ready_for_pickup" as const,
       subtotalMinor: 12500, currency: "SAR", itemCount: 2,
       createdAtUtc: "2026-11-22T06:00:00.000Z",
       task: { id: "task-1", status: "arrived_at_pickup", version: 3 }
