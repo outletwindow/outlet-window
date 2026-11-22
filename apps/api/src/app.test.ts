@@ -727,6 +727,7 @@ describe("signed payment provider webhook intake", () => {
       paymentReference: "intent-from-provider", amountMinor: 12500, currency: "SAR",
       capturedAtUtc: new Date().toISOString(), orderId: "client-forged-order"
     });
+    const signatureHeader = makeSignature(captureBody);
     const process = vi.fn(async () => ({ outcome: "recorded" as const, captureId: "capture-api-1" }));
     const record = vi.fn(async () => ({ outcome: "received" as const, receiptId: "wrong-path" }));
     const app = buildApp({
@@ -736,13 +737,13 @@ describe("signed payment provider webhook intake", () => {
     try {
       const response = await app.inject({
         method: "POST", url: "/api/v1/webhooks/payments/psp-a",
-        headers: { "content-type": "application/json", "x-payment-signature": makeSignature(captureBody) },
+        headers: { "content-type": "application/json", "x-payment-signature": signatureHeader },
         payload: captureBody
       });
       expect(response.statusCode).toBe(201);
       expect(response.json()).toEqual({ outcome: "recorded", captureId: "capture-api-1" });
       expect(process).toHaveBeenCalledWith({
-        providerKey: "psp-a", rawBody: captureBody, signatureHeader: makeSignature(captureBody)
+        providerKey: "psp-a", rawBody: captureBody, signatureHeader
       });
       expect(record).not.toHaveBeenCalled();
     } finally { await app.close(); }
@@ -1193,5 +1194,684 @@ describe("Moyasar refund webhook route", () => {
       });
       expect(response.statusCode).toBe(409);
     } finally { await collision.close(); }
+  });
+});
+
+
+describe("courier delivery task API", () => {
+  it("lists only the authenticated courier's tenant-scoped tasks", async () => {
+    const courier: Actor = {
+      id: "courier-principal-1", role: "courier", active: true,
+      grants: [{
+        resource: "courier.delivery_task", actions: ["read", "update"],
+        scope: { merchantId: "merchant-courier-1" }
+      }]
+    };
+    const listForCourier = vi.fn(async (input: { tenantId: string; courierId: string }) => [{
+      id: "task-1", tenantId: input.tenantId, orderId: "order-1", suborderId: "suborder-1",
+      courierId: input.courierId, status: "offered" as const, version: 1, updatedAtUtc: new Date().toISOString(),
+      pickupCode: "00427193"
+    }]);
+    const transition = vi.fn(async () => ({
+      outcome: "updated" as const,
+      task: { id: "task-1", tenantId: "merchant-courier-1", orderId: "order-1",
+        suborderId: "suborder-1", courierId: courier.id, status: "accepted" as const,
+        version: 2, updatedAtUtc: new Date().toISOString(), pickupCode: "00427193" }
+    }));
+    const api = buildApp({ resolveActor: async () => courier, courierTasks: { listForCourier, transition } });
+    await api.ready();
+    try {
+      const listed = await api.inject({ method: "GET", url: "/api/v1/courier/tasks" });
+      expect(listed.statusCode).toBe(200);
+      expect(listed.json().tasks).toHaveLength(1);
+      expect(listed.json().tasks[0]).not.toHaveProperty("pickupCode");
+      expect(listForCourier).toHaveBeenCalledWith({
+        tenantId: "merchant-courier-1", courierId: courier.id, limit: 100
+      });
+
+      const changed = await api.inject({
+        method: "PATCH", url: "/api/v1/courier/tasks/task-1/status",
+        payload: { status: "accepted", expectedVersion: 1 }
+      });
+      expect(changed.statusCode).toBe(200);
+      expect(changed.json().task).not.toHaveProperty("pickupCode");
+      expect(transition).toHaveBeenCalledWith({
+        tenantId: "merchant-courier-1", taskId: "task-1", courierId: courier.id,
+        nextStatus: "accepted", expectedVersion: 1
+      });
+    } finally {
+      await api.close();
+    }
+  });
+
+  it("rejects malformed pickup codes before attempting a task transition", async () => {
+    const courier: Actor = {
+      id: "courier-pickup-format", role: "courier", active: true,
+      grants: [{
+        resource: "courier.delivery_task", actions: ["update"],
+        scope: { merchantId: "merchant-pickup-format" }
+      }]
+    };
+    const transition = vi.fn(async () => ({ outcome: "not_found" as const }));
+    const api = buildApp({ resolveActor: async () => courier, courierTasks: {
+      listForCourier: vi.fn(async () => []), transition
+    } });
+    await api.ready();
+    try {
+      for (const pickupCode of ["1234567", "123456789", "12A45678", " 1234567"]) {
+        const response = await api.inject({
+          method: "PATCH", url: "/api/v1/courier/tasks/task-pickup-format/status",
+          payload: { status: "picked_up", expectedVersion: 1, pickupCode }
+        });
+        expect(response.statusCode).toBe(400);
+        expect(response.json()).toEqual({ error: "invalid_courier_task_transition" });
+      }
+      expect(transition).not.toHaveBeenCalled();
+    } finally {
+      await api.close();
+    }
+  });
+
+  it("updates tasks across every explicitly granted merchant tenant", async () => {
+    const courier: Actor = {
+      id: "courier-multi-tenant", role: "courier", active: true,
+      grants: [
+        { resource: "courier.delivery_task", actions: ["read", "update"], scope: { merchantId: "merchant-one" } },
+        { resource: "courier.delivery_task", actions: ["read", "update"], scope: { merchantId: "merchant-two" } }
+      ]
+    };
+    const transition = vi.fn(async (input: { tenantId: string }) => input.tenantId === "merchant-one"
+      ? { outcome: "not_found" as const }
+      : { outcome: "updated" as const, task: {
+          id: "task-from-second-tenant", tenantId: "merchant-two", orderId: "order-2",
+          suborderId: "suborder-2", courierId: courier.id, status: "accepted" as const,
+          version: 2, updatedAtUtc: new Date().toISOString()
+        } });
+    const api = buildApp({ resolveActor: async () => courier, courierTasks: {
+      listForCourier: vi.fn(async () => []), transition
+    } });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "PATCH", url: "/api/v1/courier/tasks/task-from-second-tenant/status",
+        payload: { status: "accepted", expectedVersion: 1 }
+      });
+      expect(response.statusCode).toBe(200);
+      expect(transition).toHaveBeenNthCalledWith(1, expect.objectContaining({ tenantId: "merchant-one" }));
+      expect(transition).toHaveBeenNthCalledWith(2, expect.objectContaining({ tenantId: "merchant-two" }));
+      expect(response.json().task.tenantId).toBe("merchant-two");
+    } finally {
+      await api.close();
+    }
+  });
+
+  it("does not accept a courier identifier from the request body", async () => {
+    const courier: Actor = {
+      id: "courier-principal-2", role: "courier", active: true,
+      grants: [{
+        resource: "courier.delivery_task", actions: ["update"],
+        scope: { merchantId: "merchant-courier-2" }
+      }]
+    };
+    const transition = vi.fn(async () => ({ outcome: "not_found" as const }));
+    const api = buildApp({ resolveActor: async () => courier, courierTasks: {
+      listForCourier: vi.fn(async () => []), transition
+    } });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "PATCH", url: "/api/v1/courier/tasks/task-2/status",
+        payload: { courierId: "attacker-id", status: "accepted", expectedVersion: 1 }
+      });
+      expect(response.statusCode).toBe(404);
+      expect(transition).toHaveBeenCalledWith(expect.objectContaining({
+        courierId: courier.id, tenantId: "merchant-courier-2"
+      }));
+    } finally {
+      await api.close();
+    }
+  });
+  it("issues and finalizes delivery-proof uploads only within the courier task scope", async () => {
+    const courier: Actor = {
+      id: "courier-proof-1", role: "courier", active: true,
+      grants: [{ resource: "courier.delivery_task", actions: ["update"], scope: { merchantId: "merchant-proof-1" } }]
+    };
+    const requestProofUpload = vi.fn(async () => ({
+      outcome: "upload_created" as const, uploadId: "upload_12345678",
+      uploadUrl: "https://storage.example.invalid/signed-upload",
+      expiresAtUtc: "2026-11-17T16:00:00.000Z"
+    }));
+    const finalizeProofUpload = vi.fn(async () => ({
+      outcome: "verified" as const, evidenceId: "evidence-1",
+      verifiedAtUtc: "2026-11-17T15:59:00.000Z"
+    }));
+    const api = buildApp({
+      resolveActor: async () => courier,
+      courierDeliveryEvidence: { requestProofUpload, finalizeProofUpload }
+    });
+    await api.ready();
+    try {
+      const created = await api.inject({
+        method: "POST", url: "/api/v1/courier/tasks/task-proof/proof-upload",
+        payload: { contentType: "image/jpeg", contentLength: 2048, contentSha256: "a".repeat(64) }
+      });
+      expect(created.statusCode).toBe(201);
+      expect(created.json()).toMatchObject({ uploadId: "upload_12345678", requiredHeaders: { "content-type": "image/jpeg" } });
+      expect(requestProofUpload).toHaveBeenCalledWith({
+        tenantId: "merchant-proof-1", taskId: "task-proof", courierId: courier.id,
+        contentType: "image/jpeg", contentLength: 2048, contentSha256: "a".repeat(64)
+      });
+
+      const completed = await api.inject({
+        method: "POST",
+        url: "/api/v1/courier/tasks/task-proof/proof-upload/upload_12345678/complete"
+      });
+      expect(completed.statusCode).toBe(200);
+      expect(completed.json()).toMatchObject({ outcome: "verified", evidenceId: "evidence-1" });
+      expect(finalizeProofUpload).toHaveBeenCalledWith({
+        tenantId: "merchant-proof-1", taskId: "task-proof", courierId: courier.id,
+        uploadId: "upload_12345678"
+      });
+    } finally {
+      await api.close();
+    }
+  });
+
+  it("rejects unsafe delivery-proof upload metadata before calling storage", async () => {
+    const courier: Actor = {
+      id: "courier-proof-2", role: "courier", active: true,
+      grants: [{ resource: "courier.delivery_task", actions: ["update"], scope: { merchantId: "merchant-proof-2" } }]
+    };
+    const requestProofUpload = vi.fn();
+    const api = buildApp({
+      resolveActor: async () => courier,
+      courierDeliveryEvidence: {
+        requestProofUpload,
+        finalizeProofUpload: vi.fn()
+      }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "POST", url: "/api/v1/courier/tasks/task-proof/proof-upload",
+        payload: { contentType: "text/html", contentLength: 2048, contentSha256: "not-a-sha256" }
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toEqual({ error: "invalid_delivery_proof_upload" });
+      expect(requestProofUpload).not.toHaveBeenCalled();
+    } finally {
+      await api.close();
+    }
+  });
+
+});
+
+
+describe("courier dispatch offer responses", () => {
+  const courierActor: Actor = {
+    id: "courier-1", role: "courier", active: true,
+    grants: [{
+      resource: "courier.delivery_task", actions: ["read", "update"],
+      scope: { merchantId: "tenant-1" }
+    }]
+  };
+
+  it("routes a verified courier's offer decision through the transactional command", async () => {
+    const respond = vi.fn(async () => ({ outcome: "accepted" as const, taskId: "task-1", offerVersion: 3 }));
+    const courierApp = buildApp({
+      resolveActor: async () => courierActor,
+      courierDispatchOfferCommands: { respond }
+    });
+    await courierApp.ready();
+    try {
+      const response = await courierApp.inject({
+        method: "POST", url: "/api/v1/courier/offers/offer-12345678/respond",
+        payload: { decision: "accepted", expectedVersion: 2 }
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ outcome: "accepted", taskId: "task-1", offerVersion: 3 });
+      expect(respond).toHaveBeenCalledWith({
+        tenantId: "tenant-1", offerId: "offer-12345678", courierId: "courier-1",
+        expectedVersion: 2, decision: "accepted"
+      });
+    } finally { await courierApp.close(); }
+  });
+
+  it("rejects invalid decline requests before calling the command store", async () => {
+    const respond = vi.fn();
+    const courierApp = buildApp({
+      resolveActor: async () => courierActor,
+      courierDispatchOfferCommands: { respond }
+    });
+    await courierApp.ready();
+    try {
+      const response = await courierApp.inject({
+        method: "POST", url: "/api/v1/courier/offers/offer-12345678/respond",
+        payload: { decision: "declined", expectedVersion: 2, reason: " " }
+      });
+      expect(response.statusCode).toBe(400);
+      expect(respond).not.toHaveBeenCalled();
+    } finally { await courierApp.close(); }
+  });
+
+  it("does not allow non-couriers to respond to offers", async () => {
+    const respond = vi.fn();
+    const nonCourierApp = buildApp({
+      resolveActor: async () => ({ ...courierActor, role: "customer" as const, grants: courierActor.grants }),
+      courierDispatchOfferCommands: { respond }
+    });
+    await nonCourierApp.ready();
+    try {
+      const response = await nonCourierApp.inject({
+        method: "POST", url: "/api/v1/courier/offers/offer-12345678/respond",
+        payload: { decision: "accepted", expectedVersion: 2 }
+      });
+      expect(response.statusCode).toBe(403);
+      expect(respond).not.toHaveBeenCalled();
+    } finally { await nonCourierApp.close(); }
+  });
+});
+
+
+describe("courier availability endpoint", () => {
+  const courier: Actor = {
+    id: "courier-availability-1", role: "courier", active: true,
+    grants: [{
+      resource: "courier.delivery_task", actions: ["update"],
+      scope: { merchantId: "merchant-availability-1" }
+    }]
+  };
+
+  it("updates the authenticated courier availability and heartbeat", async () => {
+    const setAvailability = vi.fn(async (input: { courierId: string; available: boolean }) => ({
+      outcome: "updated" as const, available: input.available, updatedAtUtc: "2026-11-19T10:00:00.000Z"
+    }));
+    const api = buildApp({ resolveActor: async () => courier, courierAvailability: { setAvailability } });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "PUT", url: "/api/v1/courier/availability", payload: { available: true }
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({
+        outcome: "updated", available: true, updatedAtUtc: "2026-11-19T10:00:00.000Z"
+      });
+      expect(setAvailability).toHaveBeenCalledWith({ courierId: courier.id, available: true });
+    } finally { await api.close(); }
+  });
+
+  it("rejects malformed availability payloads", async () => {
+    const setAvailability = vi.fn();
+    const api = buildApp({ resolveActor: async () => courier, courierAvailability: { setAvailability } });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "PUT", url: "/api/v1/courier/availability",
+        payload: { available: true, courierId: "attacker-controlled" }
+      });
+      expect(response.statusCode).toBe(400);
+      expect(setAvailability).not.toHaveBeenCalled();
+    } finally { await api.close(); }
+  });
+
+  it("does not allow a non-courier to change courier availability", async () => {
+    const setAvailability = vi.fn();
+    const api = buildApp({
+      resolveActor: async () => ({ ...courier, role: "customer" as const }),
+      courierAvailability: { setAvailability }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "PUT", url: "/api/v1/courier/availability", payload: { available: true }
+      });
+      expect(response.statusCode).toBe(403);
+      expect(setAvailability).not.toHaveBeenCalled();
+    } finally { await api.close(); }
+  });
+
+  it("does not enable an unapproved courier", async () => {
+    const setAvailability = vi.fn(async () => ({ outcome: "not_eligible" as const }));
+    const api = buildApp({ resolveActor: async () => courier, courierAvailability: { setAvailability } });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "PUT", url: "/api/v1/courier/availability", payload: { available: true }
+      });
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toEqual({ error: "courier_profile_not_eligible" });
+    } finally { await api.close(); }
+  });
+});
+
+
+describe("platform courier governance endpoints", () => {
+  const admin: Actor = {
+    id: "platform-admin-1", role: "platform_admin", active: true,
+    grants: [{
+      resource: "platform.courier_profile", actions: ["read", "create", "approve", "manage_access"],
+      scope: { platform: true }
+    }]
+  };
+  const auditEvents = { append: vi.fn(async () => "inserted" as const) };
+
+  it("creates a pending courier profile only through a platform administrator", async () => {
+    const createProfile = vi.fn(async () => "created" as const);
+    const api = buildApp({
+      resolveActor: async () => admin, auditEvents,
+      courierAdminProfiles: {
+        listVehicles: vi.fn(async () => []), listProfiles: vi.fn(async () => []), createProfile,
+        reviewProfile: vi.fn(async () => "updated" as const),
+        registerVehicle: vi.fn(async () => "created" as const),
+        reviewVehicle: vi.fn(async () => "updated" as const),
+        grantServiceArea: vi.fn(async () => "granted" as const),
+        revokeServiceArea: vi.fn(async () => "revoked" as const)
+      }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "POST", url: "/api/v1/platform/couriers",
+        payload: { courierId: "courier-new", maxConcurrentTasks: 2 }
+      });
+      expect(response.statusCode).toBe(201);
+      expect(response.json()).toMatchObject({
+        outcome: "created", courierId: "courier-new", accountStatus: "pending", verificationStatus: "pending"
+      });
+      expect(createProfile).toHaveBeenCalledWith({ courierId: "courier-new", maxConcurrentTasks: 2 });
+      expect(auditEvents.append).toHaveBeenCalled();
+    } finally { await api.close(); }
+  });
+
+  it("denies merchant actors access to platform courier governance", async () => {
+    const createProfile = vi.fn();
+    const api = buildApp({
+      resolveActor: async () => ({ ...admin, role: "merchant_owner" as const, grants: [] }),
+      courierAdminProfiles: {
+        listVehicles: vi.fn(async () => []), listProfiles: vi.fn(async () => []), createProfile,
+        reviewProfile: vi.fn(async () => "updated" as const),
+        registerVehicle: vi.fn(async () => "created" as const),
+        reviewVehicle: vi.fn(async () => "updated" as const),
+        grantServiceArea: vi.fn(async () => "granted" as const),
+        revokeServiceArea: vi.fn(async () => "revoked" as const)
+      }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "POST", url: "/api/v1/platform/couriers",
+        payload: { courierId: "courier-new" }
+      });
+      expect(response.statusCode).toBe(403);
+      expect(createProfile).not.toHaveBeenCalled();
+    } finally { await api.close(); }
+  });
+
+  it("registers a pending vehicle through the platform governance adapter", async () => {
+    const registerVehicle = vi.fn(async () => "created" as const);
+    const api = buildApp({
+      resolveActor: async () => admin, auditEvents,
+      courierAdminProfiles: {
+        listVehicles: vi.fn(async () => []), listProfiles: vi.fn(async () => []), createProfile: vi.fn(async () => "created" as const),
+        reviewProfile: vi.fn(async () => "updated" as const), registerVehicle,
+        reviewVehicle: vi.fn(async () => "updated" as const),
+        grantServiceArea: vi.fn(async () => "granted" as const),
+        revokeServiceArea: vi.fn(async () => "revoked" as const)
+      }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "POST", url: "/api/v1/platform/courier-vehicles",
+        payload: { courierId: "courier-1", vehicleType: "car", capacityWeightGrams: 100000, capacityVolumeLiters: 500 }
+      });
+      expect(response.statusCode).toBe(201);
+      expect(response.json()).toMatchObject({ outcome: "created", verificationStatus: "pending", active: false });
+      expect(registerVehicle).toHaveBeenCalledWith(expect.objectContaining({
+        courierId: "courier-1", vehicleType: "car", capacityWeightGrams: 100000, capacityVolumeLiters: 500
+      }));
+    } finally { await api.close(); }
+  });
+  it("lists courier vehicles only for a platform administrator", async () => {
+    const listVehicles = vi.fn(async () => [{
+      vehicleId: "vehicle-1", courierId: "courier-1", vehicleType: "car" as const,
+      verificationStatus: "pending" as const, capacityWeightGrams: 50000, capacityVolumeLiters: 200,
+      active: false, createdAtUtc: "2026-11-22T00:00:00.000Z", updatedAtUtc: "2026-11-22T00:00:00.000Z"
+    }]);
+    const api = buildApp({
+      resolveActor: async () => admin, auditEvents,
+      courierAdminProfiles: {
+        listVehicles, listProfiles: vi.fn(async () => []), createProfile: vi.fn(async () => "created" as const),
+        reviewProfile: vi.fn(async () => "updated" as const), registerVehicle: vi.fn(async () => "created" as const),
+        reviewVehicle: vi.fn(async () => "updated" as const), grantServiceArea: vi.fn(async () => "granted" as const),
+        revokeServiceArea: vi.fn(async () => "revoked" as const)
+      }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({ method: "GET", url: "/api/v1/platform/courier-vehicles?status=pending&limit=25" });
+      expect(response.statusCode).toBe(200);
+      expect(response.json().vehicles).toHaveLength(1);
+      expect(listVehicles).toHaveBeenCalledWith({ status: "pending", limit: 25 });
+    } finally { await api.close(); }
+  });
+
+});
+
+describe("merchant courier pickup-code issuance API", () => {
+  const owner: Actor = {
+    id: "merchant-owner-issuer", role: "merchant_owner", active: true,
+    grants: [{
+      resource: "merchant.order", actions: ["update"],
+      scope: { merchantId: "merchant-1", branchId: "branch-1", orderId: "order-1" }
+    }]
+  };
+
+  it("returns the one-time code only after exact merchant order authorization and issuer success", async () => {
+    const issue = vi.fn(async () => ({
+      outcome: "issued" as const, code: "00427193", expiresAtUtc: "2026-11-22T05:15:00.000Z"
+    }));
+    const api = buildApp({
+      resolveActor: async () => owner,
+      resolveMerchantTenantId: async merchantId => merchantId === "merchant-1" ? "tenant-1" : null,
+      courierPickupCodeIssuer: { issue }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "POST",
+        url: "/api/v1/merchants/merchant-1/branches/branch-1/orders/order-1/suborders/suborder-1/pickup-code",
+        payload: { taskId: "task-1" }
+      });
+      expect(response.statusCode).toBe(201);
+      expect(response.json()).toEqual({
+        outcome: "issued", code: "00427193", expiresAtUtc: "2026-11-22T05:15:00.000Z"
+      });
+      expect(issue).toHaveBeenCalledWith({
+        tenantId: "tenant-1", merchantId: "merchant-1", branchId: "branch-1",
+        orderId: "order-1", suborderId: "suborder-1", taskId: "task-1",
+        actorId: owner.id, actorRole: "merchant_owner"
+      });
+    } finally { await api.close(); }
+  });
+
+  it("returns 429 with a retry hint when pickup-code issuance is throttled", async () => {
+    const issue = vi.fn(async () => ({ outcome: "rate_limited" as const }));
+    const api = buildApp({
+      resolveActor: async () => owner,
+      resolveMerchantTenantId: async () => "tenant-1",
+      courierPickupCodeIssuer: { issue }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "POST",
+        url: "/api/v1/merchants/merchant-1/branches/branch-1/orders/order-1/suborders/suborder-1/pickup-code",
+        payload: { taskId: "task-1" }
+      });
+      expect(response.statusCode).toBe(429);
+      expect(response.headers["retry-after"]).toBe("900");
+      expect(response.json()).toEqual({
+        error: "pickup_code_issuance_rate_limited", retryAfterSeconds: 900
+      });
+    } finally { await api.close(); }
+  });
+
+  it("denies cross-branch requests before calling the pickup-code issuer", async () => {
+    const issue = vi.fn();
+    const api = buildApp({
+      resolveActor: async () => owner,
+      resolveMerchantTenantId: async () => "tenant-1",
+      courierPickupCodeIssuer: { issue }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "POST",
+        url: "/api/v1/merchants/merchant-1/branches/branch-2/orders/order-1/suborders/suborder-1/pickup-code",
+        payload: { taskId: "task-1" }
+      });
+      expect(response.statusCode).toBe(403);
+      expect(issue).not.toHaveBeenCalled();
+    } finally { await api.close(); }
+  });
+
+  it("rejects courier actors and malformed task identifiers", async () => {
+    const courier: Actor = {
+      id: "courier-1", role: "courier", active: true,
+      grants: [{
+        resource: "merchant.order", actions: ["update"],
+        scope: { merchantId: "merchant-1", branchId: "branch-1", orderId: "order-1" }
+      }]
+    };
+    const issue = vi.fn();
+    const api = buildApp({
+      resolveActor: async () => courier,
+      resolveMerchantTenantId: async () => "tenant-1",
+      courierPickupCodeIssuer: { issue }
+    });
+    await api.ready();
+    try {
+      const denied = await api.inject({
+        method: "POST",
+        url: "/api/v1/merchants/merchant-1/branches/branch-1/orders/order-1/suborders/suborder-1/pickup-code",
+        payload: { taskId: "task-1" }
+      });
+      expect(denied.statusCode).toBe(403);
+      expect(issue).not.toHaveBeenCalled();
+    } finally { await api.close(); }
+
+    const employee: Actor = {
+      ...owner, role: "merchant_employee"
+    };
+    const employeeApi = buildApp({
+      resolveActor: async () => employee,
+      resolveMerchantTenantId: async () => "tenant-1",
+      courierPickupCodeIssuer: { issue }
+    });
+    await employeeApi.ready();
+    try {
+      const malformed = await employeeApi.inject({
+        method: "POST",
+        url: "/api/v1/merchants/merchant-1/branches/branch-1/orders/order-1/suborders/suborder-1/pickup-code",
+        payload: { taskId: "bad id", plaintextCode: "client-controlled" }
+      });
+      expect(malformed.statusCode).toBe(400);
+      expect(issue).not.toHaveBeenCalled();
+    } finally { await employeeApi.close(); }
+  });
+});
+
+
+describe("merchant branch orders API", () => {
+  it("returns branch-scoped orders and the latest pickup task for authorized merchant staff", async () => {
+    const merchant: Actor = {
+      id: "merchant-staff-1", role: "merchant_admin", active: true,
+      grants: [{
+        resource: "merchant.order", actions: ["read"],
+        scope: { merchantId: "merchant-1", branchId: "branch-1" }
+      }]
+    };
+    const listForBranch = vi.fn(async () => [{
+      orderId: "order-1", suborderId: "suborder-1", merchantId: "merchant-1",
+      branchId: "branch-1", orderStatus: "confirmed", suborderStatus: "ready_for_pickup" as const,
+      subtotalMinor: 12500, currency: "SAR", itemCount: 2,
+      createdAtUtc: "2026-11-22T06:00:00.000Z",
+      task: { id: "task-1", status: "arrived_at_pickup", version: 3 }
+    }]);
+    const api = buildApp({
+      resolveActor: async () => merchant,
+      resolveMerchantTenantId: async id => id === "merchant-1" ? "tenant-1" : null,
+      merchantOrderReader: { listForBranch }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "GET",
+        url: "/api/v1/merchants/merchant-1/branches/branch-1/orders?status=ready_for_pickup&limit=25"
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json().orders[0]).toMatchObject({
+        orderId: "order-1", suborderId: "suborder-1",
+        task: { id: "task-1", status: "arrived_at_pickup", version: 3 }
+      });
+      expect(listForBranch).toHaveBeenCalledWith({
+        tenantId: "tenant-1", merchantId: "merchant-1", branchId: "branch-1",
+        status: "ready_for_pickup", limit: 25
+      });
+    } finally { await api.close(); }
+  });
+
+  it("rejects an out-of-scope branch before reading orders", async () => {
+    const merchant: Actor = {
+      id: "merchant-staff-2", role: "merchant_admin", active: true,
+      grants: [{
+        resource: "merchant.order", actions: ["read"],
+        scope: { merchantId: "merchant-1", branchId: "branch-1" }
+      }]
+    };
+    const listForBranch = vi.fn(async () => []);
+    const api = buildApp({
+      resolveActor: async () => merchant,
+      resolveMerchantTenantId: async () => "tenant-1",
+      merchantOrderReader: { listForBranch }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "GET",
+        url: "/api/v1/merchants/merchant-1/branches/branch-other/orders"
+      });
+      expect(response.statusCode).toBe(403);
+      expect(listForBranch).not.toHaveBeenCalled();
+    } finally { await api.close(); }
+  });
+
+  it("rejects invalid order status and limit parameters", async () => {
+    const merchant: Actor = {
+      id: "merchant-staff-3", role: "merchant_admin", active: true,
+      grants: [{
+        resource: "merchant.order", actions: ["read"],
+        scope: { merchantId: "merchant-1", branchId: "branch-1" }
+      }]
+    };
+    const listForBranch = vi.fn(async () => []);
+    const api = buildApp({
+      resolveActor: async () => merchant,
+      resolveMerchantTenantId: async () => "tenant-1",
+      merchantOrderReader: { listForBranch }
+    });
+    await api.ready();
+    try {
+      const invalidStatus = await api.inject({
+        method: "GET", url: "/api/v1/merchants/merchant-1/branches/branch-1/orders?status=not-a-status"
+      });
+      const invalidLimit = await api.inject({
+        method: "GET", url: "/api/v1/merchants/merchant-1/branches/branch-1/orders?limit=500"
+      });
+      expect(invalidStatus.statusCode).toBe(400);
+      expect(invalidLimit.statusCode).toBe(400);
+      expect(listForBranch).not.toHaveBeenCalled();
+    } finally { await api.close(); }
   });
 });

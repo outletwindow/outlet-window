@@ -270,6 +270,39 @@ jobs:
         env:
           PGPASSWORD: ci_only_password
         run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0050_merchant_settlement_batches.integration.sql
+      - name: Verify tenant-scoped courier delivery tasks and immutable evidence
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0063_courier_delivery_tasks.integration.sql
+      - name: Verify courier proof upload tenant, courier, and evidence integrity
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0064_courier_delivery_proof_uploads.integration.sql
+      - name: Verify courier dispatch offer uniqueness and immutable lifecycle events
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0065_courier_dispatch_offers.integration.sql
+      - name: Verify only one active courier assignment per merchant suborder
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0066_courier_one_active_assignment_per_suborder.integration.sql
+      - name: Verify durable courier profiles and dispatch eligibility constraints
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0067_courier_profiles_and_dispatch_eligibility.integration.sql
+
+      - name: Verify immutable merchant pickup-code issuance audit
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0068_courier_pickup_code_issuance_audit.integration.sql
+      - name: Verify durable pickup-code issuance throttling constraints
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0069_courier_pickup_code_issue_limits.integration.sql
+      - name: Verify merchant order reader tenant and branch isolation
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0070_merchant_order_reader.integration.sql
       - name: Validate automatic runtime Compose configuration
         env:
           DATABASE_URL: postgres://outlet_window:ci_only_password@127.0.0.1:5432/outlet_window_test
@@ -304,3 +337,7 @@ jobs:
         run: pnpm test
       - name: Build
         run: pnpm build
+      - name: Courier app typecheck and lint
+        run: pnpm --filter @outlet-window/courier-web typecheck && pnpm --filter @outlet-window/courier-web lint
+      - name: Courier app unit tests and static build
+        run: pnpm --filter @outlet-window/courier-web test && pnpm --filter @outlet-window/courier-web build
