@@ -49,7 +49,6 @@ export class PostgresCourierDispatchOfferIssuer {
         [input.tenantId, input.suborderId]
       );
       if (!suborder.rowCount || suborder.rows[0]?.status !== "ready_for_pickup") {
-        await client.query("ROLLBACK");
         throw new Error("courier_dispatch_suborder_not_ready");
       }
 
@@ -61,7 +60,6 @@ export class PostgresCourierDispatchOfferIssuer {
         [input.tenantId, input.suborderId]
       );
       if (assigned.rowCount) {
-        await client.query("ROLLBACK");
         throw new Error("courier_dispatch_suborder_already_assigned");
       }
 
