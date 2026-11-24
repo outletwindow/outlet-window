@@ -68,3 +68,38 @@ describe("PostgresMerchantSettlementReader", () => {
     })).resolves.toMatchObject({ status: "draft", approvedAtUtc: null, lines: [] });
   });
 });
+
+
+describe("PostgresMerchantSettlementReader.list", () => {
+  it("returns tenant- and merchant-scoped batch summaries with aggregate totals", async () => {
+    const query = vi.fn(async (_sql: string, _params?: unknown[]) => ({
+      rows: [{
+        batch_id: "batch-1", merchant_id: "merchant-1", currency: "SAR",
+        period_start: "2026-11-01T00:00:00.000Z", period_end: "2026-11-15T00:00:00.000Z",
+        status: "approved" as const, created_at: "2026-11-15T00:00:00.000Z",
+        approved_at: "2026-11-16T00:00:00.000Z", line_count: "2",
+        gross_minor: "20000", deductions_minor: "1500", net_minor: "18500"
+      }], rowCount: 1
+    }));
+    await expect(readerFor(query).list({
+      tenantId: "tenant-1", merchantId: "merchant-1", status: "approved", limit: 25
+    })).resolves.toEqual([{
+      id: "batch-1", merchantId: "merchant-1", currency: "SAR",
+      periodStartUtc: "2026-11-01T00:00:00.000Z",
+      periodEndUtc: "2026-11-15T00:00:00.000Z", status: "approved",
+      createdAtUtc: "2026-11-15T00:00:00.000Z",
+      approvedAtUtc: "2026-11-16T00:00:00.000Z",
+      lineCount: 2, grossMinor: 20000, deductionsMinor: 1500, netMinor: 18500
+    }]);
+    expect(query.mock.calls[0]?.[0]).toContain("b.tenant_id=$1 AND b.merchant_id=$2");
+    expect(query.mock.calls[0]?.[1]).toEqual(["tenant-1", "merchant-1", "approved", 25]);
+  });
+
+  it("rejects an invalid result limit before querying", async () => {
+    const query = vi.fn();
+    await expect(readerFor(query).list({
+      tenantId: "tenant-1", merchantId: "merchant-1", limit: 101
+    })).rejects.toThrow("invalid_merchant_settlement_limit");
+    expect(query).not.toHaveBeenCalled();
+  });
+});
