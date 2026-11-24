@@ -8,6 +8,13 @@ type AdjustmentRow = {
   status: string; expires_at: Date | string; provider_key?: string | null; provider_reference?: string | null;
 };
 
+export interface RefundComponentAllocationInput {
+  suborderId: string;
+  componentKind: "product_subtotal" | "delivery";
+  amountMinor: number;
+  sourceReference?: string;
+}
+
 export type PaymentAdjustmentOutcome =
   | { outcome: "created" | "consented" | "declined" | "provider_pending" | "provider_confirmed" | "provider_failed" | "expired" | "not_found" | "conflict" };
 
@@ -18,6 +25,7 @@ export class PostgresPaymentAdjustmentStore {
     tenantId: string; orderId: string; customerId: string; actorId: string;
     idempotencyKey: string; quoteReference: string; currency: string;
     previousTotalMinor: number; proposedTotalMinor: number; expiresAtUtc: string;
+    refundAllocations?: readonly RefundComponentAllocationInput[];
   }): Promise<PaymentAdjustmentOutcome & { adjustmentId?: string; amountMinor?: number; direction?: "additional_charge" | "refund" }> {
     if (!input.tenantId.trim() || !input.orderId.trim() || !input.customerId.trim() ||
         input.actorId !== input.customerId || !/^[A-Z]{3}$/.test(input.currency) ||
@@ -35,6 +43,30 @@ export class PostgresPaymentAdjustmentStore {
     }
     const direction = proposed > previous ? "additional_charge" : "refund";
     const amount = Number(proposed > previous ? proposed - previous : previous - proposed);
+    const refundAllocations = input.refundAllocations ?? [];
+    if (direction === "refund") {
+      if (!Array.isArray(input.refundAllocations) || refundAllocations.length === 0 ||
+          refundAllocations.length > 100) throw new Error("refund_component_allocation_required");
+      const allocationKeys = new Set<string>();
+      let allocatedTotal = 0n;
+      for (const allocation of refundAllocations) {
+        if (!allocation.suborderId.trim() || allocation.suborderId.length > 200 ||
+            !Number.isSafeInteger(allocation.amountMinor) || allocation.amountMinor <= 0 ||
+            !["product_subtotal", "delivery"].includes(allocation.componentKind) ||
+            (allocation.componentKind === "delivery" &&
+              (!allocation.sourceReference?.trim() || allocation.sourceReference.length > 200)) ||
+            (allocation.componentKind === "product_subtotal" && allocation.sourceReference !== undefined)) {
+          throw new Error("invalid_refund_component_allocation");
+        }
+        const key = allocation.suborderId + ":" + allocation.componentKind;
+        if (allocationKeys.has(key)) throw new Error("duplicate_refund_component_allocation");
+        allocationKeys.add(key);
+        allocatedTotal += BigInt(allocation.amountMinor);
+      }
+      if (allocatedTotal !== BigInt(amount)) throw new Error("refund_component_allocation_total_mismatch");
+    } else if (refundAllocations.length > 0) {
+      throw new Error("additional_charge_must_not_include_refund_allocations");
+    }
     const id = randomUUID();
     const client = await this.pool.connect();
     try {
@@ -64,14 +96,40 @@ export class PostgresPaymentAdjustmentStore {
         await client.query("COMMIT");
         if (existing.rowCount !== 1) return { outcome: "conflict" };
         const prior = existing.rows[0]!;
+        const existingAllocations = await client.query<{
+          suborder_id: string; component_kind: "product_subtotal" | "delivery";
+          source_reference: string | null; amount_minor: string;
+        }>(
+          "SELECT suborder_id,component_kind,source_reference,amount_minor FROM customer_payment_adjustment_allocations WHERE tenant_id=$1 AND adjustment_id=$2 ORDER BY suborder_id,component_kind",
+          [input.tenantId,prior.id]
+        );
+        const expectedAllocations = refundAllocations.map(line => ({
+          suborder_id: line.suborderId, component_kind: line.componentKind,
+          source_reference: line.sourceReference ?? null, amount_minor: String(line.amountMinor)
+        })).sort((a,b) => a.suborder_id.localeCompare(b.suborder_id) || a.component_kind.localeCompare(b.component_kind));
+        const priorAllocations = existingAllocations.rows.map(line => ({
+          suborder_id: line.suborder_id, component_kind: line.component_kind,
+          source_reference: line.source_reference, amount_minor: String(line.amount_minor)
+        }));
+        const sameAllocations = JSON.stringify(priorAllocations) === JSON.stringify(expectedAllocations);
         const sameRequest = prior.order_id === input.orderId && prior.customer_id === input.customerId &&
           prior.currency === input.currency && BigInt(prior.previous_total_minor) === previous &&
-          BigInt(prior.proposed_total_minor) === proposed && prior.quote_reference === input.quoteReference;
+          BigInt(prior.proposed_total_minor) === proposed && prior.quote_reference === input.quoteReference &&
+          sameAllocations;
         return sameRequest ? {
           outcome: "created", adjustmentId: prior.id,
           amountMinor: Number(prior.amount_minor),
           direction: prior.adjustment_direction as "additional_charge" | "refund"
         } : { outcome: "conflict" };
+      }
+      for (const allocation of refundAllocations) {
+        await client.query(
+          `INSERT INTO customer_payment_adjustment_allocations
+           (id,tenant_id,adjustment_id,order_id,suborder_id,component_kind,source_reference,amount_minor,currency)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [randomUUID(),input.tenantId,id,input.orderId,allocation.suborderId,
+            allocation.componentKind,allocation.sourceReference ?? null,allocation.amountMinor,input.currency]
+        );
       }
       await client.query(
         `INSERT INTO customer_payment_adjustment_events
@@ -79,7 +137,8 @@ export class PostgresPaymentAdjustmentStore {
          VALUES ($1,$2,$3,$4,'created',$5,$6::jsonb)`,
         [randomUUID(),input.tenantId,id,input.actorId,now.toISOString(),
           JSON.stringify({previousTotalMinor:input.previousTotalMinor,proposedTotalMinor:input.proposedTotalMinor,
-            amountMinor:amount,currency:input.currency,quoteReference:input.quoteReference})]
+            amountMinor:amount,currency:input.currency,quoteReference:input.quoteReference,
+            refundAllocations})]
       );
       await client.query("COMMIT");
       return { outcome:"created",adjustmentId:id,amountMinor:amount,direction };
