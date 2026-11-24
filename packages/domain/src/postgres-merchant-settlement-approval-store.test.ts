@@ -63,6 +63,19 @@ describe("PostgresMerchantSettlementApprovalStore", () => {
     expect(fake.statements.at(-1)).toBe("COMMIT");
   });
 
+
+  it("lists only pending review requests with a bounded limit", async () => {
+    const fake = poolWith(sql => sql.includes("WHERE status='pending'")
+      ? { rows: [approvalRow], rowCount: 1 }
+      : { rows: [], rowCount: 0 });
+    const result = await new PostgresMerchantSettlementApprovalStore(fake.pool).listPending({ limit: 25 });
+    expect(result).toHaveLength(1);
+    expect(result[0]?.status).toBe("pending");
+    expect(fake.statements[0]).toContain("WHERE status='pending'");
+    await expect(new PostgresMerchantSettlementApprovalStore(fake.pool).listPending({ limit: 101 }))
+      .rejects.toThrow("settlement_approval_limit_invalid");
+  });
+
   it("maps database self-approval rejection without leaking a database error", async () => {
     const fake = poolWith(sql => {
       if (sql.includes("SELECT tenant_id FROM merchant_settlement_approval_requests")) return { rows: [{ tenant_id: "tenant-1" }], rowCount: 1 };
