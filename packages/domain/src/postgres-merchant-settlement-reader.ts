@@ -11,6 +11,20 @@ export interface MerchantSettlementLine {
   netMinor: number;
   deductionBreakdown: Array<{ code: string; amountMinor: number }>;
 }
+export interface MerchantSettlementBatchSummary {
+  id: string;
+  merchantId: string;
+  currency: string;
+  periodStartUtc: string;
+  periodEndUtc: string;
+  status: "draft" | "approved";
+  createdAtUtc: string;
+  approvedAtUtc: string | null;
+  lineCount: number;
+  grossMinor: number;
+  deductionsMinor: number;
+  netMinor: number;
+}
 export interface MerchantSettlementBatch {
   id: string;
   merchantId: string;
@@ -61,6 +75,46 @@ function breakdown(value: unknown): Array<{ code: string; amountMinor: number }>
 /** Read-only merchant-scoped settlement projection; it never approves a batch or initiates a payout. */
 export class PostgresMerchantSettlementReader {
   constructor(private readonly pool: PostgresPool) {}
+
+  async list(input: {
+    tenantId: string; merchantId: string; status?: "draft" | "approved"; limit?: number;
+  }): Promise<MerchantSettlementBatchSummary[]> {
+    const limit = input.limit ?? 50;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+      throw new Error("invalid_merchant_settlement_limit");
+    }
+    const result = await this.pool.query<{
+      batch_id: string; merchant_id: string; currency: string;
+      period_start: Date | string; period_end: Date | string;
+      status: "draft" | "approved"; created_at: Date | string;
+      approved_at: Date | string | null; line_count: string | number;
+      gross_minor: string | number; deductions_minor: string | number; net_minor: string | number;
+    }>(
+      `SELECT b.id AS batch_id,b.merchant_id,b.currency,b.period_start,b.period_end,
+              b.status,b.created_at,b.approved_at,COUNT(l.id) AS line_count,
+              COALESCE(SUM(l.gross_minor),0) AS gross_minor,
+              COALESCE(SUM(l.deductions_minor),0) AS deductions_minor,
+              COALESCE(SUM(l.net_minor),0) AS net_minor
+       FROM merchant_settlement_batches b
+       LEFT JOIN merchant_settlement_lines l
+         ON l.tenant_id=b.tenant_id AND l.batch_id=b.id
+       WHERE b.tenant_id=$1 AND b.merchant_id=$2 AND ($3::text IS NULL OR b.status=$3)
+       GROUP BY b.tenant_id,b.id
+       ORDER BY b.created_at DESC,b.id DESC
+       LIMIT $4`,
+      [input.tenantId,input.merchantId,input.status ?? null,limit]
+    );
+    return result.rows.map(row => ({
+      id: row.batch_id, merchantId: row.merchant_id, currency: row.currency,
+      periodStartUtc: iso(row.period_start), periodEndUtc: iso(row.period_end),
+      status: row.status, createdAtUtc: iso(row.created_at),
+      approvedAtUtc: row.approved_at === null ? null : iso(row.approved_at),
+      lineCount: safeMinor(row.line_count, "line_count"),
+      grossMinor: safeMinor(row.gross_minor, "gross"),
+      deductionsMinor: safeMinor(row.deductions_minor, "deductions"),
+      netMinor: safeMinor(row.net_minor, "net")
+    }));
+  }
 
   async get(input: {
     tenantId: string; merchantId: string; batchId: string;
