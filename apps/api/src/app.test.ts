@@ -4,6 +4,7 @@ import type { FastifyInstance } from "fastify";
 import { vi } from "vitest";
 import { buildApp } from "./app.js";
 import type { Actor } from "../../../packages/domain/src/authorization.js";
+import type { SettlementApprovalRole } from "../../../packages/domain/src/postgres-merchant-settlement-approval-store.js";
 import type { RecordPreparationCheckInput } from "../../../packages/domain/src/postgres-merchant-order-item-preparation.js";
 
 const merchantActor: Actor = {
@@ -2136,11 +2137,11 @@ describe("platform merchant settlement dual-control routes", () => {
       id: "operations-user-1", role: "operations", active: true,
       grants: [{ resource: "platform.merchant_settlement", actions: ["create"], scope: { platform: true } }]
     };
-    const requestApproval = vi.fn(async (input: { batchId: string; requesterId: string; requesterRole: "operations" }) => ({
+    const requestApproval = vi.fn(async (input: { batchId: string; requesterId: string; requesterRole: SettlementApprovalRole }) => ({
       outcome: "created" as const,
       request: {
         id: "approval-1", tenantId: "tenant-1", batchId: input.batchId, merchantId: "merchant-1",
-        currency: "SAR", requestedBy: input.requesterId, requesterRole: input.requesterRole,
+        currency: "SAR", requestedBy: input.requesterId, requesterRole: input.requesterRole as "operations",
         status: "pending" as const, snapshotLineCount: 1, snapshotGrossMinor: 12000,
         snapshotDeductionsMinor: 1000, snapshotNetMinor: 11000,
         requestedAtUtc: "2026-11-24T12:00:00.000Z", reviewedBy: null, reviewerRole: null,
@@ -2169,10 +2170,17 @@ describe("platform merchant settlement dual-control routes", () => {
       id: "finance-approver-1", role: "finance", active: true,
       grants: [{ resource: "platform.merchant_settlement", actions: ["approve"], scope: { platform: true } }]
     };
-    const decide = vi.fn(async (input: { requestId: string; actorId: string; actorRole: "finance"; decision: "authorize_accounting"; reason?: string }) => ({
+    const decide = vi.fn(async (input: { requestId: string; actorId: string; actorRole: "finance" | "platform_admin" | "platform_owner"; decision: "authorize_accounting" | "reject"; reason?: string }) => ({
       outcome: "decided" as const,
-      request: { id: input.requestId, requestedBy: "operations-user-1", reviewedBy: input.actorId,
-        status: "authorized_for_accounting" as const }
+      request: {
+        id: input.requestId, tenantId: "tenant-1", batchId: "batch-1", merchantId: "merchant-1",
+        currency: "SAR", requestedBy: "operations-user-1", requesterRole: "operations" as const,
+        status: "authorized_for_accounting" as const, snapshotLineCount: 1,
+        snapshotGrossMinor: 12000, snapshotDeductionsMinor: 1000, snapshotNetMinor: 11000,
+        requestedAtUtc: "2026-11-24T12:00:00.000Z", reviewedBy: input.actorId,
+        reviewerRole: input.actorRole, reviewedAtUtc: "2026-11-24T12:05:00.000Z",
+        reviewNote: input.reason ?? null
+      }
     }));
     const api = buildApp({
       resolveActor: async () => actor,
