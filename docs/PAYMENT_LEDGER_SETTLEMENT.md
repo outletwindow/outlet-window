@@ -148,3 +148,18 @@ Not implemented or enabled:
 - Provider-specific Moyasar, HyperPay, Tap Payments and Stripe adjustment adapters, provider-specific webhook/reconciliation contract tests, and production activation. When `PAYMENT_ADJUSTMENT_PROVIDER_KEY` is configured, the customer consent endpoint now atomically records consent and queues the durable outbox; without that setting it records consent only. The generic HTTPS adapter/worker remains sandbox-only and is not a certified integration for any named provider.
 
 The database approval transition is an accounting-record control, not evidence that a merchant was paid. No live payment, payout, bank account or money movement is claimed. Legal, regulatory, payment-provider and accounting review remains required before activation.
+
+
+## 13A. Merchant Settlement Dual-Control Review (migration 0060)
+
+Migration 0060 adds a two-person review record for a draft merchant settlement batch:
+
+1. An authorized platform operator requests accounting authorization. The database locks the draft batch and captures an immutable snapshot of its line count, gross, deductions and net totals.
+2. A different finance/platform approver records one decision: authorize accounting review or reject. The requester cannot approve their own request.
+3. The database rechecks the settlement snapshot before accepting the decision. A changed snapshot is rejected.
+4. Request and decision audit events are inserted in the same database transaction as their respective state changes. Decision records are append-only.
+5. An authorized request reaches `authorized_for_accounting`; this is not a posted journal, not a transition of the settlement batch to `approved`, and not proof of payment.
+
+The application must derive actor identity, active platform role and grants from the authenticated server-side session. Never accept requester/approver IDs, roles, tenant IDs or grants as trusted client-supplied values. Enforce explicit `merchant.settlement:request` and `merchant.settlement:approve` grants in the API; finance, platform_admin or platform_owner is the only eligible approver role. Merchant users and AI agents cannot request or approve this workflow.
+
+**Remaining gated work:** a transaction-aware accounting service must map every deduction code to an explicitly configured financial account and atomically post the balanced journal, bind it to the settlement batch, and append the accounting audit event. The existing journal service owns its own transaction, so it must not be called followed by an independent batch update. Contract/commission/tax policy verification, payout provider adapters, bank transfer execution and payout reconciliation remain unimplemented. No live funds are moved by migration 0060.
