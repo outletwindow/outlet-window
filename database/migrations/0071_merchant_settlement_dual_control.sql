@@ -34,9 +34,9 @@ CREATE TABLE merchant_settlement_approval_requests (
   ),
   CHECK (review_note IS NULL OR length(review_note) <= 1000)
 );
-CREATE UNIQUE INDEX merchant_settlement_one_pending_approval_per_batch_idx
+CREATE UNIQUE INDEX merchant_settlement_one_open_approval_per_batch_idx
   ON merchant_settlement_approval_requests(tenant_id,batch_id)
-  WHERE status='pending';
+  WHERE status IN ('pending','authorized_for_accounting');
 CREATE INDEX merchant_settlement_approval_review_queue_idx
   ON merchant_settlement_approval_requests(status,requested_at,id);
 
