@@ -2128,3 +2128,108 @@ describe("merchant settlement list route", () => {
     }
   });
 });
+
+
+describe("platform merchant settlement dual-control routes", () => {
+  it("creates an approval request using the authenticated operations actor, not client identity", async () => {
+    const actor: Actor = {
+      id: "operations-user-1", role: "operations", active: true,
+      grants: [{ resource: "platform.merchant_settlement", actions: ["create"], scope: { platform: true } }]
+    };
+    const requestApproval = vi.fn(async (input: { batchId: string; requesterId: string; requesterRole: "operations" }) => ({
+      outcome: "created" as const,
+      request: {
+        id: "approval-1", tenantId: "tenant-1", batchId: input.batchId, merchantId: "merchant-1",
+        currency: "SAR", requestedBy: input.requesterId, requesterRole: input.requesterRole,
+        status: "pending" as const, snapshotLineCount: 1, snapshotGrossMinor: 12000,
+        snapshotDeductionsMinor: 1000, snapshotNetMinor: 11000,
+        requestedAtUtc: "2026-11-24T12:00:00.000Z", reviewedBy: null, reviewerRole: null,
+        reviewedAtUtc: null, reviewNote: null
+      }
+    }));
+    const api = buildApp({
+      resolveActor: async () => actor,
+      merchantSettlementApprovals: { request: requestApproval, decide: vi.fn() }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "POST", url: "/api/v1/platform/settlements/batch-1/approval-requests",
+        payload: { requesterId: "attacker", requesterRole: "platform_owner", tenantId: "other-tenant" }
+      });
+      expect(response.statusCode).toBe(201);
+      expect(requestApproval).toHaveBeenCalledWith({
+        batchId: "batch-1", requesterId: "operations-user-1", requesterRole: "operations"
+      });
+    } finally { await api.close(); }
+  });
+
+  it("allows only an independent finance actor to decide and never accepts actor identity from the body", async () => {
+    const actor: Actor = {
+      id: "finance-approver-1", role: "finance", active: true,
+      grants: [{ resource: "platform.merchant_settlement", actions: ["approve"], scope: { platform: true } }]
+    };
+    const decide = vi.fn(async (input: { requestId: string; actorId: string; actorRole: "finance"; decision: "authorize_accounting"; reason?: string }) => ({
+      outcome: "decided" as const,
+      request: { id: input.requestId, requestedBy: "operations-user-1", reviewedBy: input.actorId,
+        status: "authorized_for_accounting" as const }
+    }));
+    const api = buildApp({
+      resolveActor: async () => actor,
+      merchantSettlementApprovals: { request: vi.fn(), decide }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "POST", url: "/api/v1/platform/settlement-approval-requests/approval-1/decision",
+        payload: { decision: "authorize_accounting", actorId: "forged-user", actorRole: "platform_owner" }
+      });
+      expect(response.statusCode).toBe(200);
+      expect(decide).toHaveBeenCalledWith({
+        requestId: "approval-1", actorId: "finance-approver-1", actorRole: "finance",
+        decision: "authorize_accounting"
+      });
+    } finally { await api.close(); }
+  });
+
+  it("denies merchant users from platform approval endpoints even with a forged broad grant", async () => {
+    const actor: Actor = {
+      id: "merchant-owner-1", role: "merchant_owner", active: true,
+      grants: [{ resource: "platform.merchant_settlement", actions: ["create", "approve"], scope: { platform: true } }]
+    };
+    const requestApproval = vi.fn();
+    const api = buildApp({
+      resolveActor: async () => actor,
+      merchantSettlementApprovals: { request: requestApproval, decide: vi.fn() }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "POST", url: "/api/v1/platform/settlements/batch-1/approval-requests"
+      });
+      expect(response.statusCode).toBe(403);
+      expect(requestApproval).not.toHaveBeenCalled();
+    } finally { await api.close(); }
+  });
+
+  it("validates approval decisions before persistence", async () => {
+    const actor: Actor = {
+      id: "finance-approver-1", role: "finance", active: true,
+      grants: [{ resource: "platform.merchant_settlement", actions: ["approve"], scope: { platform: true } }]
+    };
+    const decide = vi.fn();
+    const api = buildApp({
+      resolveActor: async () => actor,
+      merchantSettlementApprovals: { request: vi.fn(), decide }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "POST", url: "/api/v1/platform/settlement-approval-requests/approval-1/decision",
+        payload: { decision: "pay_now", reason: "x".repeat(1001) }
+      });
+      expect(response.statusCode).toBe(400);
+      expect(decide).not.toHaveBeenCalled();
+    } finally { await api.close(); }
+  });
+});
