@@ -1982,7 +1982,7 @@ describe("merchant settlement read route", () => {
     const api = buildApp({
       resolveActor: async () => merchant,
       resolveMerchantTenantId: vi.fn(async () => "tenant-1"),
-      merchantSettlementReader: { get }
+      merchantSettlementReader: { list: vi.fn(async () => []), get }
     });
     await api.ready();
     try {
@@ -2015,7 +2015,7 @@ describe("merchant settlement read route", () => {
     const api = buildApp({
       resolveActor: async () => employee,
       resolveMerchantTenantId: vi.fn(async () => "tenant-1"),
-      merchantSettlementReader: { get }
+      merchantSettlementReader: { list: vi.fn(async () => []), get }
     });
     await api.ready();
     try {
@@ -2043,7 +2043,7 @@ describe("merchant settlement read route", () => {
     const api = buildApp({
       resolveActor: async () => merchant,
       resolveMerchantTenantId: vi.fn(async () => "tenant-1"),
-      merchantSettlementReader: { get }
+      merchantSettlementReader: { list: vi.fn(async () => []), get }
     });
     await api.ready();
     try {
@@ -2053,6 +2053,76 @@ describe("merchant settlement read route", () => {
       });
       expect(response.statusCode).toBe(404);
       expect(response.json()).toEqual({ error: "not_found" });
+    } finally {
+      await api.close();
+    }
+  });
+});
+
+
+describe("merchant settlement list route", () => {
+  it("lists only authorized merchant settlement batches with bounded filters", async () => {
+    const merchant: Actor = {
+      id: "merchant-admin-1", role: "merchant_admin", active: true,
+      grants: [{
+        resource: "merchant.settlement", actions: ["read"],
+        scope: { merchantId: "merchant-1" }
+      }]
+    };
+    const list = vi.fn(async () => [{
+      id: "batch-1", merchantId: "merchant-1", currency: "SAR",
+      periodStartUtc: "2026-11-01T00:00:00.000Z",
+      periodEndUtc: "2026-11-15T00:00:00.000Z",
+      status: "approved" as const, createdAtUtc: "2026-11-15T00:00:00.000Z",
+      approvedAtUtc: "2026-11-16T00:00:00.000Z",
+      lineCount: 2, grossMinor: 20000, deductionsMinor: 1500, netMinor: 18500
+    }]);
+    const api = buildApp({
+      resolveActor: async () => merchant,
+      resolveMerchantTenantId: vi.fn(async () => "tenant-1"),
+      merchantSettlementReader: { list, get: vi.fn(async () => null) }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "GET",
+        url: "/api/v1/merchants/merchant-1/settlements?status=approved&limit=25"
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        batches: [{ id: "batch-1", grossMinor: 20000, netMinor: 18500 }]
+      });
+      expect(list).toHaveBeenCalledWith({
+        tenantId: "tenant-1", merchantId: "merchant-1", status: "approved", limit: 25
+      });
+    } finally {
+      await api.close();
+    }
+  });
+
+  it("rejects invalid filters without querying the reader", async () => {
+    const merchant: Actor = {
+      id: "merchant-owner-1", role: "merchant_owner", active: true,
+      grants: [{
+        resource: "merchant.settlement", actions: ["read"],
+        scope: { merchantId: "merchant-1" }
+      }]
+    };
+    const list = vi.fn(async () => []);
+    const api = buildApp({
+      resolveActor: async () => merchant,
+      resolveMerchantTenantId: vi.fn(async () => "tenant-1"),
+      merchantSettlementReader: { list, get: vi.fn(async () => null) }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "GET",
+        url: "/api/v1/merchants/merchant-1/settlements?status=paid&limit=1000"
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toEqual({ error: "invalid_status" });
+      expect(list).not.toHaveBeenCalled();
     } finally {
       await api.close();
     }
