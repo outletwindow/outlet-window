@@ -92,6 +92,23 @@ export class PostgresMerchantSettlementApprovalStore {
     } finally { client.release(); }
   }
 
+  async listPending(input: { limit?: number } = {}): Promise<SettlementApprovalRequest[]> {
+    const limit = input.limit ?? 50;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+      throw new RangeError("settlement_approval_limit_invalid");
+    }
+    const result = await this.pool.query<ApprovalRow>(
+      `SELECT id,tenant_id,batch_id,merchant_id,currency,requested_by,requester_role,status,
+        snapshot_line_count,snapshot_gross_minor,snapshot_deductions_minor,snapshot_net_minor,
+        requested_at,reviewed_by,reviewer_role,reviewed_at,review_note
+       FROM merchant_settlement_approval_requests
+       WHERE status='pending'
+       ORDER BY requested_at ASC,id ASC LIMIT $1`,
+      [limit]
+    );
+    return result.rows.map(mapRow);
+  }
+
   async decide(input: {
     requestId: string; actorId: string; actorRole: "finance" | "platform_admin" | "platform_owner";
     decision: SettlementApprovalDecision; reason?: string;
