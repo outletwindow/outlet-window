@@ -17,7 +17,7 @@ This endpoint returns the authenticated customer's payment-adjustment summary an
 
 ### Successful response
 
-The response body contains an `adjustment` object with:
+The response body is the adjustment object itself and contains:
 
 - `id`, `orderId`, and `currency`
 - `direction`: `refund` or `additional_charge`
