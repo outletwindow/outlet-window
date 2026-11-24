@@ -86,6 +86,7 @@ export interface MerchantSettlementReader {
 }
 export interface MerchantSettlementApprovalService {
   request(input: { batchId: string; requesterId: string; requesterRole: SettlementApprovalRole }): Promise<SettlementApprovalOutcome>;
+  listPending(input?: { limit?: number }): Promise<import("../../../packages/domain/src/postgres-merchant-settlement-approval-store.js").SettlementApprovalRequest[]>;
   decide(input: { requestId: string; actorId: string; actorRole: "finance" | "platform_admin" | "platform_owner";
     decision: SettlementApprovalDecision; reason?: string }): Promise<SettlementDecisionOutcome>;
 }
@@ -1181,6 +1182,26 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     if (result.outcome === "empty_or_unbalanced_batch") return reply.code(409).send({ error: "settlement_batch_not_ready_for_review" });
     if (!("request" in result)) return reply.code(409).send({ error: "settlement_approval_request_not_created" });
     return reply.code(201).send({ request: result.request });
+  });
+
+  app.get<{
+    Querystring: { limit?: string };
+  }>("/api/v1/platform/settlement-approval-requests", async (request, reply) => {
+    const access = await authorizeRequest(request, options, {
+      resource: "platform.merchant_settlement", action: "read", scope: { platform: true }
+    });
+    if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
+    const roles = access.actor.roles ?? [access.actor.role];
+    if (!roles.some(role => role === "finance" || role === "platform_admin" || role === "platform_owner")) {
+      return reply.code(403).send({ error: "platform_settlement_reviewer_role_required" });
+    }
+    if (!options.merchantSettlementApprovals) return reply.code(503).send({ error: "settlement_approval_unavailable" });
+    const limit = request.query.limit === undefined ? 50 : Number(request.query.limit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+      return reply.code(400).send({ error: "invalid_limit" });
+    }
+    const requests = await options.merchantSettlementApprovals.listPending({ limit });
+    return reply.code(200).send({ requests });
   });
 
   app.post<{
