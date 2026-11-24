@@ -1157,7 +1157,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       resource: "merchant.settlement", action: "read", scope: { merchantId }
     });
     if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
-    if (!["merchant_owner", "merchant_admin"].includes(access.actor.role)) {
+    if (!(access.actor.roles ?? [access.actor.role]).some(role => role === "merchant_owner" || role === "merchant_admin")) {
       return reply.code(403).send({ error: "merchant_settlement_role_required" });
     }
     if (!options.resolveMerchantTenantId || !options.merchantSettlementReader) {
