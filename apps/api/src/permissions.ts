@@ -14,12 +14,12 @@ export function grantsForAssignments(assignments: readonly RoleAssignment[]): re
     }];
     if (assignment.role === "finance") return [{
       resource: "platform.merchant_settlement",
-      actions: ["create", "approve"] as const,
+      actions: ["read", "create", "approve"] as const,
       scope: { platform: true }
     }];
     if (assignment.role === "platform_admin" || assignment.role === "platform_owner") return [{
       resource: "platform.merchant_settlement",
-      actions: ["create", "approve"] as const,
+      actions: ["read", "create", "approve"] as const,
       scope: { platform: true }
     }];
     // Customers may edit only the exact order explicitly present in their active IAM scope.
