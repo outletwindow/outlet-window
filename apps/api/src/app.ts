@@ -76,6 +76,9 @@ export interface CustomerCartRepository {
 export interface CustomerCheckoutService {
   create(input: CreateCustomerCheckoutInput): Promise<CustomerCheckoutResult>;
 }
+export interface MerchantSettlementReader {
+  get(input: { tenantId: string; merchantId: string; batchId: string }): Promise<import("../../../packages/domain/src/postgres-merchant-settlement-reader.js").MerchantSettlementBatch | null>;
+}
 export interface CustomerPaymentAdjustmentActions {
   getCustomerAdjustment?(input: { orderId: string; adjustmentId: string; customerId: string }): Promise<
     | { outcome: "found"; adjustment: {
@@ -161,6 +164,7 @@ export interface AppOptions {
   /** Repository adapter must apply merchantId and branchId predicates in its database query. */
   merchantBranches?: MerchantBranchReader;
   merchantOrderReader?: { listForBranch(input: { tenantId: string; merchantId: string; branchId: string; status?: OrderStatus; limit?: number }): Promise<MerchantOrderSummary[]> };
+  merchantSettlementReader?: MerchantSettlementReader;
   merchantBranchWriter?: MerchantBranchWriter;
   /** Optional dependency check used by readiness; failures keep the instance out of service. */
   readinessCheck?: () => Promise<boolean>;
@@ -1144,6 +1148,27 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       return reply.code(result.outcome === "applied" ? 200 : 202).send(result);
     }
   );
+
+  app.get<{
+    Params: { merchantId: string; batchId: string };
+  }>("/api/v1/merchants/:merchantId/settlements/:batchId", async (request, reply) => {
+    const { merchantId, batchId } = request.params;
+    const access = await authorizeRequest(request, options, {
+      resource: "merchant.settlement", action: "read", scope: { merchantId }
+    });
+    if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
+    if (!["merchant_owner", "merchant_admin"].includes(access.actor.role)) {
+      return reply.code(403).send({ error: "merchant_settlement_role_required" });
+    }
+    if (!options.resolveMerchantTenantId || !options.merchantSettlementReader) {
+      return reply.code(503).send({ error: "service_unavailable" });
+    }
+    const tenantId = await options.resolveMerchantTenantId(merchantId);
+    if (!tenantId) return reply.code(404).send({ error: "not_found" });
+    const batch = await options.merchantSettlementReader.get({ tenantId, merchantId, batchId });
+    if (!batch) return reply.code(404).send({ error: "not_found" });
+    return reply.code(200).send(batch);
+  });
 
   // Authentication and authorization always precede adapter availability checks and data access.
   app.get<{
