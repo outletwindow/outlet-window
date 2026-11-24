@@ -132,6 +132,7 @@ Implemented in migration 0050:
 - A suborder can appear in at most one settlement line.
 - Approval requires a matching posted journal that debits CUSTOMER_FUNDS_HELD for gross proceeds, credits MERCHANT_PAYABLE for net proceeds, and allocates deductions to other credit accounts.
 - Approved batches and their lines are immutable.
+- A read-only merchant settlement details API is implemented for merchant owners/admins with an explicit `merchant.settlement:read` grant; it resolves tenant ownership server-side and returns batch lines without enabling approval or payout.
 - Migration 0053 requires draft batches to have no journal reference and enforces one settlement batch per posted journal, preventing a journal from being reused to approve multiple batches.
 - Migration 0054 enforces single-use provider references for payment adjustments within a tenant and provider namespace; legacy rows without a provider key share a guarded legacy namespace.
 - Migration 0055 adds a tenant-scoped durable payment-adjustment submission outbox with a stable provider idempotency key, leased processing state, retry scheduling and dead-letter state. Queue creation is transactionally coupled to the adjustment's transition into provider-pending.
