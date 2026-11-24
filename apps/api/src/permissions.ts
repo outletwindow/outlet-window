@@ -7,6 +7,21 @@ export function grantsForAssignments(assignments: readonly RoleAssignment[]): re
   const manageRoles = new Set(["merchant_owner", "merchant_admin"]);
   const orderManageRoles = new Set(["merchant_owner", "merchant_admin", "branch_manager"]);
   return assignments.flatMap((assignment): PermissionGrant[] => {
+    if (assignment.role === "operations") return [{
+      resource: "platform.merchant_settlement",
+      actions: ["create"] as const,
+      scope: { platform: true }
+    }];
+    if (assignment.role === "finance") return [{
+      resource: "platform.merchant_settlement",
+      actions: ["create", "approve"] as const,
+      scope: { platform: true }
+    }];
+    if (assignment.role === "platform_admin" || assignment.role === "platform_owner") return [{
+      resource: "platform.merchant_settlement",
+      actions: ["create", "approve"] as const,
+      scope: { platform: true }
+    }];
     // Customers may edit only the exact order explicitly present in their active IAM scope.
     if (assignment.role === "courier") return [{
       resource: "courier.delivery_task",
