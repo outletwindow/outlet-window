@@ -322,7 +322,8 @@ describe("customer payment adjustment read model", () => {
     await expect(store.getCustomerAdjustment({
       orderId: "order-1", adjustmentId: "adjustment-1", customerId: "customer-1"
     })).rejects.toThrow("invalid_payment_adjustment_amount");
-    expect(query).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(query.mock.calls[1]?.[0]).toContain("a.order_id=$2");
   });
 
   it("does not disclose an adjustment when it belongs to another customer", async () => {
