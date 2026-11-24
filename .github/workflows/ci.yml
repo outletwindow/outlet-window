@@ -141,7 +141,7 @@ jobs:
       - name: Verify immutable refund component allocations and source-balance guards
         env:
           PGPASSWORD: ci_only_password
-        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0063_immutable_refund_component_allocations.integration.sql
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0070_immutable_refund_component_allocations.integration.sql
       - name: Verify durable payment provider webhook deduplication
         env:
           PGPASSWORD: ci_only_password
