@@ -1,4 +1,4 @@
-\\set ON_ERROR_STOP on
+\set ON_ERROR_STOP on
 BEGIN;
 INSERT INTO merchants (id,tenant_id,legal_name,display_name,country_code,status)
 VALUES ('dual-merchant','dual-tenant','Dual Control LLC','Dual Control Merchant','SA','active');
