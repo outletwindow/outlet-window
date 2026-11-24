@@ -181,6 +181,8 @@ export function buildPostgresApp(options: PostgresApiOptions) {
       const canQueueProviderSubmission = typeof providerKey === "string" &&
         /^[a-zA-Z0-9._-]{1,100}$/.test(providerKey);
       return {
+        getCustomerAdjustment: (input: { orderId: string; adjustmentId: string; customerId: string }) =>
+          store.getCustomerAdjustment(input),
         consent: (input: { orderId: string; adjustmentId: string; customerId: string }) => store.consent(input),
         ...(canQueueProviderSubmission ? {
           consentAndQueue: (input: { orderId: string; adjustmentId: string; customerId: string }) =>
