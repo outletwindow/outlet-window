@@ -19,7 +19,7 @@ const batchRow = {
 
 describe("PostgresMerchantSettlementReader", () => {
   it("returns only the requested tenant and merchant batch with safe line amounts", async () => {
-    const query = vi.fn(async () => ({ rows: [batchRow], rowCount: 1 }));
+    const query = vi.fn(async (_sql: string, _params?: unknown[]) => ({ rows: [batchRow], rowCount: 1 }));
     await expect(readerFor(query).get({
       tenantId: "tenant-1", merchantId: "merchant-1", batchId: "batch-1"
     })).resolves.toEqual({
