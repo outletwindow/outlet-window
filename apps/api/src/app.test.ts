@@ -1957,3 +1957,104 @@ describe("customer payment adjustment read route", () => {
     }
   });
 });
+
+
+describe("merchant settlement read route", () => {
+  it("returns settlement details only within the authorized merchant scope", async () => {
+    const merchant: Actor = {
+      id: "merchant-admin-1", role: "merchant_admin", active: true,
+      grants: [{
+        resource: "merchant.settlement", actions: ["read"],
+        scope: { merchantId: "merchant-1" }
+      }]
+    };
+    const get = vi.fn(async () => ({
+      id: "batch-1", merchantId: "merchant-1", currency: "SAR",
+      periodStartUtc: "2026-11-01T00:00:00.000Z",
+      periodEndUtc: "2026-11-15T00:00:00.000Z",
+      status: "approved" as const, createdAtUtc: "2026-11-15T00:00:00.000Z",
+      approvedAtUtc: "2026-11-16T00:00:00.000Z",
+      lines: [{ id: "line-1", orderId: "order-1", suborderId: "suborder-1",
+        branchId: "branch-1", contractReference: "contract-v1",
+        grossMinor: 12000, deductionsMinor: 1000, netMinor: 11000,
+        deductionBreakdown: [{ code: "platform_fee", amountMinor: 1000 }] }]
+    }));
+    const api = buildApp({
+      resolveActor: async () => merchant,
+      resolveMerchantTenantId: vi.fn(async () => "tenant-1"),
+      merchantSettlementReader: { get }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "GET",
+        url: "/api/v1/merchants/merchant-1/settlements/batch-1"
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        id: "batch-1", status: "approved",
+        lines: [{ grossMinor: 12000, deductionsMinor: 1000, netMinor: 11000 }]
+      });
+      expect(get).toHaveBeenCalledWith({
+        tenantId: "tenant-1", merchantId: "merchant-1", batchId: "batch-1"
+      });
+    } finally {
+      await api.close();
+    }
+  });
+
+  it("rejects merchant employees even if a broad settlement read grant is present", async () => {
+    const employee: Actor = {
+      id: "merchant-employee-1", role: "merchant_employee", active: true,
+      grants: [{
+        resource: "merchant.settlement", actions: ["read"],
+        scope: { merchantId: "merchant-1" }
+      }]
+    };
+    const get = vi.fn();
+    const api = buildApp({
+      resolveActor: async () => employee,
+      resolveMerchantTenantId: vi.fn(async () => "tenant-1"),
+      merchantSettlementReader: { get }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "GET",
+        url: "/api/v1/merchants/merchant-1/settlements/batch-1"
+      });
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toEqual({ error: "merchant_settlement_role_required" });
+      expect(get).not.toHaveBeenCalled();
+    } finally {
+      await api.close();
+    }
+  });
+
+  it("does not disclose a settlement batch outside the requested merchant", async () => {
+    const merchant: Actor = {
+      id: "merchant-owner-1", role: "merchant_owner", active: true,
+      grants: [{
+        resource: "merchant.settlement", actions: ["read"],
+        scope: { merchantId: "merchant-1" }
+      }]
+    };
+    const get = vi.fn(async () => null);
+    const api = buildApp({
+      resolveActor: async () => merchant,
+      resolveMerchantTenantId: vi.fn(async () => "tenant-1"),
+      merchantSettlementReader: { get }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "GET",
+        url: "/api/v1/merchants/merchant-1/settlements/other-batch"
+      });
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toEqual({ error: "not_found" });
+    } finally {
+      await api.close();
+    }
+  });
+});
