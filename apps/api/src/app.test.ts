@@ -2150,7 +2150,7 @@ describe("platform merchant settlement dual-control routes", () => {
     }));
     const api = buildApp({
       resolveActor: async () => actor,
-      merchantSettlementApprovals: { request: requestApproval, decide: vi.fn() }
+      merchantSettlementApprovals: { request: requestApproval, listPending: vi.fn(async () => []), decide: vi.fn() }
     });
     await api.ready();
     try {
@@ -2162,6 +2162,33 @@ describe("platform merchant settlement dual-control routes", () => {
       expect(requestApproval).toHaveBeenCalledWith({
         batchId: "batch-1", requesterId: "operations-user-1", requesterRole: "operations"
       });
+    } finally { await api.close(); }
+  });
+
+
+  it("shows the pending settlement review queue only to finance reviewers", async () => {
+    const actor: Actor = {
+      id: "finance-reviewer-1", role: "finance", active: true,
+      grants: [{ resource: "platform.merchant_settlement", actions: ["read"], scope: { platform: true } }]
+    };
+    const listPending = vi.fn(async () => [{
+      id: "approval-queue-1", tenantId: "tenant-1", batchId: "batch-1", merchantId: "merchant-1",
+      currency: "SAR", requestedBy: "operations-1", requesterRole: "operations" as const,
+      status: "pending" as const, snapshotLineCount: 1, snapshotGrossMinor: 12000,
+      snapshotDeductionsMinor: 1000, snapshotNetMinor: 11000,
+      requestedAtUtc: "2026-11-24T12:00:00.000Z", reviewedBy: null, reviewerRole: null,
+      reviewedAtUtc: null, reviewNote: null
+    }]);
+    const api = buildApp({
+      resolveActor: async () => actor,
+      merchantSettlementApprovals: { request: vi.fn(), listPending, decide: vi.fn() }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({ method: "GET", url: "/api/v1/platform/settlement-approval-requests?limit=25" });
+      expect(response.statusCode).toBe(200);
+      expect(response.json().requests).toHaveLength(1);
+      expect(listPending).toHaveBeenCalledWith({ limit: 25 });
     } finally { await api.close(); }
   });
 
@@ -2184,7 +2211,7 @@ describe("platform merchant settlement dual-control routes", () => {
     }));
     const api = buildApp({
       resolveActor: async () => actor,
-      merchantSettlementApprovals: { request: vi.fn(), decide }
+      merchantSettlementApprovals: { request: vi.fn(), listPending: vi.fn(async () => []), decide }
     });
     await api.ready();
     try {
@@ -2208,7 +2235,7 @@ describe("platform merchant settlement dual-control routes", () => {
     const requestApproval = vi.fn();
     const api = buildApp({
       resolveActor: async () => actor,
-      merchantSettlementApprovals: { request: requestApproval, decide: vi.fn() }
+      merchantSettlementApprovals: { request: requestApproval, listPending: vi.fn(async () => []), decide: vi.fn() }
     });
     await api.ready();
     try {
@@ -2228,7 +2255,7 @@ describe("platform merchant settlement dual-control routes", () => {
     const decide = vi.fn();
     const api = buildApp({
       resolveActor: async () => actor,
-      merchantSettlementApprovals: { request: vi.fn(), decide }
+      merchantSettlementApprovals: { request: vi.fn(), listPending: vi.fn(async () => []), decide }
     });
     await api.ready();
     try {
