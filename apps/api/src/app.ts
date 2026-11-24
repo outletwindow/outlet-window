@@ -1179,6 +1179,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     if (result.outcome === "already_pending") return reply.code(409).send({ error: "settlement_approval_already_pending" });
     if (result.outcome === "invalid_batch_state") return reply.code(409).send({ error: "settlement_batch_not_draft" });
     if (result.outcome === "empty_or_unbalanced_batch") return reply.code(409).send({ error: "settlement_batch_not_ready_for_review" });
+    if (!("request" in result)) return reply.code(409).send({ error: "settlement_approval_request_not_created" });
     return reply.code(201).send({ request: result.request });
   });
 
@@ -1209,6 +1210,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     if (result.outcome === "already_decided") return reply.code(409).send({ error: "settlement_approval_already_decided" });
     if (result.outcome === "snapshot_changed") return reply.code(409).send({ error: "settlement_snapshot_changed" });
     if (result.outcome === "invalid_transition") return reply.code(409).send({ error: "settlement_approval_transition_invalid" });
+    if (!("request" in result)) return reply.code(409).send({ error: "settlement_approval_decision_not_recorded" });
     return reply.code(200).send({ request: result.request });
   });
 
