@@ -220,3 +220,17 @@ $function$;
 CREATE TRIGGER merchant_settlement_approval_decisions_immutable
 BEFORE UPDATE OR DELETE ON merchant_settlement_approval_decisions
 FOR EACH ROW EXECUTE FUNCTION prevent_merchant_settlement_approval_decision_mutation();
+
+CREATE OR REPLACE FUNCTION prevent_merchant_settlement_approval_truncate()
+RETURNS trigger LANGUAGE plpgsql AS $function$
+BEGIN
+  RAISE EXCEPTION 'merchant_settlement_approval_history_cannot_be_truncated'
+    USING ERRCODE='55000';
+END
+$function$;
+CREATE TRIGGER merchant_settlement_approval_requests_no_truncate
+BEFORE TRUNCATE ON merchant_settlement_approval_requests
+FOR EACH STATEMENT EXECUTE FUNCTION prevent_merchant_settlement_approval_truncate();
+CREATE TRIGGER merchant_settlement_approval_decisions_no_truncate
+BEFORE TRUNCATE ON merchant_settlement_approval_decisions
+FOR EACH STATEMENT EXECUTE FUNCTION prevent_merchant_settlement_approval_truncate();
