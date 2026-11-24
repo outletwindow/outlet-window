@@ -78,3 +78,9 @@ Example body:
 Use `reject` to decline the request. Approver roles are `finance`, `platform_admin`, or `platform_owner`. The requester cannot approve their own request. The database rechecks the snapshot and atomically records the decision, updates the request state and appends its audit event.
 
 A successful `authorize_accounting` result means only `authorized_for_accounting`. It does not approve the settlement batch, post a journal, or initiate a payout. The current endpoints intentionally do not perform those actions.
+
+### List pending approvals
+
+`GET /api/v1/platform/settlement-approval-requests?limit=50`
+
+Returns pending review requests ordered oldest-first. Requires the platform-scoped `platform.merchant_settlement:read` grant and a `finance`, `platform_admin`, or `platform_owner` role. The limit is an integer from 1 to 100 and defaults to 50. Operations requesters cannot browse the finance review queue.
