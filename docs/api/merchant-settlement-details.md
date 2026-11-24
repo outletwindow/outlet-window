@@ -1,5 +1,13 @@
 # Merchant settlement details API
 
+## List settlement batches
+
+`GET /api/v1/merchants/:merchantId/settlements?status=draft|approved&limit=50`
+
+Returns a merchant-scoped list of settlement batch summaries, including currency, period, status, line count, and gross/deductions/net totals. The optional status filter accepts only `draft` or `approved`; the optional limit is an integer from 1 to 100 and defaults to 50. The response shape is `{ "batches": [...] }`.
+
+The same authentication, merchant role, tenant resolution, and `merchant.settlement:read` authorization rules apply.
+
 ## Read a settlement batch
 
 `GET /api/v1/merchants/:merchantId/settlements/:batchId`
