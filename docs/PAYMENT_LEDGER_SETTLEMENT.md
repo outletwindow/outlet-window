@@ -142,7 +142,7 @@ Implemented in migration 0050:
 
 Not implemented or enabled:
 - Contract/commission/tax policy calculation or independent verification of the supplied contract reference and deduction amounts.
-- Authenticated API endpoints and server-side grant enforcement for the migration 0060 dual-control workflow.
+- Authenticated API endpoints and server-side grant enforcement for the migration 0071 dual-control workflow.
 - Provider payout execution, bank transfer, wallet transfer, payout confirmation, or settlement reconciliation against bank/provider statements.
 - Refund execution or production money custody.
 - Provider-specific Moyasar, HyperPay, Tap Payments and Stripe adjustment adapters, provider-specific webhook/reconciliation contract tests, and production activation. When `PAYMENT_ADJUSTMENT_PROVIDER_KEY` is configured, the customer consent endpoint now atomically records consent and queues the durable outbox; without that setting it records consent only. The generic HTTPS adapter/worker remains sandbox-only and is not a certified integration for any named provider.
@@ -150,7 +150,7 @@ Not implemented or enabled:
 The database approval transition is an accounting-record control, not evidence that a merchant was paid. No live payment, payout, bank account or money movement is claimed. Legal, regulatory, payment-provider and accounting review remains required before activation.
 
 
-## 13A. Merchant Settlement Dual-Control Review (migration 0060)
+## 13A. Merchant Settlement Dual-Control Review (migration 0071)
 
 Migration 0060 adds a two-person review record for a draft merchant settlement batch:
 
@@ -162,4 +162,4 @@ Migration 0060 adds a two-person review record for a draft merchant settlement b
 
 The application must derive actor identity, active platform role and grants from the authenticated server-side session. Never accept requester/approver IDs, roles, tenant IDs or grants as trusted client-supplied values. Enforce explicit `merchant.settlement:request` and `merchant.settlement:approve` grants in the API; finance, platform_admin or platform_owner is the only eligible approver role. Merchant users and AI agents cannot request or approve this workflow.
 
-**Remaining gated work:** a transaction-aware accounting service must map every deduction code to an explicitly configured financial account and atomically post the balanced journal, bind it to the settlement batch, and append the accounting audit event. The existing journal service owns its own transaction, so it must not be called followed by an independent batch update. Contract/commission/tax policy verification, payout provider adapters, bank transfer execution and payout reconciliation remain unimplemented. No live funds are moved by migration 0060.
+**Remaining gated work:** a transaction-aware accounting service must map every deduction code to an explicitly configured financial account and atomically post the balanced journal, bind it to the settlement batch, and append the accounting audit event. The existing journal service owns its own transaction, so it must not be called followed by an independent batch update. Contract/commission/tax policy verification, payout provider adapters, bank transfer execution and payout reconciliation remain unimplemented. No live funds are moved by migration 0071.
