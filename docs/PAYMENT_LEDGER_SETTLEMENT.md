@@ -142,7 +142,7 @@ Implemented in migration 0050:
 
 Not implemented or enabled:
 - Contract/commission/tax policy calculation or independent verification of the supplied contract reference and deduction amounts.
-- An authenticated approval API or dual-control workflow.
+- Authenticated API endpoints and server-side grant enforcement for the migration 0060 dual-control workflow.
 - Provider payout execution, bank transfer, wallet transfer, payout confirmation, or settlement reconciliation against bank/provider statements.
 - Refund execution or production money custody.
 - Provider-specific Moyasar, HyperPay, Tap Payments and Stripe adjustment adapters, provider-specific webhook/reconciliation contract tests, and production activation. When `PAYMENT_ADJUSTMENT_PROVIDER_KEY` is configured, the customer consent endpoint now atomically records consent and queues the durable outbox; without that setting it records consent only. The generic HTTPS adapter/worker remains sandbox-only and is not a certified integration for any named provider.
