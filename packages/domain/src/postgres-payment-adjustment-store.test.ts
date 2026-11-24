@@ -262,3 +262,54 @@ describe("Postgres payment adjustment provider result", () => {
     expect(calls.some(call => call.sql === "COMMIT")).toBe(true);
   });
 });
+
+
+describe("customer payment adjustment read model", () => {
+  it("returns only the authenticated customer's adjustment and immutable component allocations", async () => {
+    const calls: Array<{ sql: string; params?: unknown[] }> = [];
+    const query = vi.fn(async (sql: string, params?: unknown[]) => {
+      calls.push({ sql, ...(params === undefined ? {} : { params }) });
+      if (sql.includes("FROM customer_payment_adjustments")) {
+        return { rows: [{
+          id: "adjustment-1", order_id: "order-1", currency: "SAR",
+          adjustment_direction: "refund", amount_minor: "2500",
+          previous_total_minor: "10000", proposed_total_minor: "7500",
+          status: "awaiting_customer_consent", expires_at: "2026-11-16T17:05:00.000Z"
+        }], rowCount: 1 };
+      }
+      return { rows: [{
+        suborder_id: "suborder-1", merchant_id: "merchant-1", branch_id: "branch-1",
+        component_kind: "product_subtotal", amount_minor: "2500", currency: "SAR"
+      }], rowCount: 1 };
+    });
+    const pool = { query } as unknown as PostgresPool;
+    const store = new PostgresPaymentAdjustmentStore(pool, () => new Date("2026-11-16T17:00:00.000Z"));
+    await expect(store.getCustomerAdjustment({
+      orderId: "order-1", adjustmentId: "adjustment-1", customerId: "customer-1"
+    })).resolves.toEqual({
+      outcome: "found",
+      adjustment: {
+        id: "adjustment-1", orderId: "order-1", currency: "SAR", direction: "refund",
+        amountMinor: 2500, previousTotalMinor: 10000, proposedTotalMinor: 7500,
+        status: "awaiting_customer_consent", expiresAtUtc: "2026-11-16T17:05:00.000Z",
+        allocations: [{
+          suborderId: "suborder-1", merchantId: "merchant-1", branchId: "branch-1",
+          componentKind: "product_subtotal", amountMinor: 2500, currency: "SAR"
+        }]
+      }
+    });
+    expect(calls[0]?.sql).toContain("tenant_id='platform' AND id=$1 AND order_id=$2 AND customer_id=$3");
+    expect(calls[0]?.params).toEqual(["adjustment-1", "order-1", "customer-1"]);
+    expect(calls[1]?.sql).toContain("JOIN merchant_suborders");
+  });
+
+  it("does not disclose an adjustment when it belongs to another customer", async () => {
+    const query = vi.fn(async () => ({ rows: [], rowCount: 0 }));
+    const pool = { query } as unknown as PostgresPool;
+    const store = new PostgresPaymentAdjustmentStore(pool);
+    await expect(store.getCustomerAdjustment({
+      orderId: "order-1", adjustmentId: "adjustment-1", customerId: "different-customer"
+    })).resolves.toEqual({ outcome: "not_found" });
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+});
