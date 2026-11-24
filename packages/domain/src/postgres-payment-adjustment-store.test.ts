@@ -301,6 +301,28 @@ describe("customer payment adjustment read model", () => {
     expect(calls[0]?.sql).toContain("tenant_id='platform' AND id=$1 AND order_id=$2 AND customer_id=$3");
     expect(calls[0]?.params).toEqual(["adjustment-1", "order-1", "customer-1"]);
     expect(calls[1]?.sql).toContain("JOIN merchant_suborders");
+    expect(calls[1]?.sql).toContain("a.order_id=$2");
+    expect(calls[1]?.params).toEqual(["adjustment-1", "order-1"]);
+  });
+
+  it("rejects minor-unit values that exceed JavaScript's safe integer range", async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("FROM customer_payment_adjustments")) {
+        return { rows: [{
+          id: "adjustment-1", order_id: "order-1", currency: "SAR",
+          adjustment_direction: "refund", amount_minor: "9007199254740992",
+          previous_total_minor: "10000", proposed_total_minor: "7500",
+          status: "awaiting_customer_consent", expires_at: "2026-11-16T17:05:00.000Z"
+        }], rowCount: 1 };
+      }
+      return { rows: [], rowCount: 0 };
+    });
+    const pool = { query } as unknown as PostgresPool;
+    const store = new PostgresPaymentAdjustmentStore(pool);
+    await expect(store.getCustomerAdjustment({
+      orderId: "order-1", adjustmentId: "adjustment-1", customerId: "customer-1"
+    })).rejects.toThrow("invalid_payment_adjustment_amount");
+    expect(query).toHaveBeenCalledTimes(1);
   });
 
   it("does not disclose an adjustment when it belongs to another customer", async () => {
