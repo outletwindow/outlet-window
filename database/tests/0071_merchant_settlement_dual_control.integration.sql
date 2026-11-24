@@ -70,6 +70,14 @@ BEGIN
       AND actor_id='independent-finance-approver'
   ) THEN RAISE EXCEPTION 'approval decision audit event missing'; END IF;
   BEGIN
+    INSERT INTO merchant_settlement_approval_requests
+      (id,tenant_id,batch_id,merchant_id,currency,requested_by,requester_role)
+    VALUES ('dual-request-second','dual-tenant','dual-batch','dual-merchant','SAR',
+      'another-operations-user','operations');
+    RAISE EXCEPTION 'second open accounting authorization request unexpectedly accepted';
+  EXCEPTION WHEN unique_violation THEN NULL;
+  END;
+  BEGIN
     UPDATE merchant_settlement_approval_decisions SET reason='tampered'
     WHERE id='dual-decision';
     RAISE EXCEPTION 'approval decision unexpectedly mutable';
