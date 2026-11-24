@@ -268,7 +268,34 @@ export class PostgresPlatformCheckoutReadinessStore {
       }
       const pricing = parent.metadata.checkoutPricing;
       const pricingDeliveryQuotes = pricing.deliveryQuotes;
-      if (!Array.isArray(pricingDeliveryQuotes) || pricingDeliveryQuotes.length !== deliveryQuotes.length ||
+      const productAllocations = pricing.suborderProductSubtotals;
+      const suborderProductAllocationsMatch = Array.isArray(productAllocations) &&
+        productAllocations.length === suborders.length &&
+        (() => {
+          const seen = new Set<string>();
+          let allocatedTotal = 0;
+          for (const allocation of productAllocations) {
+            if (!validObject(allocation) ||
+                typeof allocation.merchantId !== "string" ||
+                typeof allocation.branchId !== "string" ||
+                !Number.isSafeInteger(allocation.amountMinor) ||
+                (allocation.amountMinor as number) < 0) return false;
+            const key = allocation.merchantId + ":" + allocation.branchId;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            const suborderIndex = suborders.findIndex(suborder =>
+              suborder.merchant_id === allocation.merchantId &&
+              suborder.branch_id === allocation.branchId);
+            const total = totals.rows[suborderIndex];
+            if (suborderIndex < 0 || !total ||
+                Number(allocation.amountMinor) !== Number(total.subtotal_minor)) return false;
+            allocatedTotal += Number(allocation.amountMinor);
+            if (!Number.isSafeInteger(allocatedTotal)) return false;
+          }
+          return seen.size === suborders.length && allocatedTotal === itemSubtotal;
+        })();
+      if (!suborderProductAllocationsMatch ||
+          !Array.isArray(pricingDeliveryQuotes) || pricingDeliveryQuotes.length !== deliveryQuotes.length ||
           pricingDeliveryQuotes.some(entry => {
             if (!validObject(entry)) return true;
             const ledger = deliveryQuotes.find(row => row.suborder_id === suborders.find(sub =>
