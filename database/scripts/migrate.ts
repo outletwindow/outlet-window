@@ -79,7 +79,7 @@ async function main(): Promise<void> {
       { version: "0060_payment_refund_webhook_reconciliation_state", file: "0060_payment_refund_webhook_reconciliation_state.sql" },
       { version: "0061_payment_adjustment_reference_optional", file: "0061_payment_adjustment_reference_optional.sql" },
       { version: "0062_moyasar_single_refund_per_payment", file: "0062_moyasar_single_refund_per_payment.sql" },
-      { version: "0063_immutable_refund_component_allocations", file: "0063_immutable_refund_component_allocations.sql" }
+      { version: "0070_immutable_refund_component_allocations", file: "0070_immutable_refund_component_allocations.sql" }
     ].map(async migration => ({
       version: migration.version,
       sql: await readFile(resolve(process.cwd(), `../../database/migrations/${migration.file}`), "utf8")
