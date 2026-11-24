@@ -1875,3 +1875,85 @@ describe("merchant branch orders API", () => {
     } finally { await api.close(); }
   });
 });
+
+
+describe("customer payment adjustment read route", () => {
+  it("returns the authenticated customer's adjustment breakdown", async () => {
+    const customer: Actor = {
+      id: "payment-customer-1", role: "customer", active: true,
+      grants: [{
+        resource: "customer.order", actions: ["read"],
+        scope: { orderId: "payment-order-1" }
+      }]
+    };
+    const getCustomerAdjustment = vi.fn(async () => ({
+      outcome: "found" as const,
+      adjustment: {
+        id: "adjustment-1", orderId: "payment-order-1", currency: "SAR",
+        direction: "refund" as const, amountMinor: 2500,
+        previousTotalMinor: 10000, proposedTotalMinor: 7500,
+        status: "awaiting_customer_consent", expiresAtUtc: "2026-11-24T15:05:00.000Z",
+        allocations: [{
+          suborderId: "suborder-1", merchantId: "merchant-1", branchId: "branch-1",
+          componentKind: "product_subtotal" as const, amountMinor: 2500, currency: "SAR"
+        }]
+      }
+    }));
+    const api = buildApp({
+      resolveActor: async () => customer,
+      customerPaymentAdjustments: {
+        getCustomerAdjustment,
+        consent: vi.fn(async () => ({ outcome: "consented" })),
+        decline: vi.fn(async () => ({ outcome: "declined" }))
+      }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "GET",
+        url: "/api/v1/customer/orders/payment-order-1/payment-adjustments/adjustment-1"
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        id: "adjustment-1", amountMinor: 2500, currency: "SAR",
+        allocations: [{ merchantId: "merchant-1", amountMinor: 2500 }]
+      });
+      expect(getCustomerAdjustment).toHaveBeenCalledWith({
+        orderId: "payment-order-1", adjustmentId: "adjustment-1",
+        customerId: "payment-customer-1"
+      });
+    } finally {
+      await api.close();
+    }
+  });
+
+  it("does not reveal another customer's adjustment", async () => {
+    const customer: Actor = {
+      id: "payment-customer-1", role: "customer", active: true,
+      grants: [{
+        resource: "customer.order", actions: ["read"],
+        scope: { orderId: "payment-order-1" }
+      }]
+    };
+    const getCustomerAdjustment = vi.fn(async () => ({ outcome: "not_found" as const }));
+    const api = buildApp({
+      resolveActor: async () => customer,
+      customerPaymentAdjustments: {
+        getCustomerAdjustment,
+        consent: vi.fn(async () => ({ outcome: "consented" })),
+        decline: vi.fn(async () => ({ outcome: "declined" }))
+      }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "GET",
+        url: "/api/v1/customer/orders/payment-order-1/payment-adjustments/other-adjustment"
+      });
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toEqual({ error: "not_found" });
+    } finally {
+      await api.close();
+    }
+  });
+});

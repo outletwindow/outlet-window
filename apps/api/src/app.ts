@@ -77,6 +77,16 @@ export interface CustomerCheckoutService {
   create(input: CreateCustomerCheckoutInput): Promise<CustomerCheckoutResult>;
 }
 export interface CustomerPaymentAdjustmentActions {
+  getCustomerAdjustment?(input: { orderId: string; adjustmentId: string; customerId: string }): Promise<
+    | { outcome: "found"; adjustment: {
+        id: string; orderId: string; currency: string; direction: "additional_charge" | "refund";
+        amountMinor: number; previousTotalMinor: number; proposedTotalMinor: number;
+        status: string; expiresAtUtc: string;
+        allocations: Array<{ suborderId: string; merchantId: string; branchId: string;
+          componentKind: "product_subtotal" | "delivery"; amountMinor: number; currency: string }>;
+      } }
+    | { outcome: "not_found" }
+  >;
   consent(input: { orderId: string; adjustmentId: string; customerId: string }): Promise<{ outcome: string; submissionId?: string }>;
   consentAndQueue?(input: { orderId: string; adjustmentId: string; customerId: string }): Promise<{ outcome: string; submissionId?: string }>;
   decline(input: { orderId: string; adjustmentId: string; customerId: string }): Promise<{ outcome: string }>;
@@ -1599,6 +1609,24 @@ app.patch<{
     if(result.outcome==="persistence_conflict")return reply.code(503).send({error:"payment_intent_persistence_conflict"});
     if(result.outcome==="recovery_unavailable")return reply.code(503).send({error:"payment_intent_recovery_unavailable"});
     return reply.code(201).send(result);
+  });
+
+  app.get<{
+    Params: { orderId: string; adjustmentId: string };
+  }>("/api/v1/customer/orders/:orderId/payment-adjustments/:adjustmentId", async (request, reply) => {
+    const result = await authorizeRequest(request, options, {
+      resource: "customer.order", action: "read", scope: { orderId: request.params.orderId }
+    });
+    if (!result.actor) return sendAuthorizationFailure(reply, result.statusCode, result.decision.reason);
+    if (result.actor.role !== "customer") return reply.code(403).send({ error: "customer_only" });
+    const reader = options.customerPaymentAdjustments?.getCustomerAdjustment;
+    if (!reader) return reply.code(503).send({ error: "service_unavailable" });
+    const outcome = await reader({
+      orderId: request.params.orderId, adjustmentId: request.params.adjustmentId,
+      customerId: result.actor.id
+    });
+    if (outcome.outcome === "not_found") return reply.code(404).send({ error: "not_found" });
+    return reply.code(200).send(outcome.adjustment);
   });
 
   app.post<{

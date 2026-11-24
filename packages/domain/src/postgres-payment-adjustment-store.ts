@@ -18,6 +18,14 @@ export interface RefundComponentAllocationInput {
 export type PaymentAdjustmentOutcome =
   | { outcome: "created" | "consented" | "declined" | "provider_pending" | "provider_confirmed" | "provider_failed" | "expired" | "not_found" | "conflict" };
 
+function toSafeMinorUnits(value: string, field: string): number {
+  const amount = Number(value);
+  if (!Number.isSafeInteger(amount) || amount < 0) {
+    throw new Error(`invalid_payment_adjustment_${field}`);
+  }
+  return amount;
+}
+
 export class PostgresPaymentAdjustmentStore {
   constructor(private readonly pool: PostgresPool, private readonly now: () => Date = () => new Date()) {}
 
@@ -145,6 +153,62 @@ export class PostgresPaymentAdjustmentStore {
     } catch(error) {
       await client.query("ROLLBACK").catch(()=>undefined); throw error;
     } finally { client.release(); }
+  }
+
+
+  async getCustomerAdjustment(input: {
+    orderId: string; adjustmentId: string; customerId: string;
+  }): Promise<
+    | { outcome: "found"; adjustment: {
+        id: string; orderId: string; currency: string; direction: "additional_charge" | "refund";
+        amountMinor: number; previousTotalMinor: number; proposedTotalMinor: number;
+        status: string; expiresAtUtc: string;
+        allocations: Array<{ suborderId: string; merchantId: string; branchId: string;
+          componentKind: "product_subtotal" | "delivery"; amountMinor: number; currency: string }>;
+      } }
+    | { outcome: "not_found" }
+  > {
+    const found = await this.pool.query<{
+      id: string; order_id: string; currency: string; adjustment_direction: "additional_charge" | "refund";
+      amount_minor: string; previous_total_minor: string; proposed_total_minor: string;
+      status: string; expires_at: Date | string;
+    }>(
+      `SELECT id,order_id,currency,adjustment_direction,amount_minor,
+              previous_total_minor,proposed_total_minor,status,expires_at
+       FROM customer_payment_adjustments
+       WHERE tenant_id='platform' AND id=$1 AND order_id=$2 AND customer_id=$3`,
+      [input.adjustmentId,input.orderId,input.customerId]
+    );
+    if (found.rowCount !== 1 || !found.rows[0]) return { outcome: "not_found" };
+    const row = found.rows[0];
+    const allocations = await this.pool.query<{
+      suborder_id: string; merchant_id: string; branch_id: string;
+      component_kind: "product_subtotal" | "delivery"; amount_minor: string; currency: string;
+    }>(
+      `SELECT a.suborder_id,s.merchant_id,s.branch_id,a.component_kind,a.amount_minor,a.currency
+       FROM customer_payment_adjustment_allocations a
+       JOIN merchant_suborders s
+         ON s.tenant_id=a.merchant_tenant_id AND s.order_id=a.order_id AND s.id=a.suborder_id
+       WHERE a.tenant_id='platform' AND a.adjustment_id=$1 AND a.order_id=$2
+       ORDER BY s.merchant_id,s.branch_id,a.component_kind`,
+      [row.id,input.orderId]
+    );
+    return {
+      outcome: "found",
+      adjustment: {
+        id: row.id, orderId: row.order_id, currency: row.currency,
+        direction: row.adjustment_direction,
+        amountMinor: toSafeMinorUnits(row.amount_minor, "amount"),
+        previousTotalMinor: toSafeMinorUnits(row.previous_total_minor, "previous_total"),
+        proposedTotalMinor: toSafeMinorUnits(row.proposed_total_minor, "proposed_total"),
+        status: row.status,
+        expiresAtUtc: row.expires_at instanceof Date ? row.expires_at.toISOString() : new Date(row.expires_at).toISOString(),
+        allocations: allocations.rows.map(line => ({
+          suborderId: line.suborder_id, merchantId: line.merchant_id, branchId: line.branch_id,
+          componentKind: line.component_kind, amountMinor: toSafeMinorUnits(line.amount_minor, "allocation_amount"), currency: line.currency
+        }))
+      }
+    };
   }
 
   async consent(input: { adjustmentId:string; orderId:string; customerId:string; nowUtc?:string }): Promise<PaymentAdjustmentOutcome> {
