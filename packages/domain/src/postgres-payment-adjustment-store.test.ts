@@ -14,6 +14,12 @@ function makeStore(options: { providerKey?: string; providerReference?: string; 
   const calls: Array<{ sql: string; params?: unknown[] }> = [];
   const query = vi.fn(async (sql: string, params?: unknown[]) => {
     calls.push({ sql, ...(params === undefined ? {} : { params }) });
+    if (sql.startsWith("SELECT total_minor,currency FROM customer_orders")) {
+      return { rows: [{ total_minor: "10000", currency: "SAR" }], rowCount: 1 };
+    }
+    if (sql.startsWith("INSERT INTO customer_payment_adjustments")) {
+      return { rows: [{ id: "adjustment-created" }], rowCount: 1 };
+    }
     if (sql.startsWith("SELECT * FROM customer_payment_adjustments")) {
       return {
         rows: [{
@@ -37,6 +43,67 @@ function makeStore(options: { providerKey?: string; providerReference?: string; 
   const pool = { connect: vi.fn(async () => client) } as unknown as PostgresPool;
   return { store: new PostgresPaymentAdjustmentStore(pool, () => new Date("2026-11-16T17:00:00.000Z")), calls, query };
 }
+
+describe("Postgres payment adjustment intent allocations", () => {
+  const baseInput = {
+    tenantId: "tenant-1", orderId: "order-1", customerId: "customer-1", actorId: "customer-1",
+    idempotencyKey: "refund-create-key-1", quoteReference: "refund-quote-1", currency: "SAR",
+    previousTotalMinor: 10000, proposedTotalMinor: 7500,
+    expiresAtUtc: "2026-11-16T17:05:00.000Z"
+  };
+
+  it("requires component allocations for every refund intent", async () => {
+    const { store, calls } = makeStore();
+    await expect(store.createIntent(baseInput)).rejects.toThrow("refund_component_allocation_required");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("rejects allocations whose sum differs from the refund amount", async () => {
+    const { store, calls } = makeStore();
+    await expect(store.createIntent({
+      ...baseInput,
+      refundAllocations: [{ suborderId: "sub-1", componentKind: "product_subtotal", amountMinor: 2499 }]
+    })).rejects.toThrow("refund_component_allocation_total_mismatch");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("persists exact allocations in the same transaction as the refund intent", async () => {
+    const { store, calls } = makeStore();
+    await expect(store.createIntent({
+      ...baseInput,
+      refundAllocations: [
+        { suborderId: "sub-1", componentKind: "product_subtotal", amountMinor: 1500 },
+        { suborderId: "sub-2", componentKind: "delivery", sourceReference: "delivery-quote-2", amountMinor: 1000 }
+      ]
+    })).resolves.toMatchObject({
+      outcome: "created", adjustmentId: expect.any(String), amountMinor: 2500, direction: "refund"
+    });
+    const allocationInserts = calls.filter(call => call.sql.includes("INSERT INTO customer_payment_adjustment_allocations"));
+    expect(allocationInserts).toHaveLength(2);
+    expect(allocationInserts[1]?.params?.[2]).toBe(allocationInserts[0]?.params?.[2]);
+    expect(allocationInserts[0]?.params).toEqual([
+      expect.any(String), "tenant-1", expect.any(String), "order-1", "sub-1",
+      "product_subtotal", null, 1500, "SAR"
+    ]);
+    expect(allocationInserts[1]?.params).toEqual([
+      expect.any(String), "tenant-1", expect.any(String), "order-1", "sub-2",
+      "delivery", "delivery-quote-2", 1000, "SAR"
+    ]);
+    expect(calls.at(-1)?.sql).toBe("COMMIT");
+  });
+
+  it("rejects duplicate source lines before opening a transaction", async () => {
+    const { store, calls } = makeStore();
+    await expect(store.createIntent({
+      ...baseInput,
+      refundAllocations: [
+        { suborderId: "sub-1", componentKind: "product_subtotal", amountMinor: 1000 },
+        { suborderId: "sub-1", componentKind: "product_subtotal", amountMinor: 1500 }
+      ]
+    })).rejects.toThrow("duplicate_refund_component_allocation");
+    expect(calls).toHaveLength(0);
+  });
+});
 
 describe("Postgres payment adjustment provider result", () => {
   it("applies a provider-confirmed refund atomically against the exact previous order total", async () => {
