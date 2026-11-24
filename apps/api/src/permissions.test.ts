@@ -95,3 +95,30 @@ describe("customer order permissions", () => {
     }]);
   });
 });
+
+describe("platform merchant settlement approval permissions", () => {
+  it("grants request authority to operations and request plus approval to finance", () => {
+    const operations = grantsForAssignments([assignment("operations")]);
+    expect(operations).toContainEqual({
+      resource: "platform.merchant_settlement", actions: ["create"], scope: { platform: true }
+    });
+    expect(operations.some(grant => grant.actions.includes("approve"))).toBe(false);
+    const finance = grantsForAssignments([assignment("finance")]);
+    expect(finance).toContainEqual({
+      resource: "platform.merchant_settlement", actions: ["read", "create", "approve"], scope: { platform: true }
+    });
+  });
+
+  it("grants read access to finance review queues but not operations requesters", () => {
+    const finance = grantsForAssignments([assignment("finance")]);
+    expect(finance.some(grant => grant.resource === "platform.merchant_settlement" && grant.actions.includes("read"))).toBe(true);
+    const operations = grantsForAssignments([assignment("operations")]);
+    expect(operations.some(grant => grant.resource === "platform.merchant_settlement" && grant.actions.includes("read"))).toBe(false);
+  });
+  it("does not grant platform settlement approval authority to merchant roles", () => {
+    for (const role of ["merchant_owner", "merchant_admin", "branch_manager", "merchant_employee"] as const) {
+      const grants = grantsForAssignments([assignment(role)]);
+      expect(grants.some(grant => grant.resource === "platform.merchant_settlement")).toBe(false);
+    }
+  });
+});

@@ -274,6 +274,10 @@ jobs:
         env:
           PGPASSWORD: ci_only_password
         run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0050_merchant_settlement_batches.integration.sql
+      - name: Verify merchant settlement dual-control approval records
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0071_merchant_settlement_dual_control.integration.sql
       - name: Verify tenant-scoped courier delivery tasks and immutable evidence
         env:
           PGPASSWORD: ci_only_password

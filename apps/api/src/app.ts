@@ -23,6 +23,10 @@ import type { RecordPreparationCheckInput, RecordPreparationCheckResult } from "
 import type { CreateCustomerCheckoutInput, CustomerCheckoutResult } from "../../../packages/domain/src/postgres-customer-checkout.js";
 import type { CourierTaskStatus } from "../../../packages/domain/src/courier-task.js";
 import type { MerchantOrderSummary } from "../../../packages/domain/src/postgres-merchant-order-reader.js";
+import type {
+  SettlementApprovalRole, SettlementApprovalDecision, SettlementApprovalOutcome,
+  SettlementDecisionOutcome
+} from "../../../packages/domain/src/postgres-merchant-settlement-approval-store.js";
 
 export interface SallaOAuthFlow {
   begin(input: { tenantId: string; integrationId: string }): Promise<{ authorizationUrl: string }>;
@@ -79,6 +83,12 @@ export interface CustomerCheckoutService {
 export interface MerchantSettlementReader {
   list(input: { tenantId: string; merchantId: string; status?: "draft" | "approved"; limit?: number }): Promise<import("../../../packages/domain/src/postgres-merchant-settlement-reader.js").MerchantSettlementBatchSummary[]>;
   get(input: { tenantId: string; merchantId: string; batchId: string }): Promise<import("../../../packages/domain/src/postgres-merchant-settlement-reader.js").MerchantSettlementBatch | null>;
+}
+export interface MerchantSettlementApprovalService {
+  request(input: { batchId: string; requesterId: string; requesterRole: SettlementApprovalRole }): Promise<SettlementApprovalOutcome>;
+  listPending(input?: { limit?: number }): Promise<import("../../../packages/domain/src/postgres-merchant-settlement-approval-store.js").SettlementApprovalRequest[]>;
+  decide(input: { requestId: string; actorId: string; actorRole: "finance" | "platform_admin" | "platform_owner";
+    decision: SettlementApprovalDecision; reason?: string }): Promise<SettlementDecisionOutcome>;
 }
 export interface CustomerPaymentAdjustmentActions {
   getCustomerAdjustment?(input: { orderId: string; adjustmentId: string; customerId: string }): Promise<
@@ -166,6 +176,7 @@ export interface AppOptions {
   merchantBranches?: MerchantBranchReader;
   merchantOrderReader?: { listForBranch(input: { tenantId: string; merchantId: string; branchId: string; status?: OrderStatus; limit?: number }): Promise<MerchantOrderSummary[]> };
   merchantSettlementReader?: MerchantSettlementReader;
+  merchantSettlementApprovals?: MerchantSettlementApprovalService;
   merchantBranchWriter?: MerchantBranchWriter;
   /** Optional dependency check used by readiness; failures keep the instance out of service. */
   readinessCheck?: () => Promise<boolean>;
@@ -1149,6 +1160,80 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       return reply.code(result.outcome === "applied" ? 200 : 202).send(result);
     }
   );
+
+  app.post<{
+    Params: { batchId: string };
+  }>("/api/v1/platform/settlements/:batchId/approval-requests", async (request, reply) => {
+    const access = await authorizeRequest(request, options, {
+      resource: "platform.merchant_settlement", action: "create", scope: { platform: true }
+    });
+    if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
+    const roles = access.actor.roles ?? [access.actor.role];
+    const requesterRole = roles.find((role): role is SettlementApprovalRole =>
+      role === "operations" || role === "finance" || role === "platform_admin" || role === "platform_owner");
+    if (!requesterRole) return reply.code(403).send({ error: "platform_settlement_request_role_required" });
+    if (!options.merchantSettlementApprovals) return reply.code(503).send({ error: "settlement_approval_unavailable" });
+    const result = await options.merchantSettlementApprovals.request({
+      batchId: request.params.batchId, requesterId: access.actor.id, requesterRole
+    });
+    if (result.outcome === "not_found") return reply.code(404).send({ error: "settlement_batch_not_found" });
+    if (result.outcome === "already_pending") return reply.code(409).send({ error: "settlement_approval_already_pending" });
+    if (result.outcome === "invalid_batch_state") return reply.code(409).send({ error: "settlement_batch_not_draft" });
+    if (result.outcome === "empty_or_unbalanced_batch") return reply.code(409).send({ error: "settlement_batch_not_ready_for_review" });
+    if (!("request" in result)) return reply.code(409).send({ error: "settlement_approval_request_not_created" });
+    return reply.code(201).send({ request: result.request });
+  });
+
+  app.get<{
+    Querystring: { limit?: string };
+  }>("/api/v1/platform/settlement-approval-requests", async (request, reply) => {
+    const access = await authorizeRequest(request, options, {
+      resource: "platform.merchant_settlement", action: "read", scope: { platform: true }
+    });
+    if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
+    const roles = access.actor.roles ?? [access.actor.role];
+    if (!roles.some(role => role === "finance" || role === "platform_admin" || role === "platform_owner")) {
+      return reply.code(403).send({ error: "platform_settlement_reviewer_role_required" });
+    }
+    if (!options.merchantSettlementApprovals) return reply.code(503).send({ error: "settlement_approval_unavailable" });
+    const limit = request.query.limit === undefined ? 50 : Number(request.query.limit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+      return reply.code(400).send({ error: "invalid_limit" });
+    }
+    const requests = await options.merchantSettlementApprovals.listPending({ limit });
+    return reply.code(200).send({ requests });
+  });
+
+  app.post<{
+    Params: { requestId: string };
+    Body: { decision?: string; reason?: string };
+  }>("/api/v1/platform/settlement-approval-requests/:requestId/decision", async (request, reply) => {
+    const access = await authorizeRequest(request, options, {
+      resource: "platform.merchant_settlement", action: "approve", scope: { platform: true }
+    });
+    if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
+    const roles = access.actor.roles ?? [access.actor.role];
+    const actorRole = roles.find((role): role is "finance" | "platform_admin" | "platform_owner" =>
+      role === "finance" || role === "platform_admin" || role === "platform_owner");
+    if (!actorRole) return reply.code(403).send({ error: "platform_settlement_approver_role_required" });
+    const body = request.body;
+    if (!body || (body.decision !== "authorize_accounting" && body.decision !== "reject") ||
+        (body.reason !== undefined && (typeof body.reason !== "string" || body.reason.length > 1000))) {
+      return reply.code(400).send({ error: "invalid_settlement_approval_decision" });
+    }
+    if (!options.merchantSettlementApprovals) return reply.code(503).send({ error: "settlement_approval_unavailable" });
+    const result = await options.merchantSettlementApprovals.decide({
+      requestId: request.params.requestId, actorId: access.actor.id, actorRole,
+      decision: body.decision, ...(body.reason === undefined ? {} : { reason: body.reason })
+    });
+    if (result.outcome === "not_found") return reply.code(404).send({ error: "settlement_approval_request_not_found" });
+    if (result.outcome === "self_approval") return reply.code(403).send({ error: "settlement_requester_cannot_approve" });
+    if (result.outcome === "already_decided") return reply.code(409).send({ error: "settlement_approval_already_decided" });
+    if (result.outcome === "snapshot_changed") return reply.code(409).send({ error: "settlement_snapshot_changed" });
+    if (result.outcome === "invalid_transition") return reply.code(409).send({ error: "settlement_approval_transition_invalid" });
+    if (!("request" in result)) return reply.code(409).send({ error: "settlement_approval_decision_not_recorded" });
+    return reply.code(200).send({ request: result.request });
+  });
 
   app.get<{
     Params: { merchantId: string };
