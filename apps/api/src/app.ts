@@ -77,6 +77,7 @@ export interface CustomerCheckoutService {
   create(input: CreateCustomerCheckoutInput): Promise<CustomerCheckoutResult>;
 }
 export interface MerchantSettlementReader {
+  list(input: { tenantId: string; merchantId: string; status?: "draft" | "approved"; limit?: number }): Promise<import("../../../packages/domain/src/postgres-merchant-settlement-reader.js").MerchantSettlementBatchSummary[]>;
   get(input: { tenantId: string; merchantId: string; batchId: string }): Promise<import("../../../packages/domain/src/postgres-merchant-settlement-reader.js").MerchantSettlementBatch | null>;
 }
 export interface CustomerPaymentAdjustmentActions {
@@ -1148,6 +1149,37 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       return reply.code(result.outcome === "applied" ? 200 : 202).send(result);
     }
   );
+
+  app.get<{
+    Params: { merchantId: string };
+    Querystring: { status?: string; limit?: string };
+  }>("/api/v1/merchants/:merchantId/settlements", async (request, reply) => {
+    const { merchantId } = request.params;
+    const access = await authorizeRequest(request, options, {
+      resource: "merchant.settlement", action: "read", scope: { merchantId }
+    });
+    if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
+    if (!(access.actor.roles ?? [access.actor.role]).some(role => role === "merchant_owner" || role === "merchant_admin")) {
+      return reply.code(403).send({ error: "merchant_settlement_role_required" });
+    }
+    if (!options.resolveMerchantTenantId || !options.merchantSettlementReader) {
+      return reply.code(503).send({ error: "service_unavailable" });
+    }
+    const status = request.query.status;
+    if (status !== undefined && status !== "draft" && status !== "approved") {
+      return reply.code(400).send({ error: "invalid_status" });
+    }
+    const limit = request.query.limit === undefined ? 50 : Number(request.query.limit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+      return reply.code(400).send({ error: "invalid_limit" });
+    }
+    const tenantId = await options.resolveMerchantTenantId(merchantId);
+    if (!tenantId) return reply.code(404).send({ error: "not_found" });
+    const batches = await options.merchantSettlementReader.list({
+      tenantId, merchantId, ...(status === undefined ? {} : { status }), limit
+    });
+    return reply.code(200).send({ batches });
+  });
 
   app.get<{
     Params: { merchantId: string; batchId: string };
