@@ -18,9 +18,12 @@ BEGIN
   IF to_regprocedure('public.enqueue_merchant_payout_provider_submission(text,text,text,text,text,text,text)') IS NULL THEN
     RAISE EXCEPTION 'payout provider enqueue function missing';
   END IF;
-  IF has_function_privilege('public','public.enqueue_merchant_payout_provider_submission(text,text,text,text,text,text,text)','EXECUTE') THEN
-    RAISE EXCEPTION 'payout enqueue function must not be executable by PUBLIC';
-  END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_proc p
+    CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) acl
+    WHERE p.oid='public.enqueue_merchant_payout_provider_submission(text,text,text,text,text,text,text)'::regprocedure
+      AND acl.grantee=0 AND acl.privilege_type='EXECUTE'
+  ) THEN RAISE EXCEPTION 'payout enqueue function must not be executable by PUBLIC'; END IF;
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_schema='public' AND table_name='merchant_payout_destinations'
