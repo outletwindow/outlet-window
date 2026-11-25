@@ -6,7 +6,8 @@ VALUES ('payout-outbox-merchant','payout-outbox-tenant','Outbox LLC','Outbox Mer
 INSERT INTO financial_accounts
 (id,tenant_id,account_code,account_name,account_type,currency)
 VALUES ('payout-outbox-held','payout-outbox-tenant','CUSTOMER_FUNDS_HELD','Customer funds held','liability','SAR'),
-       ('payout-outbox-payable','payout-outbox-tenant','MERCHANT_PAYABLE','Merchant payable','liability','SAR');
+       ('payout-outbox-payable','payout-outbox-tenant','MERCHANT_PAYABLE','Merchant payable','liability','SAR'),
+       ('payout-outbox-clearing','payout-outbox-tenant','PAYOUT_CLEARING','Payout clearing','asset','SAR');
 INSERT INTO merchant_branches (id,merchant_id,display_name,city_code,status)
 VALUES ('payout-outbox-branch','payout-outbox-merchant','Outbox Branch','JUB','active');
 INSERT INTO customer_orders (id,tenant_id,customer_id,idempotency_key,status,currency,total_minor)
@@ -57,6 +58,8 @@ DO $checks$
 DECLARE
   queued_id text;
   duplicate_id text;
+  posted_journal_id text;
+  duplicate_journal_id text;
 BEGIN
   IF to_regclass('public.merchant_payout_provider_events') IS NULL THEN
     RAISE EXCEPTION 'merchant payout provider events table missing';
@@ -114,6 +117,52 @@ BEGIN
   IF (SELECT count(*) FROM merchant_payout_provider_outbox
       WHERE tenant_id='payout-outbox-tenant' AND payout_intent_id='payout-outbox-intent')<>1 THEN
     RAISE EXCEPTION 'more than one payout outbox row exists for one payout intent';
+  END IF;
+
+  INSERT INTO merchant_payout_account_mappings
+    (id,tenant_id,currency,merchant_payable_account_id,payout_clearing_account_id,approved_by,approved_at)
+  VALUES ('payout-outbox-account-map','payout-outbox-tenant','SAR',
+    'payout-outbox-payable','payout-outbox-clearing','payout-outbox-finance',now());
+
+  UPDATE merchant_payout_provider_outbox
+  SET status='processing',lease_owner='payout-worker-test',
+      lease_expires_at=now()+interval '1 minute',attempt_count=1
+  WHERE tenant_id='payout-outbox-tenant' AND id=queued_id AND status='queued';
+  UPDATE merchant_payout_provider_outbox
+  SET status='submitted',provider_reference='provider-payout-ref-1',
+      submitted_at=now(),lease_owner=NULL,lease_expires_at=NULL
+  WHERE tenant_id='payout-outbox-tenant' AND id=queued_id AND status='processing';
+
+  posted_journal_id := post_confirmed_merchant_payout(
+    'payout-provider-event-1','payout-outbox-tenant',queued_id,'sandbox-provider',
+    'provider-event-1','provider-payout-ref-1',5000,'SAR','payout-outbox-finance'
+  );
+  IF NOT EXISTS (
+    SELECT 1 FROM merchant_payout_provider_outbox
+    WHERE tenant_id='payout-outbox-tenant' AND id=queued_id
+      AND status='confirmed' AND confirmed_at IS NOT NULL
+  ) THEN RAISE EXCEPTION 'verified payout confirmation did not confirm outbox'; END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM financial_journals
+    WHERE tenant_id='payout-outbox-tenant' AND id=posted_journal_id
+      AND status='posted' AND source_type='merchant_payout'
+  ) THEN RAISE EXCEPTION 'confirmed payout journal was not posted'; END IF;
+  IF (SELECT SUM(debit_minor) FROM financial_journal_lines
+      WHERE tenant_id='payout-outbox-tenant' AND journal_id=posted_journal_id)<>5000
+     OR (SELECT SUM(credit_minor) FROM financial_journal_lines
+      WHERE tenant_id='payout-outbox-tenant' AND journal_id=posted_journal_id)<>5000 THEN
+    RAISE EXCEPTION 'payout journal is not balanced';
+  END IF;
+  duplicate_journal_id := post_confirmed_merchant_payout(
+    'payout-provider-event-duplicate','payout-outbox-tenant',queued_id,'sandbox-provider',
+    'provider-event-1','provider-payout-ref-1',5000,'SAR','payout-outbox-finance'
+  );
+  IF duplicate_journal_id<>posted_journal_id THEN
+    RAISE EXCEPTION 'duplicate provider event did not return the original journal';
+  END IF;
+  IF (SELECT count(*) FROM financial_journals
+      WHERE tenant_id='payout-outbox-tenant' AND source_type='merchant_payout')<>1 THEN
+    RAISE EXCEPTION 'duplicate payout confirmation created a second journal';
   END IF;
 END
 $checks$;
