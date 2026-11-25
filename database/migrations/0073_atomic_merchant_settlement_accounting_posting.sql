@@ -40,13 +40,6 @@ BEGIN
     RAISE EXCEPTION 'settlement_batch_not_found' USING ERRCODE='P0002';
   END IF;
 
-  IF batch_row.status='approved' THEN
-    RETURN batch_row.journal_id;
-  END IF;
-  IF batch_row.status <> 'draft' THEN
-    RAISE EXCEPTION 'settlement_batch_not_postable' USING ERRCODE='23514';
-  END IF;
-
   SELECT * INTO approval_row
   FROM merchant_settlement_approval_requests
   WHERE tenant_id=p_tenant_id AND batch_id=p_batch_id
@@ -59,6 +52,13 @@ BEGIN
   IF approval_row.requested_by=p_actor_id THEN
     RAISE EXCEPTION 'settlement_requester_cannot_post_own_batch'
       USING ERRCODE='42501';
+  END IF;
+
+  IF batch_row.status='approved' THEN
+    RETURN batch_row.journal_id;
+  END IF;
+  IF batch_row.status <> 'draft' THEN
+    RAISE EXCEPTION 'settlement_batch_not_postable' USING ERRCODE='23514';
   END IF;
 
   IF batch_row.policy_snapshot_id IS NULL THEN
