@@ -140,3 +140,5 @@ export * from "./merchant-payout-confirmation-webhook.js";
 export * from "./moyasar-merchant-payout-webhook.js";
 export * from "./moyasar-merchant-payout-provider.js";
 export * from "./postgres-moyasar-merchant-payout-confirmation-store.js";
+
+export * from "./postgres-merchant-payout-provider-entity-registry.js";
