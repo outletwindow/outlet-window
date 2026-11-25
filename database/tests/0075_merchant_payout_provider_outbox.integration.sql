@@ -186,6 +186,22 @@ BEGIN
       WHERE tenant_id='payout-outbox-tenant' AND source_type='merchant_payout')<>1 THEN
     RAISE EXCEPTION 'duplicate payout confirmation created a second journal';
   END IF;
+
+  -- A revoked provider identity must not accept a new payout submission,
+  -- even when the old destination remains marked verified.
+  UPDATE merchant_payout_provider_entities
+  SET status='revoked',revoked_at=now()
+  WHERE tenant_id='payout-outbox-tenant' AND id='payout-provider-entity-map';
+  BEGIN
+    INSERT INTO merchant_payout_provider_outbox
+      (id,tenant_id,payout_intent_id,merchant_id,destination_id,provider_key,
+       currency,amount_minor,idempotency_key)
+    VALUES ('payout-outbox-revoked-entity-blocked','payout-outbox-tenant',
+      'payout-outbox-intent','payout-outbox-merchant','payout-outbox-destination',
+      'sandbox-provider','SAR',5000,'payout-provider-revoked-idem');
+    RAISE EXCEPTION 'revoked provider entity unexpectedly accepted a payout';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
 END
 $checks$;
 
