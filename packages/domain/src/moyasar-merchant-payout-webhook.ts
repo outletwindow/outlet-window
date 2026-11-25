@@ -95,3 +95,40 @@ export const moyasarMerchantPayoutConfirmationEventDecoder: MerchantPayoutConfir
     };
   }
 };
+
+
+import {
+  MerchantPayoutConfirmationWebhookProcessor,
+  type VerifiedMerchantPayoutConfirmationStore
+} from "./merchant-payout-confirmation-webhook.js";
+
+/** Concrete composition for the documented Moyasar platform merchant-payout event contract. */
+export class MoyasarMerchantPayoutConfirmationWebhookProcessor {
+  private readonly processor: MerchantPayoutConfirmationWebhookProcessor;
+
+  constructor(dependencies: {
+    secretResolver: (providerKey: string) => Promise<string | null>;
+    store: VerifiedMerchantPayoutConfirmationStore;
+    auditActorId: string;
+    expectedLiveMode: boolean;
+  }) {
+    this.processor = new MerchantPayoutConfirmationWebhookProcessor({
+      secretResolver: dependencies.secretResolver,
+      verifier: createMoyasarMerchantPayoutWebhookVerifier(dependencies.expectedLiveMode),
+      decoder: moyasarMerchantPayoutConfirmationEventDecoder,
+      store: dependencies.store,
+      auditActorId: dependencies.auditActorId
+    });
+  }
+
+  process(input: {
+    rawBody: string;
+    headers: Readonly<Record<string, string>>;
+  }) {
+    return this.processor.process({
+      providerKey: "moyasar",
+      rawBody: input.rawBody,
+      headers: input.headers
+    });
+  }
+}
