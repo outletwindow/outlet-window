@@ -84,3 +84,25 @@ A successful `authorize_accounting` result means only `authorized_for_accounting
 `GET /api/v1/platform/settlement-approval-requests?limit=50`
 
 Returns pending review requests ordered oldest-first. Requires the platform-scoped `platform.merchant_settlement:read` grant and a `finance`, `platform_admin`, or `platform_owner` role. The limit is an integer from 1 to 100 and defaults to 50. Operations requesters cannot browse the finance review queue.
+
+
+## Platform accounting posting endpoint
+
+`POST /api/v1/platform/settlements/:batchId/post-accounting`
+
+This endpoint is restricted to authenticated `finance`, `platform_admin`, or `platform_owner` actors with the explicit platform-scoped `platform.merchant_settlement:execute` grant. The tenant is resolved from the immutable settlement batch row in trusted persistence; request-body tenant or actor identifiers are ignored.
+
+Before posting, the accounting service locks the batch and requires exactly one `authorized_for_accounting` dual-control approval, a bound immutable policy snapshot, a matching contract reference, complete deduction-account mappings, and active same-tenant/same-currency ledger accounts. It then creates and posts a balanced double-entry journal, changes the batch to `approved`, and appends its audit event in one PostgreSQL transaction. A stable idempotency key and the batch row lock make retries safe.
+
+### Outcomes
+
+| Status | Meaning |
+| --- | --- |
+| `201` | Journal posted and batch approved |
+| `200` | Idempotent retry; existing journal returned |
+| `401` / `403` | Missing identity, grant, or platform finance role |
+| `404` | Settlement batch not found |
+| `409` | Missing approval, policy, or account mapping; or idempotency conflict |
+| `503` | Accounting service unavailable |
+
+This endpoint performs accounting posting only. It does not initiate a PSP refund, bank transfer, or merchant payout. Payout execution remains a separate workflow and requires its own provider reconciliation and controls.
