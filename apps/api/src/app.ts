@@ -1541,10 +1541,11 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     const result=await options.merchantPayoutDestinations.register({...input,actorId:access.actor.id});
     await options.auditEvents.append(createAuditEvent({...base,id:randomUUID(),
       type:result.outcome==="created"?"payout_destination.registered":"payout_destination.registration_rejected",
-      outcome:result.outcome==="created"?"success":"failure",
-      ...(result.outcome==="created"?{resourceId:result.destination.id}:{})}));
-    if(result.outcome==="provider_entity_not_found") return reply.code(409).send({error:"active_provider_entity_required"});
-    if(result.outcome==="duplicate") return reply.code(409).send({error:"payout_destination_duplicate"});
+      outcome:result.outcome==="created"?"success":"failure"}));
+    if(result.outcome!=="created") {
+      if(result.outcome==="provider_entity_not_found") return reply.code(409).send({error:"active_provider_entity_required"});
+      return reply.code(409).send({error:"payout_destination_duplicate"});
+    }
     return reply.code(201).send({destination:result.destination});
   });
 
@@ -1565,10 +1566,12 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       resourceId:request.params.destinationId,correlationId:request.id,source:"api",severity:"critical",
       type:result.outcome==="verified"?"payout_destination.verified":"payout_destination.verification_rejected",
       outcome:result.outcome==="verified"?"success":"failure",metadata:{reason:result.outcome}}));
-    if(result.outcome==="not_found") return reply.code(404).send({error:"payout_destination_not_found"});
-    if(result.outcome==="self_approval") return reply.code(409).send({error:"payout_destination_self_approval_forbidden"});
-    if(result.outcome==="not_pending") return reply.code(409).send({error:"payout_destination_not_pending"});
-    if(result.outcome==="provider_entity_inactive") return reply.code(409).send({error:"active_provider_entity_required"});
+    if(result.outcome!=="verified") {
+      if(result.outcome==="not_found") return reply.code(404).send({error:"payout_destination_not_found"});
+      if(result.outcome==="self_approval") return reply.code(409).send({error:"payout_destination_self_approval_forbidden"});
+      if(result.outcome==="not_pending") return reply.code(409).send({error:"payout_destination_not_pending"});
+      return reply.code(409).send({error:"active_provider_entity_required"});
+    }
     return reply.code(200).send({destination:result.destination});
   });
 
