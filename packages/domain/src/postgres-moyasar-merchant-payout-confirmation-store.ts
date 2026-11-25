@@ -23,6 +23,7 @@ export class PostgresMoyasarMerchantPayoutConfirmationStore implements VerifiedM
     entityId?: string;
   }): Promise<{ outcome: "confirmed" | "duplicate"; journalId: string }> {
     if (input.providerKey !== "moyasar" ||
+        !input.eventRowId.trim() || input.eventRowId.length > 160 ||
         !/^[a-zA-Z0-9_-]{1,200}$/.test(input.outboxId) ||
         !/^[a-zA-Z0-9._:-]{1,240}$/.test(input.providerEventId) ||
         !/^[a-zA-Z0-9._:-]{1,240}$/.test(input.providerReference) ||
