@@ -14,7 +14,7 @@ export function grantsForAssignments(assignments: readonly RoleAssignment[]): re
     }];
     if (assignment.role === "finance") return [{
       resource: "platform.merchant_settlement",
-      actions: ["read", "create", "approve"] as const,
+      actions: ["read", "create", "approve", "execute"] as const,
       scope: { platform: true }
     }];
     if (assignment.role === "platform_admin" || assignment.role === "platform_owner") return [{
