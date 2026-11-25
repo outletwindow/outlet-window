@@ -1374,7 +1374,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     });
     if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
     const roles = access.actor.roles ?? [access.actor.role];
-    if (!roles.some(role => role === "finance" || role === "platform_admin" || role === "platform_owner")) {
+    if (!roles.some(role => role === "finance")) {
       return reply.code(403).send({ error: "platform_payout_dispatch_role_required" });
     }
     const body = request.body;
