@@ -269,7 +269,8 @@ export function buildPostgresApp(options: PostgresApiOptions) {
         "0068_courier_pickup_code_issuance_audit",
         "0069_courier_pickup_code_issue_limits",
         "0070_immutable_refund_component_allocations",
-        "0071_merchant_settlement_dual_control"
+        "0071_merchant_settlement_dual_control",
+        "0072_merchant_settlement_policy_account_mappings"
       ];
       const result = await options.pool.query<{ version: string }>(
         "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",
