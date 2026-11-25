@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { PostgresPool } from "./postgres-iam-store.js";
 
 export interface ClaimedMerchantPayout {
@@ -21,6 +22,37 @@ export type MerchantPayoutOutboxClaimResult = ClaimedMerchantPayout | null;
  */
 export class PostgresMerchantPayoutProviderOutbox {
   constructor(private readonly pool: PostgresPool) {}
+
+  async enqueue(input: {
+    payoutIntentId: string; destinationId: string; providerKey: string;
+    idempotencyKey: string; actorId: string;
+  }): Promise<
+    | { outcome: "queued"; outboxId: string }
+    | { outcome: "not_authorized" | "destination_unverified" | "idempotency_conflict" }
+  > {
+    if (!input.payoutIntentId.trim() || !input.destinationId.trim() ||
+        !/^[a-zA-Z0-9._-]{1,100}$/.test(input.providerKey) ||
+        !/^[a-zA-Z0-9._:-]{8,240}$/.test(input.idempotencyKey) ||
+        !input.actorId.trim()) throw new Error("INVALID_MERCHANT_PAYOUT_ENQUEUE");
+    try {
+      const result = await this.pool.query<{outbox_id:string}>(
+        "SELECT enqueue_merchant_payout_provider_submission($1,$2,$3,$4,$5,$6,$7) AS outbox_id",
+        [randomUUID(),input.tenantId,input.payoutIntentId,input.destinationId,
+          input.providerKey,input.idempotencyKey,input.actorId]
+      );
+      const outboxId = result.rows[0]?.outbox_id;
+      if (!outboxId) throw new Error("MERCHANT_PAYOUT_ENQUEUE_RETURNED_NO_ID");
+      return {outcome:"queued",outboxId};
+    } catch (error) {
+      const code = error && typeof error === "object" && "code" in error
+        ? String((error as {code:unknown}).code) : "";
+      const message = error instanceof Error ? error.message : "";
+      if (code === "42501" || message.includes("payout_intent_not_authorized")) return {outcome:"not_authorized"};
+      if (message.includes("verified_payout_destination_required")) return {outcome:"destination_unverified"};
+      if (code === "23505") return {outcome:"idempotency_conflict"};
+      throw error;
+    }
+  }
 
   async claimNext(workerId: string, providerKey: string, leaseSeconds = 45): Promise<MerchantPayoutOutboxClaimResult> {
     if (!/^[a-zA-Z0-9_-]{1,200}$/.test(workerId) ||
