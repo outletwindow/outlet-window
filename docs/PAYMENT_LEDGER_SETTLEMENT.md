@@ -188,3 +188,14 @@ The API integration must call this function only after resolving the actor from 
 A payout intent can only be requested against an already-approved settlement batch with a posted settlement journal, and its amount must exactly match the sum of the batch's net merchant proceeds. One active request per batch is allowed; a rejected request may be replaced with a new idempotent request.
 
 Payout authorization is a separate two-person control: the requester cannot authorize their own intent, decisions are append-only, and both request and decision are audited. An authorized intent is only permission for a future payout workflow. Migration 0074 deliberately contains no provider call, bank instruction, payout status claiming transfer completion, or storage of raw bank credentials. The next stage must add encrypted payout-destination references, a durable provider outbox, provider idempotency, webhook/reconciliation handling, and a separate disbursement journal after confirmed provider outcome.
+
+
+## 13E. Merchant payout provider outbox foundation (migration 0075)
+
+Migration 0075 adds a tenant- and merchant-scoped payout destination registry that stores only an opaque encrypted-vault reference, provider key, currency, and verification evidence. It deliberately has no IBAN, account number, card number, or raw bank credential column. Destination identity and vault reference are immutable; a verified destination can be revoked.
+
+A payout provider outbox entry can be enqueued only for an independently authorized payout intent and a matching verified destination. Its amount and currency are copied from the authorized intent, not accepted from a caller. The unique intent constraint and provider idempotency key prevent duplicate handoffs. The enqueue function is not executable by PUBLIC and records an audit event.
+
+The outbox supports queued, leased processing, submitted, confirmed, failed, and reconciliation-required states. Identity fields are immutable and database transition guards reject invalid transitions. Provider event IDs are deduplicated per tenant/provider, and event rows are append-only. The database stores whether the application verified the provider signature; the application must perform cryptographic verification before inserting a trusted event and must match provider, amount, currency, reference, and payout intent.
+
+**Not yet implemented or enabled:** payout worker/PSP adapter, vault resolution, cryptographic webhook verifier and authenticated webhook route, event-to-outbox reconciliation processor, and the disbursement journal. No transfer is sent by migration 0075. Do not mark a payout paid or post a disbursement journal until a verified provider-confirmed outcome is matched exactly. Ambiguous outcomes must enter reconciliation and must never be blindly resubmitted. The migration and schema checks are a foundation, not a production payout integration.
