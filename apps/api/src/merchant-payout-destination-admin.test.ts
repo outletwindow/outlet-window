@@ -44,6 +44,9 @@ describe("platform merchant payout destination administration",()=>{
     expect(response.statusCode).toBe(409);
     expect(response.json().error).toBe("payout_destination_self_approval_forbidden");
     expect(verify).toHaveBeenCalledWith({destinationId:"destination-1",actorId:"platform-admin"});
-    expect(append).toHaveBeenCalledTimes(1);
+    expect(append).toHaveBeenCalledWith(expect.objectContaining({
+      type:"payout_destination.verification_rejected",outcome:"failure",
+      metadata:expect.objectContaining({reason:"self_approval"})
+    }));
   });
 });
