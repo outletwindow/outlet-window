@@ -135,3 +135,4 @@ export * from "./postgres-courier-availability-store.js";
 export * from "./postgres-courier-admin-store.js";
 
 export * from "./postgres-merchant-settlement-accounting-service.js";
+export * from "./postgres-merchant-settlement-policy-provisioner.js";
