@@ -108,7 +108,7 @@ The optional HTTP route is wired at `/api/v1/webhooks/payouts/moyasar`. It is ex
 ## Outbound Moyasar provider client boundary
 
 - `MoyasarMerchantPayoutProvider` calls `POST /v1/payouts` with a configured source payout account, `purpose=payment_to_merchant`, the bank/wallet beneficiary details resolved transiently from the vault, and `metadata.outlet_window_outbox_id`.
-- A stable UUID v4-shaped `given_id` is derived deterministically from the durable outbox idempotency key so retries use the same provider identity.
+- A stable UUID v4-shaped `given_id` is derived deterministically from the globally unique outbox ID plus its idempotency key, so retries reuse the same provider identity without cross-tenant key collisions.
 - The client treats network timeouts, 408/425/429, 5xx, and unverifiable responses as unknown; it never blindly retries an ambiguous transfer.
 - `queued`, `initiated`, and `paid` provider responses are recorded only as submitted. A separately verified `merchant_payout_paid` webhook is still required to post the payout journal.
 - `failed` and `canceled` responses are rejected; `returned` is quarantined for reconciliation.
