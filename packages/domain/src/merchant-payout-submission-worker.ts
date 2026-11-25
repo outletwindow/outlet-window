@@ -1,7 +1,4 @@
-import type {
-  ClaimedMerchantPayout,
-  PostgresMerchantPayoutProviderOutbox
-} from "./postgres-merchant-payout-provider-outbox.js";
+import type { PostgresMerchantPayoutProviderOutbox } from "./postgres-merchant-payout-provider-outbox.js";
 
 export interface MerchantPayoutDestinationCredential {
   /** Provider-scoped token/reference resolved from the secret vault, never logged. */
