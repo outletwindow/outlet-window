@@ -1,8 +1,12 @@
 import { randomUUID } from "node:crypto";
 
-/** Provider-specific verification must validate the raw bytes before decoding. */
+/** Provider-specific verification must validate the untouched request body and signed headers. */
 export interface MerchantPayoutWebhookVerifier {
-  verify(input: { rawBody: string; secret: string }): boolean | Promise<boolean>;
+  verify(input: {
+    rawBody: string;
+    headers: Readonly<Record<string, string>>;
+    secret: string;
+  }): boolean | Promise<boolean>;
 }
 
 export interface MerchantPayoutConfirmationEvent {
@@ -39,8 +43,8 @@ export type MerchantPayoutConfirmationWebhookResult =
  *
  * Provider adapters supply their documented signature verifier and event decoder.
  * The processor never accepts a caller-provided signatureVerified flag. It verifies
- * the untouched body first, validates the normalized event, then invokes the
- * persistence primitive that atomically writes the provider event and journal.
+ * the untouched body and signed headers first, validates the normalized event, then
+ * invokes the persistence primitive that atomically writes the provider event/journal.
  */
 export class MerchantPayoutConfirmationWebhookProcessor {
   constructor(private readonly dependencies: {
@@ -55,18 +59,37 @@ export class MerchantPayoutConfirmationWebhookProcessor {
     }
   }
 
-  async process(input: { providerKey: string; rawBody: string }): Promise<MerchantPayoutConfirmationWebhookResult> {
+  async process(input: {
+    providerKey: string;
+    rawBody: string;
+    headers: Readonly<Record<string, string>>;
+  }): Promise<MerchantPayoutConfirmationWebhookResult> {
     if (!/^[a-zA-Z0-9._-]{1,100}$/.test(input.providerKey) ||
-        !input.rawBody || Buffer.byteLength(input.rawBody, "utf8") > 65_536) {
+        !input.rawBody || Buffer.byteLength(input.rawBody, "utf8") > 65_536 ||
+        !input.headers || typeof input.headers !== "object" ||
+        Object.keys(input.headers).length > 64 ||
+        Object.entries(input.headers).some(([key, value]) =>
+          !/^[a-zA-Z0-9-]{1,100}$/.test(key) || typeof value !== "string" || value.length > 8_192
+        )) {
       return { outcome: "invalid_signature_or_event" };
     }
 
-    const secret = await this.dependencies.secretResolver(input.providerKey);
+    let secret: string | null;
+    try {
+      secret = await this.dependencies.secretResolver(input.providerKey);
+    } catch {
+      // Fail closed if the vault/secret resolver is unavailable.
+      return { outcome: "provider_not_configured" };
+    }
     if (!secret) return { outcome: "provider_not_configured" };
 
     let verified = false;
     try {
-      verified = await this.dependencies.verifier.verify({ rawBody: input.rawBody, secret });
+      verified = await this.dependencies.verifier.verify({
+        rawBody: input.rawBody,
+        headers: input.headers,
+        secret
+      });
     } catch {
       return { outcome: "invalid_signature_or_event" };
     }
@@ -80,7 +103,8 @@ export class MerchantPayoutConfirmationWebhookProcessor {
     }
     if (!event || !/^[a-zA-Z0-9._:-]{1,240}$/.test(event.providerEventId) ||
         !/^[a-zA-Z0-9_-]{1,200}$/.test(event.outboxId) ||
-        !event.providerReference.trim() || event.providerReference.length > 240 ||
+        typeof event.providerReference !== "string" || !event.providerReference.trim() ||
+        event.providerReference.length > 240 ||
         !Number.isSafeInteger(event.amountMinor) || event.amountMinor <= 0 ||
         !/^[A-Z]{3}$/.test(event.currency)) {
       return { outcome: "invalid_signature_or_event" };
