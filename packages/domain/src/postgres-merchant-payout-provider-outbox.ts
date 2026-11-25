@@ -73,20 +73,24 @@ export class PostgresMerchantPayoutProviderOutbox {
            d.vault_reference,o.provider_key,o.currency,o.amount_minor,o.idempotency_key,o.attempt_count`,
         [workerId,providerKey,leaseSeconds]
       );
-      await client.query("COMMIT");
-      if (result.rowCount !== 1) return null;
+      if (result.rowCount !== 1) {
+        await client.query("COMMIT");
+        return null;
+      }
       const row = result.rows[0]!;
       const amountMinor = Number(row.amount_minor);
       if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) {
         throw new Error("MERCHANT_PAYOUT_AMOUNT_OUT_OF_RANGE");
       }
-      return {
+      const claimed = {
         outboxId: row.id, tenantId: row.tenant_id, payoutIntentId: row.payout_intent_id,
         merchantId: row.merchant_id, destinationId: row.destination_id,
         vaultReference: row.vault_reference, providerKey: row.provider_key,
         currency: row.currency, amountMinor, idempotencyKey: row.idempotency_key,
         attemptCount: Number(row.attempt_count)
       };
+      await client.query("COMMIT");
+      return claimed;
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
       throw error;
