@@ -1304,6 +1304,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     if (result.outcome === "not_found") return reply.code(404).send({ error: "settlement_batch_not_found" });
     if (result.outcome === "already_active") return reply.code(409).send({ error: "merchant_payout_request_already_active_or_duplicate" });
     if (result.outcome === "invalid_batch") return reply.code(409).send({ error: "merchant_payout_requires_approved_settlement_and_exact_net_amount" });
+    if (!("intent" in result)) return reply.code(409).send({ error: "merchant_payout_request_not_created" });
     return reply.code(201).send({ intent: result.intent, moneyTransferred: false });
   });
 
@@ -1351,6 +1352,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     if (result.outcome === "self_approval") return reply.code(403).send({ error: "payout_requester_cannot_approve_own_request" });
     if (result.outcome === "already_decided") return reply.code(409).send({ error: "merchant_payout_already_decided" });
     if (result.outcome === "invalid_transition") return reply.code(409).send({ error: "merchant_payout_transition_invalid" });
+    if (!("intent" in result)) return reply.code(409).send({ error: "merchant_payout_decision_not_recorded" });
     return reply.code(200).send({ intent: result.intent, moneyTransferred: false });
   });
 
