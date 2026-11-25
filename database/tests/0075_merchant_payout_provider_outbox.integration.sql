@@ -54,8 +54,9 @@ SET verification_status='verified',verified_by='payout-outbox-finance',verified_
 WHERE tenant_id='payout-outbox-tenant' AND id='payout-outbox-destination';
 
 DO $checks$
-DECLARE queued_id text;
-DECLARE duplicate_id text;
+DECLARE
+  queued_id text;
+  duplicate_id text;
 BEGIN
   IF to_regclass('public.merchant_payout_provider_events') IS NULL THEN
     RAISE EXCEPTION 'merchant payout provider events table missing';
