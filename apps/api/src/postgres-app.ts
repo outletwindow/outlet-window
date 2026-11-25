@@ -18,6 +18,8 @@ import { PostgresMerchantSettlementApprovalStore } from "../../../packages/domai
 import { PostgresMerchantSettlementAccountingPoster } from "../../../packages/domain/src/postgres-merchant-settlement-accounting-poster.js";
 import { PostgresMerchantPayoutAuthorizationStore } from "../../../packages/domain/src/postgres-merchant-payout-authorization-store.js";
 import { PostgresMerchantPayoutProviderOutbox } from "../../../packages/domain/src/postgres-merchant-payout-provider-outbox.js";
+import { MoyasarMerchantPayoutConfirmationWebhookProcessor } from "../../../packages/domain/src/moyasar-merchant-payout-webhook.js";
+import { PostgresMoyasarMerchantPayoutConfirmationStore } from "../../../packages/domain/src/postgres-moyasar-merchant-payout-confirmation-store.js";
 import { IntegrationHub } from "../../../packages/domain/src/integration-hub.js";
 import { PostgresIntegrationRegistryStore } from "../../../packages/domain/src/postgres-integration-registry-store.js";
 import { PostgresPaymentWebhookInbox } from "../../../packages/domain/src/postgres-payment-webhook-inbox.js";
@@ -124,6 +126,16 @@ export function buildPostgresApp(options: PostgresApiOptions) {
     merchantSettlementAccountingPoster: new PostgresMerchantSettlementAccountingPoster(options.pool),
     merchantPayoutAuthorization: new PostgresMerchantPayoutAuthorizationStore(options.pool),
     merchantPayoutProviderOutbox: new PostgresMerchantPayoutProviderOutbox(options.pool),
+    ...(typeof process.env.MOYASAR_PAYOUT_WEBHOOK_SECRET === "string" &&
+      process.env.MOYASAR_PAYOUT_WEBHOOK_SECRET.length >= 32 ? {
+        merchantPayoutConfirmationWebhook: new MoyasarMerchantPayoutConfirmationWebhookProcessor({
+          secretResolver: async providerKey =>
+            providerKey === "moyasar" ? process.env.MOYASAR_PAYOUT_WEBHOOK_SECRET ?? null : null,
+          store: new PostgresMoyasarMerchantPayoutConfirmationStore(options.pool),
+          auditActorId: process.env.MOYASAR_PAYOUT_AUDIT_ACTOR_ID ?? "payout-webhook-service",
+          expectedLiveMode: process.env.MOYASAR_EXPECT_LIVE === "true"
+        })
+      } : {}),
     resolveMerchantTenantId: async (merchantId: string) => {
       const result = await options.pool.query<{ tenant_id: string }>(
         "SELECT tenant_id FROM merchants WHERE id = $1 AND status = 'active'",
@@ -280,7 +292,8 @@ export function buildPostgresApp(options: PostgresApiOptions) {
         "0073_atomic_merchant_settlement_accounting_posting",
         "0074_merchant_payout_intents_and_dual_control",
         "0075_merchant_payout_provider_outbox",
-        "0076_confirmed_merchant_payout_reconciliation"
+        "0076_confirmed_merchant_payout_reconciliation",
+        "0077_merchant_payout_provider_entity_mapping"
       ];
       const result = await options.pool.query<{ version: string }>(
         "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",

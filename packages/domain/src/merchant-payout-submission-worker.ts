@@ -1,8 +1,14 @@
 import type { PostgresMerchantPayoutProviderOutbox } from "./postgres-merchant-payout-provider-outbox.js";
 
+export type MerchantPayoutDestinationDetails =
+  | { type: "bank"; iban: string; name: string; mobile: string; country: string; city: string }
+  | { type: "wallet"; mobile: string };
+
 export interface MerchantPayoutDestinationCredential {
-  /** Provider-scoped token/reference resolved from the secret vault, never logged. */
-  destinationToken: string;
+  /** Provider-scoped token/reference resolved from the vault, never logged. */
+  destinationToken?: string;
+  /** Transient beneficiary details for providers such as Moyasar; never persist or log. */
+  destination?: MerchantPayoutDestinationDetails;
 }
 export interface MerchantPayoutDestinationVault {
   resolve(input: { tenantId: string; merchantId: string; providerKey: string; vaultReference: string }): Promise<MerchantPayoutDestinationCredential>;
@@ -13,7 +19,7 @@ export type MerchantPayoutProviderResult =
   | { status: "retry_safe"; code: string; delaySeconds?: number }
   | { status: "unknown"; code: string };
 export interface MerchantPayoutProvider {
-  submit(input: { payoutId: string; amountMinor: number; currency: string; idempotencyKey: string; destinationToken: string }): Promise<MerchantPayoutProviderResult>;
+  submit(input: { payoutId: string; outboxId: string; amountMinor: number; currency: string; idempotencyKey: string; destinationToken?: string; destination?: MerchantPayoutDestinationDetails }): Promise<MerchantPayoutProviderResult>;
 }
 export interface MerchantPayoutProviderRegistry {
   get(providerKey: string): MerchantPayoutProvider | undefined;
@@ -50,7 +56,9 @@ export class MerchantPayoutSubmissionWorker {
     let credential: MerchantPayoutDestinationCredential;
     try {
       credential = await this.vault.resolve({tenantId:job.tenantId,merchantId:job.merchantId,providerKey:job.providerKey,vaultReference:job.vaultReference});
-      if (!credential.destinationToken.trim()) throw new Error("PAYOUT_DESTINATION_CREDENTIAL_EMPTY");
+      if ((!credential.destinationToken || !credential.destinationToken.trim()) && !credential.destination) {
+        throw new Error("PAYOUT_DESTINATION_CREDENTIAL_EMPTY");
+      }
     } catch {
       const delaySeconds=Math.min(3600,5*2**Math.min(job.attemptCount-1,9));
       const result=await this.store.recordRetry({outboxId:job.outboxId,workerId:this.workerId,failureCode:"PAYOUT_DESTINATION_VAULT_UNAVAILABLE",delaySeconds});
@@ -59,7 +67,12 @@ export class MerchantPayoutSubmissionWorker {
 
     let result: MerchantPayoutProviderResult;
     try {
-      result=await provider.submit({payoutId:job.payoutIntentId,amountMinor:job.amountMinor,currency:job.currency,idempotencyKey:job.idempotencyKey,destinationToken:credential.destinationToken});
+      result=await provider.submit({
+        payoutId:job.payoutIntentId,outboxId:job.outboxId,amountMinor:job.amountMinor,
+        currency:job.currency,idempotencyKey:job.idempotencyKey,
+        ...(credential.destinationToken === undefined ? {} : {destinationToken:credential.destinationToken}),
+        ...(credential.destination === undefined ? {} : {destination:credential.destination})
+      });
     } catch {
       const outcome=await this.store.recordUnknown({outboxId:job.outboxId,workerId:this.workerId,failureCode:"PAYOUT_PROVIDER_OUTCOME_UNKNOWN"});
       return {outcome,outboxId:job.outboxId};
