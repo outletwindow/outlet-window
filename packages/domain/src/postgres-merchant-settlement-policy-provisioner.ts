@@ -59,6 +59,85 @@ export class PostgresMerchantSettlementPolicyProvisioner {
     private readonly createId: () => string = randomUUID
   ) {}
 
+  async bindToBatch(input: {
+    batchId: string;
+    policySnapshotId: string;
+  }): Promise<
+    | { outcome: "bound" | "duplicate"; batchId: string; policySnapshotId: string }
+    | { outcome: "batch_not_found" | "policy_not_found" | "batch_not_draft" | "contract_mismatch" | "binding_conflict" }
+  > {
+    if (!input.batchId.trim() || input.batchId.length > 200 ||
+        !input.policySnapshotId.trim() || input.policySnapshotId.length > 200) {
+      throw new Error("INVALID_SETTLEMENT_POLICY_BINDING");
+    }
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const batchResult = await client.query<{
+        id: string; tenant_id: string; merchant_id: string; currency: string;
+        status: string; policy_snapshot_id: string | null;
+      }>(
+        `SELECT id,tenant_id,merchant_id,currency,status,policy_snapshot_id
+         FROM merchant_settlement_batches WHERE id=$1 FOR UPDATE`,
+        [input.batchId]
+      );
+      const batch = batchResult.rows[0];
+      if (!batch) { await client.query("ROLLBACK"); return { outcome: "batch_not_found" }; }
+      if (batch.status !== "draft") { await client.query("ROLLBACK"); return { outcome: "batch_not_draft" }; }
+      if (batch.policy_snapshot_id) {
+        await client.query("COMMIT");
+        return batch.policy_snapshot_id === input.policySnapshotId
+          ? { outcome: "duplicate", batchId: batch.id, policySnapshotId: input.policySnapshotId }
+          : { outcome: "binding_conflict" };
+      }
+      const policyResult = await client.query<{ id: string; contract_reference: string }>(
+        `SELECT id,contract_reference FROM merchant_settlement_policy_snapshots
+         WHERE tenant_id=$1 AND id=$2 AND merchant_id=$3 AND currency=$4`,
+        [batch.tenant_id,input.policySnapshotId,batch.merchant_id,batch.currency]
+      );
+      const policy = policyResult.rows[0];
+      if (!policy) { await client.query("ROLLBACK"); return { outcome: "policy_not_found" }; }
+      const contracts = await client.query<{ contract_reference: string }>(
+        `SELECT DISTINCT contract_reference FROM merchant_settlement_lines
+         WHERE tenant_id=$1 AND batch_id=$2`,
+        [batch.tenant_id,batch.id]
+      );
+      if (contracts.rows.some(row => row.contract_reference !== policy.contract_reference) ||
+          contracts.rows.length > 1) {
+        await client.query("ROLLBACK");
+        return { outcome: "contract_mismatch" };
+      }
+      const updated = await client.query(
+        `UPDATE merchant_settlement_batches SET policy_snapshot_id=$3
+         WHERE tenant_id=$1 AND id=$2 AND status='draft' AND policy_snapshot_id IS NULL
+         RETURNING id`,
+        [batch.tenant_id,batch.id,input.policySnapshotId]
+      );
+      if (updated.rows.length !== 1) {
+        await client.query("ROLLBACK");
+        return { outcome: "binding_conflict" };
+      }
+      await client.query(
+        `INSERT INTO audit_events
+         (id,schema_version,event_type,category,occurred_at,actor_id,actor_type,actor_role,
+          action,outcome,resource_type,resource_id,tenant_id,merchant_id,correlation_id,
+          source,severity,metadata)
+         VALUES ($1,1,'merchant_settlement_policy_bound_to_batch','finance',clock_timestamp(),
+          'system:settlement-policy-binding','system','system','bind_settlement_policy','success',
+          'merchant_settlement_batch',$2,$3,$4,$5,'merchant_settlement_policy','high',$6::jsonb)`,
+        [`settlement-policy-binding:${batch.id}`,batch.id,batch.tenant_id,batch.merchant_id,
+          batch.id,JSON.stringify({ policySnapshotId:input.policySnapshotId,contractReference:policy.contract_reference })]
+      );
+      await client.query("COMMIT");
+      return { outcome: "bound", batchId: batch.id, policySnapshotId: input.policySnapshotId };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async create(input: CreateMerchantSettlementPolicyInput): Promise<MerchantSettlementPolicyProvisionResult> {
     validate(input);
     const payload = stableJson(input.policyPayload);
