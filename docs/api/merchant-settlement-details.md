@@ -143,3 +143,23 @@ The provisioner resolves the merchant tenant from trusted persistence, verifies 
 | `503` | Policy provisioner unavailable |
 
 A policy snapshot is configuration evidence. It does not create a settlement batch, post accounting entries, or initiate any payout.
+
+
+## Settlement policy snapshot provisioning
+
+`POST /api/v1/platform/merchants/:merchantId/settlement-policies`
+
+This endpoint is available to authenticated finance, platform administrator, or platform owner actors with the platform-scoped `platform.merchant_settlement:approve` grant. The approver identity and role are taken from the authenticated actor; client-supplied identity fields are ignored.
+
+The request defines the currency, contract reference, immutable policy version and JSON policy payload, plus deduction-code to ledger-account-code mappings. The server resolves the merchant tenant from trusted persistence, verifies every mapped account exists, is active, and belongs to that tenant and currency, then stores the canonical SHA-256 policy snapshot, all mappings, and a high-severity audit event in one transaction.
+
+A policy version is immutable. Repeating the same version with the same policy hash and exact mappings returns the existing snapshot; changing either returns a conflict. Missing/inactive accounts fail closed. A policy snapshot is not retroactively applied to existing batches: a batch must be explicitly bound while still draft, and its contract reference must match every settlement line.
+
+| Status | Meaning |
+| --- | --- |
+| `201` | New policy snapshot and mappings created |
+| `200` | Exact idempotent duplicate |
+| `401` / `403` | Missing identity, grant, or approver role |
+| `404` | Merchant not found or inactive |
+| `409` | Account missing/inactive or policy version collision |
+| `503` | Policy provisioner unavailable |
