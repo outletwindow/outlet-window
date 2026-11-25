@@ -2247,6 +2247,71 @@ describe("platform merchant settlement dual-control routes", () => {
     } finally { await api.close(); }
   });
 
+  it("posts accounting only through an independently authorized finance actor", async () => {
+    const actor: Actor = {
+      id: "finance-poster-1", role: "finance", active: true,
+      grants: [{ resource: "platform.merchant_settlement", actions: ["execute"], scope: { platform: true } }]
+    };
+    const postForPlatform = vi.fn(async (batchId: string) => ({
+      outcome: "posted" as const, batchId, journalId: "journal-1"
+    }));
+    const api = buildApp({
+      resolveActor: async () => actor,
+      merchantSettlementAccounting: { postForPlatform }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "POST", url: "/api/v1/platform/settlements/batch-1/post-accounting",
+        payload: { tenantId: "attacker-tenant", actorId: "forged-actor" }
+      });
+      expect(response.statusCode).toBe(201);
+      expect(response.json()).toEqual({ outcome: "posted", batchId: "batch-1", journalId: "journal-1" });
+      expect(postForPlatform).toHaveBeenCalledWith("batch-1");
+    } finally { await api.close(); }
+  });
+
+  it("does not invoke accounting posting without the explicit execute grant", async () => {
+    const actor: Actor = {
+      id: "finance-reviewer-1", role: "finance", active: true,
+      grants: [{ resource: "platform.merchant_settlement", actions: ["approve"], scope: { platform: true } }]
+    };
+    const postForPlatform = vi.fn();
+    const api = buildApp({
+      resolveActor: async () => actor,
+      merchantSettlementAccounting: { postForPlatform }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "POST", url: "/api/v1/platform/settlements/batch-1/post-accounting"
+      });
+      expect(response.statusCode).toBe(403);
+      expect(postForPlatform).not.toHaveBeenCalled();
+    } finally { await api.close(); }
+  });
+
+  it("maps an authorized accounting decision requirement to a conflict without posting", async () => {
+    const actor: Actor = {
+      id: "finance-poster-1", role: "finance", active: true,
+      grants: [{ resource: "platform.merchant_settlement", actions: ["execute"], scope: { platform: true } }]
+    };
+    const postForPlatform = vi.fn(async () => ({ outcome: "not_authorized" as const }));
+    const api = buildApp({
+      resolveActor: async () => actor,
+      merchantSettlementAccounting: { postForPlatform }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "POST", url: "/api/v1/platform/settlements/batch-1/post-accounting"
+      });
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toEqual({ error: "settlement_accounting_not_authorized" });
+      expect(postForPlatform).toHaveBeenCalledOnce();
+    } finally { await api.close(); }
+  });
+
   it("validates approval decisions before persistence", async () => {
     const actor: Actor = {
       id: "finance-approver-1", role: "finance", active: true,
