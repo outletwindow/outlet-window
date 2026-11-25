@@ -163,3 +163,21 @@ A policy version is immutable. Repeating the same version with the same policy h
 | `404` | Merchant not found or inactive |
 | `409` | Account missing/inactive or policy version collision |
 | `503` | Policy provisioner unavailable |
+
+
+## Bind a policy snapshot to a settlement batch
+
+`POST /api/v1/platform/settlements/:batchId/policy-binding`
+
+The finance approver (or platform administrator/owner) submits `policySnapshotId`. The API derives the actor identity from the authenticated session, locks the batch, and verifies that the policy belongs to the same merchant tenant and currency. Every existing settlement line must use the policy's contract reference. The binding is allowed only while the batch is draft and is immutable after it is set.
+
+The database guard independently enforces the draft-only immutable binding. The operation writes an audit event attributed to the authenticated actor.
+
+| Status | Meaning |
+| --- | --- |
+| `201` | Policy bound to the draft batch |
+| `200` | Same policy was already bound |
+| `401` / `403` | Missing identity, grant, or approver role |
+| `404` | Batch or policy snapshot not found |
+| `409` | Batch is not draft, contract mismatch, or another policy is already bound |
+| `503` | Policy provisioner unavailable |
