@@ -13,6 +13,7 @@ export interface CreateMerchantSettlementPolicyInput {
   policyPayload: Readonly<Record<string, unknown>>;
   mappings: readonly MerchantSettlementPolicyMappingInput[];
   approvedBy: string;
+  approvedByRole: "finance" | "platform_admin" | "platform_owner";
 }
 export type MerchantSettlementPolicyProvisionResult =
   | { outcome: "created" | "duplicate"; policySnapshotId: string; policySha256: string }
@@ -30,6 +31,7 @@ function validate(input: CreateMerchantSettlementPolicyInput): void {
       !input.contractReference.trim() || input.contractReference.length > 240 ||
       !/^[A-Za-z0-9._:-]{1,120}$/.test(input.policyVersion) ||
       !input.approvedBy.trim() || input.approvedBy.length > 160 ||
+      !["finance","platform_admin","platform_owner"].includes(input.approvedByRole) ||
       !input.policyPayload || typeof input.policyPayload !== "object" || Array.isArray(input.policyPayload) ||
       !Array.isArray(input.mappings) || input.mappings.length > 100) {
     throw new Error("INVALID_MERCHANT_SETTLEMENT_POLICY");
@@ -139,9 +141,9 @@ export class PostgresMerchantSettlementPolicyProvisioner {
           action,outcome,resource_type,resource_id,tenant_id,merchant_id,correlation_id,
           source,severity,metadata)
          VALUES ($1,1,'merchant_settlement_policy_snapshot_created','finance',clock_timestamp(),
-          $2,'platform_user','finance','create_settlement_policy_snapshot','success',
+          $2,'platform_user',$3,'create_settlement_policy_snapshot','success',
           'merchant_settlement_policy_snapshot',$3,$4,$5,$6,'merchant_settlement_policy','high',$7::jsonb)`,
-        [`merchant-settlement-policy:${policySnapshotId}`,input.approvedBy,policySnapshotId,
+        [`merchant-settlement-policy:${policySnapshotId}`,input.approvedBy,input.approvedByRole,policySnapshotId,
           tenantId,input.merchantId,policySnapshotId,
           JSON.stringify({ currency:input.currency,contractReference:input.contractReference,
             policyVersion:input.policyVersion,policySha256,mappingCount:input.mappings.length })]
