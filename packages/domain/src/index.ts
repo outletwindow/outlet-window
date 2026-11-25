@@ -138,3 +138,4 @@ export * from "./postgres-courier-admin-store.js";
 
 export * from "./merchant-payout-confirmation-webhook.js";
 export * from "./moyasar-merchant-payout-webhook.js";
+export * from "./postgres-moyasar-merchant-payout-confirmation-store.js";
