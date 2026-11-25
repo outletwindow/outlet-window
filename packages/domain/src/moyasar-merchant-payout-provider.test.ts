@@ -130,4 +130,45 @@ describe("MoyasarMerchantPayoutProvider", () => {
       ...options, secretKey: "sk_live_example123"
     })).toThrow("INVALID_MOYASAR_PAYOUT_CONFIGURATION");
   });
+
+  it("fetches payout status for reconciliation without issuing another transfer", async () => {
+    const givenId = moyasarGivenIdFromOutboxKey(command.outboxId, command.idempotencyKey);
+    const fetchImpl = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      expect(String(url)).toBe(`https://api.moyasar.com/v1/payout/${givenId}`);
+      expect(init?.method).toBe("GET");
+      return response({
+        id: givenId, source_id: options.sourceId, status: "paid",
+        amount: 12500, currency: "SAR",
+        updated_at: "2026-11-25T10:00:00.000Z",
+        metadata: { outlet_window_outbox_id: command.outboxId }
+      });
+    });
+    const provider = new MoyasarMerchantPayoutProvider({ ...options, fetchImpl });
+    await expect(provider.fetchPayout({
+      outboxId: command.outboxId, providerReference: givenId,
+      amountMinor: command.amountMinor, currency: command.currency
+    })).resolves.toEqual({
+      outcome: "found", status: "paid", updatedAt: "2026-11-25T10:00:00.000Z"
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not treat a mismatched lookup response as payout evidence", async () => {
+    const givenId = moyasarGivenIdFromOutboxKey(command.outboxId, command.idempotencyKey);
+    const provider = new MoyasarMerchantPayoutProvider({
+      ...options,
+      fetchImpl: vi.fn(async () => response({
+        id: givenId, source_id: options.sourceId, status: "paid",
+        amount: 1, currency: "SAR", updated_at: "2026-11-25T10:00:00.000Z",
+        metadata: { outlet_window_outbox_id: command.outboxId }
+      }))
+    });
+    await expect(provider.fetchPayout({
+      outboxId: command.outboxId, providerReference: givenId,
+      amountMinor: command.amountMinor, currency: command.currency
+    })).resolves.toEqual({
+      outcome: "unknown", code: "MOYASAR_PAYOUT_LOOKUP_MISMATCH"
+    });
+  });
+
 });
