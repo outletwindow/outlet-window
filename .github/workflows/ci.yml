@@ -282,6 +282,10 @@ jobs:
         env:
           PGPASSWORD: ci_only_password
         run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0072_merchant_settlement_policy_account_mappings.integration.sql
+      - name: Verify atomic merchant settlement accounting posting
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0073_atomic_merchant_settlement_accounting_posting.integration.sql
       - name: Verify tenant-scoped courier delivery tasks and immutable evidence
         env:
           PGPASSWORD: ci_only_password

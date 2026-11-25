@@ -172,3 +172,12 @@ Migration 0072 adds immutable, tenant/merchant/currency-scoped policy snapshots.
 A draft settlement batch may be bound once to a policy snapshot. Once bound, the binding cannot be changed, and newly inserted settlement lines must use the snapshot's contract reference. Existing historical batches remain nullable for backward compatibility; the new accounting-posting path must reject an unbound batch and must fail closed for any deduction code without exactly one mapping.
 
 This migration provides immutable configuration evidence only. It does not independently validate the legal correctness of the policy payload, calculate commissions or taxes, post a journal, approve a batch, or initiate a payout. Those operations remain gated for the transaction-scoped accounting service and its integration tests.
+
+
+## 13C. Atomic accounting posting (migration 0073)
+
+The `post_merchant_settlement_accounting` database function is the transaction-scoped posting boundary. It locks the settlement batch and its independently authorized approval, checks the approval snapshot totals and immutable contract-policy binding, requires active ledger mappings for every deduction code, and writes the balanced journal, posts it, approves and links the batch, and appends an audit event in the caller's PostgreSQL transaction.
+
+The function is idempotent for an already-approved batch and returns its existing journal identifier after rechecking the caller's allowed finance role and requester separation. Missing approval, policy, account mappings, or control accounts fail closed. The operation is ledger reclassification only: it does not call a payment provider, create a payout instruction, or transfer funds.
+
+The API integration must call this function only after resolving the actor from a verified server-side session. The SQL role argument is a defense-in-depth allowlist, not a substitute for API authentication or database privilege management. Keep direct execute privileges restricted to the trusted application database role.
