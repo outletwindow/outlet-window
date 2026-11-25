@@ -273,7 +273,8 @@ export function buildPostgresApp(options: PostgresApiOptions) {
         "0070_immutable_refund_component_allocations",
         "0071_merchant_settlement_dual_control",
         "0072_merchant_settlement_policy_account_mappings",
-        "0073_atomic_merchant_settlement_accounting_posting"
+        "0073_atomic_merchant_settlement_accounting_posting",
+        "0074_merchant_payout_intents_and_dual_control"
       ];
       const result = await options.pool.query<{ version: string }>(
         "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",
