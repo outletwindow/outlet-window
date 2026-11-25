@@ -29,8 +29,11 @@ describe("PostgresMerchantPayoutProviderEntityRegistry", () => {
     });
     expect(result.outcome).toBe("created");
     if(result.outcome==="created") expect(result.entity.tenantId).toBe("tenant-1");
-    expect(fake.calls[0].sql).toContain("m.tenant_id=$2 AND m.id=$3 AND m.status='active'");
-    expect(fake.calls[0].values.slice(1)).toEqual(["tenant-1", "merchant-1", "moyasar", "pm-1", "pe-1", "admin-1"]);
+    const registrationCall = fake.calls[0];
+    expect(registrationCall).toBeDefined();
+    if (!registrationCall) throw new Error("Expected merchant registration query");
+    expect(registrationCall.sql).toContain("m.tenant_id=$2 AND m.id=$3 AND m.status='active'");
+    expect(registrationCall.values.slice(1)).toEqual(["tenant-1", "merchant-1", "moyasar", "pm-1", "pe-1", "admin-1"]);
   });
 
   it("rejects duplicate active provider identities", async () => {
@@ -49,8 +52,11 @@ describe("PostgresMerchantPayoutProviderEntityRegistry", () => {
       entityId:"entity-1",actorId:"admin-1"
     });
     expect(result).toEqual({outcome:"revoked"});
-    expect(fake.calls[0].sql).toContain("SET status='revoked',revoked_at=now()");
-    expect(fake.calls[0].sql).not.toMatch(/DELETE/i);
+    const revokeCall = fake.calls[0];
+    expect(revokeCall).toBeDefined();
+    if (!revokeCall) throw new Error("Expected merchant entity revocation query");
+    expect(revokeCall.sql).toContain("SET status='revoked',revoked_at=now()");
+    expect(revokeCall.sql).not.toMatch(/DELETE/i);
   });
 
   it("returns not_found for a missing merchant", async () => {
