@@ -1431,8 +1431,10 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       outcome: result.outcome === "created" ? "success" : "failure",
       ...(result.outcome === "created" ? { resourceId: result.entity.id } : {})
     }));
-    if (result.outcome === "merchant_not_found") return reply.code(404).send({ error: "active_merchant_not_found_in_tenant" });
-    if (result.outcome === "identity_conflict") return reply.code(409).send({ error: "payout_provider_entity_identity_conflict" });
+    if (result.outcome !== "created") {
+      if (result.outcome === "merchant_not_found") return reply.code(404).send({ error: "active_merchant_not_found_in_tenant" });
+      return reply.code(409).send({ error: "payout_provider_entity_identity_conflict" });
+    }
     return reply.code(201).send({ entity: result.entity, transfersEnabled: false });
   });
 
