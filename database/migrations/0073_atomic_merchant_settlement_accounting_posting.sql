@@ -134,6 +134,24 @@ BEGIN
     RAISE EXCEPTION 'settlement_required_control_accounts_missing'
       USING ERRCODE='23514';
   END IF;
+  IF EXISTS (
+    SELECT 1
+    FROM merchant_settlement_deduction_account_mappings mapping
+    WHERE mapping.tenant_id=p_tenant_id
+      AND mapping.policy_snapshot_id=batch_row.policy_snapshot_id
+      AND mapping.currency=batch_row.currency
+      AND mapping.account_id IN (held_account_id,payable_account_id)
+      AND EXISTS (
+        SELECT 1
+        FROM merchant_settlement_lines line
+        CROSS JOIN LATERAL jsonb_array_elements(line.deduction_breakdown) item
+        WHERE line.tenant_id=p_tenant_id AND line.batch_id=p_batch_id
+          AND item->>'code'=mapping.deduction_code
+      )
+  ) THEN
+    RAISE EXCEPTION 'settlement_deduction_mapping_conflicts_with_control_account'
+      USING ERRCODE='23514';
+  END IF;
 
   journal_key := 'merchant-settlement:' || p_tenant_id || ':' || p_batch_id;
   journal_id_value := 'settlement-journal-' || md5(p_tenant_id || ':' || p_batch_id);
