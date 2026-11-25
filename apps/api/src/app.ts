@@ -196,6 +196,15 @@ export interface AppOptions {
   merchantSettlementApprovals?: MerchantSettlementApprovalService;
   merchantSettlementAccountingPoster?: MerchantSettlementAccountingPoster;
   merchantPayoutAuthorization?: MerchantPayoutAuthorizationService;
+  merchantPayoutProviderOutbox?: {
+    enqueue(input: {
+      tenantId: string; payoutIntentId: string; destinationId: string;
+      providerKey: string; idempotencyKey: string; actorId: string;
+    }): Promise<
+      | { outcome: "queued"; outboxId: string }
+      | { outcome: "not_authorized" | "destination_unverified" | "idempotency_conflict" }
+    >;
+  };
   merchantBranchWriter?: MerchantBranchWriter;
   /** Optional dependency check used by readiness; failures keep the instance out of service. */
   readinessCheck?: () => Promise<boolean>;
@@ -1354,6 +1363,39 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     if (result.outcome === "invalid_transition") return reply.code(409).send({ error: "merchant_payout_transition_invalid" });
     if (!("intent" in result)) return reply.code(409).send({ error: "merchant_payout_decision_not_recorded" });
     return reply.code(200).send({ intent: result.intent, moneyTransferred: false });
+  });
+
+  app.post<{
+    Params: { payoutIntentId: string };
+    Body: { destinationId?: string; providerKey?: string; idempotencyKey?: string };
+  }>("/api/v1/platform/payout-authorization-requests/:payoutIntentId/provider-submission", async (request, reply) => {
+    const access = await authorizeRequest(request, options, {
+      resource: "platform.merchant_settlement", action: "approve", scope: { platform: true }
+    });
+    if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
+    const roles = access.actor.roles ?? [access.actor.role];
+    if (!roles.some(role => role === "finance" || role === "platform_admin" || role === "platform_owner")) {
+      return reply.code(403).send({ error: "platform_payout_dispatch_role_required" });
+    }
+    const body = request.body;
+    if (!body || typeof body.destinationId !== "string" || !body.destinationId.trim() ||
+        typeof body.providerKey !== "string" || !/^[a-zA-Z0-9._-]{1,100}$/.test(body.providerKey) ||
+        typeof body.idempotencyKey !== "string" || !/^[a-zA-Z0-9._:-]{8,240}$/.test(body.idempotencyKey)) {
+      return reply.code(400).send({ error: "invalid_merchant_payout_provider_submission" });
+    }
+    if (!options.merchantPayoutProviderOutbox) {
+      return reply.code(503).send({ error: "merchant_payout_provider_outbox_unavailable" });
+    }
+    const result = await options.merchantPayoutProviderOutbox.enqueue({
+      tenantId: access.actor.tenantId, payoutIntentId: request.params.payoutIntentId,
+      destinationId: body.destinationId, providerKey: body.providerKey,
+      idempotencyKey: body.idempotencyKey, actorId: access.actor.id
+    });
+    if (result.outcome === "not_authorized") return reply.code(409).send({ error: "merchant_payout_intent_not_authorized" });
+    if (result.outcome === "destination_unverified") return reply.code(409).send({ error: "merchant_payout_destination_not_verified" });
+    if (result.outcome === "idempotency_conflict") return reply.code(409).send({ error: "merchant_payout_provider_idempotency_conflict" });
+    if (!("outboxId" in result)) return reply.code(409).send({ error: "merchant_payout_provider_submission_not_queued" });
+    return reply.code(202).send({ outcome: "queued", outboxId: result.outboxId, moneyTransferred: false });
   });
 
   app.get<{
