@@ -117,7 +117,6 @@ export class MoyasarMerchantPayoutProvider implements MerchantPayoutProvider {
           source_id: this.options.sourceId,
           given_id: givenId,
           amount: input.amountMinor,
-          currency: input.currency,
           purpose: "payment_to_merchant",
           destination,
           metadata: {
