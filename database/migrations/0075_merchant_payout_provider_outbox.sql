@@ -51,8 +51,8 @@ CREATE TABLE merchant_payout_provider_outbox (
   UNIQUE (tenant_id,provider_key,idempotency_key),
   CHECK ((status='processing' AND lease_owner IS NOT NULL AND lease_expires_at IS NOT NULL)
       OR (status<>'processing' AND lease_owner IS NULL AND lease_expires_at IS NULL)),
-  CHECK ((status IN ('submitted','confirmed','reconciliation_required') AND provider_reference IS NOT NULL)
-      OR status NOT IN ('submitted','confirmed','reconciliation_required')),
+  CHECK ((status IN ('submitted','confirmed') AND provider_reference IS NOT NULL)
+      OR status NOT IN ('submitted','confirmed')),
   CHECK ((status='submitted' AND submitted_at IS NOT NULL AND confirmed_at IS NULL)
       OR (status='confirmed' AND submitted_at IS NOT NULL AND confirmed_at IS NOT NULL)
       OR (status NOT IN ('submitted','confirmed') AND submitted_at IS NULL AND confirmed_at IS NULL)),
@@ -111,7 +111,12 @@ BEGIN
   RETURNING id INTO outbox_id;
   IF outbox_id IS NULL THEN
     SELECT id INTO outbox_id FROM merchant_payout_provider_outbox
-     WHERE tenant_id=p_tenant_id AND payout_intent_id=p_payout_intent_id;
+     WHERE tenant_id=p_tenant_id AND payout_intent_id=p_payout_intent_id
+       AND destination_id=p_destination_id AND provider_key=p_provider_key
+       AND idempotency_key=p_idempotency_key;
+    IF outbox_id IS NULL THEN
+      RAISE EXCEPTION 'payout_outbox_idempotency_conflict' USING ERRCODE='23505';
+    END IF;
   END IF;
   IF outbox_id IS NULL THEN RAISE EXCEPTION 'payout_outbox_enqueue_failed'; END IF;
   INSERT INTO audit_events (
