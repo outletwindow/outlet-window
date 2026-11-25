@@ -48,10 +48,34 @@ INSERT INTO merchant_settlement_approval_decisions
 VALUES ('posting-decision','posting-tenant','posting-approval','authorize_accounting',
  'posting-reviewer','finance','Independent review');
 
+INSERT INTO customer_orders (id,tenant_id,customer_id,idempotency_key,status,currency,total_minor)
+VALUES ('posting-order-unmapped','posting-tenant','posting-customer','posting-order-unmapped-key','pending_validation','SAR',8000);
+INSERT INTO merchant_suborders (id,tenant_id,order_id,merchant_id,branch_id,status,subtotal_minor)
+VALUES ('posting-suborder-unmapped','posting-tenant','posting-order-unmapped','posting-merchant','posting-branch','delivered',8000);
+INSERT INTO merchant_settlement_batches
+(id,tenant_id,merchant_id,currency,period_start,period_end,policy_snapshot_id)
+VALUES ('posting-batch-unmapped','posting-tenant','posting-merchant','SAR',
+ '2026-11-16T00:00:00Z','2026-11-30T00:00:00Z','posting-policy');
+INSERT INTO merchant_settlement_lines
+(id,tenant_id,batch_id,merchant_id,currency,order_id,suborder_id,branch_id,
+ contract_reference,gross_minor,deductions_minor,net_minor,deduction_breakdown)
+VALUES ('posting-line-unmapped','posting-tenant','posting-batch-unmapped','posting-merchant','SAR',
+ 'posting-order-unmapped','posting-suborder-unmapped','posting-branch','posting-contract-v1',
+ 8000,500,7500,'[{"code":"unmapped_fee","amountMinor":500}]'::jsonb);
+INSERT INTO merchant_settlement_approval_requests
+(id,tenant_id,batch_id,merchant_id,currency,requested_by,requester_role)
+VALUES ('posting-approval-unmapped','posting-tenant','posting-batch-unmapped','posting-merchant','SAR',
+ 'posting-requester-2','operations');
+INSERT INTO merchant_settlement_approval_decisions
+(id,tenant_id,request_id,decision,actor_id,actor_role,reason)
+VALUES ('posting-decision-unmapped','posting-tenant','posting-approval-unmapped','authorize_accounting',
+ 'posting-reviewer-2','finance','Independent review');
+
 DO $posting$
 DECLARE
   first_journal text;
   retry_journal text;
+  failure_message text;
 BEGIN
   first_journal := post_merchant_settlement_accounting(
     'posting-tenant','posting-batch','posting-finance','finance');
@@ -84,6 +108,20 @@ BEGIN
     RAISE EXCEPTION 'requester unexpectedly posted own settlement';
   EXCEPTION WHEN insufficient_privilege THEN NULL;
   END;
+
+  BEGIN
+    PERFORM post_merchant_settlement_accounting(
+      'posting-tenant','posting-batch-unmapped','posting-finance-2','finance');
+    RAISE EXCEPTION 'unmapped deduction unexpectedly posted';
+  EXCEPTION WHEN check_violation THEN
+    GET STACKED DIAGNOSTICS failure_message = MESSAGE_TEXT;
+    IF failure_message='unmapped deduction unexpectedly posted' THEN RAISE; END IF;
+  END;
+  IF (SELECT status FROM merchant_settlement_batches WHERE id='posting-batch-unmapped')<>'draft'
+     OR EXISTS (SELECT 1 FROM financial_journals
+       WHERE tenant_id='posting-tenant' AND source_reference='posting-batch-unmapped') THEN
+    RAISE EXCEPTION 'failed unmapped deduction left partial accounting state';
+  END IF;
 END
 $posting$;
 
