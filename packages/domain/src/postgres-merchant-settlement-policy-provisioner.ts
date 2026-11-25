@@ -38,7 +38,9 @@ function validate(input: CreateMerchantSettlementPolicyInput): void {
   }
   const codes = new Set<string>();
   for (const mapping of input.mappings) {
-    if (!/^[a-z][a-z0-9_]{0,79}$/.test(mapping.deductionCode) ||
+    if (!mapping || typeof mapping !== "object" ||
+        typeof mapping.deductionCode !== "string" || typeof mapping.accountCode !== "string" ||
+        !/^[a-z][a-z0-9_]{0,79}$/.test(mapping.deductionCode) ||
         !/^[A-Z0-9_]{1,80}$/.test(mapping.accountCode) || codes.has(mapping.deductionCode)) {
       throw new Error("INVALID_MERCHANT_SETTLEMENT_POLICY_MAPPING");
     }
