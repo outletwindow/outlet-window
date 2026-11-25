@@ -90,7 +90,8 @@ async function main(): Promise<void> {
       { version: "0071_merchant_settlement_dual_control", file: "0071_merchant_settlement_dual_control.sql" },
       { version: "0072_merchant_settlement_policy_account_mappings", file: "0072_merchant_settlement_policy_account_mappings.sql" },
       { version: "0073_atomic_merchant_settlement_accounting_posting", file: "0073_atomic_merchant_settlement_accounting_posting.sql" },
-      { version: "0074_merchant_payout_intents_and_dual_control", file: "0074_merchant_payout_intents_and_dual_control.sql" }
+      { version: "0074_merchant_payout_intents_and_dual_control", file: "0074_merchant_payout_intents_and_dual_control.sql" },
+      { version: "0075_merchant_payout_provider_outbox", file: "0075_merchant_payout_provider_outbox.sql" }
     ].map(async migration => ({
       version: migration.version,
       sql: await readFile(resolve(process.cwd(), `../../database/migrations/${migration.file}`), "utf8")
