@@ -86,4 +86,27 @@ describe("MerchantPayoutSubmissionWorker",()=>{
     expect(calls.some(call=>call.method==="recordRetry")).toBe(true);
     expect(calls.some(call=>call.method==="recordUnknown")).toBe(false);
   });
+
+  it("passes transient bank beneficiary details to providers that require structured destinations",async()=>{
+    const fake=makeStore();
+    const submit=vi.fn(async()=>({status:"accepted" as const,providerReference:"provider-ref-2"}));
+    const vault:MerchantPayoutDestinationVault={
+      async resolve(){return {destination:{
+        type:"bank",iban:"SA8430400108057386290038",name:"Merchant LLC",
+        mobile:"+966500000000",country:"SA",city:"Jubail"
+      }};}
+    };
+    const registry:MerchantPayoutProviderRegistry={get:()=>({submit})};
+    const worker=new MerchantPayoutSubmissionWorker(fake.store,vault,registry,"worker-1","sandbox-provider");
+    await expect(worker.runOnce()).resolves.toEqual({outcome:"submitted",outboxId:"outbox-1"});
+    expect(submit).toHaveBeenCalledWith({
+      payoutId:"intent-1",outboxId:"outbox-1",amountMinor:12500,currency:"SAR",
+      idempotencyKey:"payout-idempotency-1",
+      destination:{
+        type:"bank",iban:"SA8430400108057386290038",name:"Merchant LLC",
+        mobile:"+966500000000",country:"SA",city:"Jubail"
+      }
+    });
+  });
+
 });
