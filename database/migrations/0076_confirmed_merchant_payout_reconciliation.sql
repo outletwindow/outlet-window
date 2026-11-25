@@ -159,7 +159,7 @@ BEGIN
   ) VALUES (
     'merchant-payout-confirmed:'||p_tenant_id||':'||p_outbox_id,
     1,'merchant_payout_provider_confirmed','finance',clock_timestamp(),
-    p_actor_id,'platform_service','finance','post_confirmed_merchant_payout',
+    p_actor_id,'platform_user','finance','post_confirmed_merchant_payout',
     'success','merchant_payout_provider_outbox',p_outbox_id,p_tenant_id,
     payout_row.merchant_id,p_provider_event_id,'merchant_payout_reconciliation','high',
     jsonb_build_object('journalId',journal_id_value,'providerKey',p_provider_key,
