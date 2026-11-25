@@ -163,3 +163,12 @@ Migration 0060 adds a two-person review record for a draft merchant settlement b
 The application must derive actor identity, active platform role and grants from the authenticated server-side session. Never accept requester/approver IDs, roles, tenant IDs or grants as trusted client-supplied values. Enforce explicit `merchant.settlement:request` and `merchant.settlement:approve` grants in the API; finance, platform_admin or platform_owner is the only eligible approver role. Merchant users and AI agents cannot request or approve this workflow.
 
 **Remaining gated work:** a transaction-aware accounting service must map every deduction code to an explicitly configured financial account and atomically post the balanced journal, bind it to the settlement batch, and append the accounting audit event. The existing journal service owns its own transaction, so it must not be called followed by an independent batch update. Contract/commission/tax policy verification, payout provider adapters, bank transfer execution and payout reconciliation remain unimplemented. No live funds are moved by migration 0071.
+
+
+## 13B. Versioned settlement policy and deduction account mappings (migration 0072)
+
+Migration 0072 adds immutable, tenant/merchant/currency-scoped policy snapshots. Each snapshot records its contract reference, policy version, SHA-256 digest, JSON policy payload, approving actor and approval timestamp. Deduction codes are mapped to financial accounts within that exact policy snapshot; the database enforces tenant and currency matching and prevents duplicate codes, mutation, deletion or truncation.
+
+A draft settlement batch may be bound once to a policy snapshot. Once bound, the binding cannot be changed, and newly inserted settlement lines must use the snapshot's contract reference. Existing historical batches remain nullable for backward compatibility; the new accounting-posting path must reject an unbound batch and must fail closed for any deduction code without exactly one mapping.
+
+This migration provides immutable configuration evidence only. It does not independently validate the legal correctness of the policy payload, calculate commissions or taxes, post a journal, approve a batch, or initiate a payout. Those operations remain gated for the transaction-scoped accounting service and its integration tests.
