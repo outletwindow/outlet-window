@@ -47,6 +47,7 @@ CREATE TABLE merchant_payout_provider_outbox (
   FOREIGN KEY (tenant_id,payout_intent_id) REFERENCES merchant_payout_intents(tenant_id,id) ON DELETE RESTRICT,
   FOREIGN KEY (tenant_id,merchant_id,destination_id)
     REFERENCES merchant_payout_destinations(tenant_id,merchant_id,id) ON DELETE RESTRICT,
+  UNIQUE (tenant_id,id),
   UNIQUE (tenant_id,payout_intent_id),
   UNIQUE (tenant_id,provider_key,idempotency_key),
   CHECK ((status='processing' AND lease_owner IS NOT NULL AND lease_expires_at IS NOT NULL)
@@ -85,9 +86,10 @@ CREATE OR REPLACE FUNCTION enqueue_merchant_payout_provider_submission(
   p_id text, p_tenant_id text, p_payout_intent_id text, p_destination_id text,
   p_provider_key text, p_idempotency_key text, p_actor_id text
 ) RETURNS text LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
-DECLARE intent_row merchant_payout_intents%ROWTYPE;
-DECLARE destination_row merchant_payout_destinations%ROWTYPE;
-DECLARE outbox_id text;
+DECLARE
+  intent_row merchant_payout_intents%ROWTYPE;
+  destination_row merchant_payout_destinations%ROWTYPE;
+  outbox_id text;
 BEGIN
   SELECT * INTO intent_row FROM merchant_payout_intents
    WHERE tenant_id=p_tenant_id AND id=p_payout_intent_id FOR UPDATE;
