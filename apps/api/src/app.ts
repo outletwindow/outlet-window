@@ -198,11 +198,11 @@ export interface AppOptions {
   merchantPayoutAuthorization?: MerchantPayoutAuthorizationService;
   merchantPayoutProviderOutbox?: {
     enqueue(input: {
-      tenantId: string; payoutIntentId: string; destinationId: string;
+      payoutIntentId: string; destinationId: string;
       providerKey: string; idempotencyKey: string; actorId: string;
     }): Promise<
       | { outcome: "queued"; outboxId: string }
-      | { outcome: "not_authorized" | "destination_unverified" | "idempotency_conflict" }
+      | { outcome: "not_found" | "not_authorized" | "destination_unverified" | "idempotency_conflict" }
     >;
   };
   merchantBranchWriter?: MerchantBranchWriter;
@@ -1387,11 +1387,11 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       return reply.code(503).send({ error: "merchant_payout_provider_outbox_unavailable" });
     }
     const result = await options.merchantPayoutProviderOutbox.enqueue({
-      tenantId: access.actor.tenantId, payoutIntentId: request.params.payoutIntentId,
+      payoutIntentId: request.params.payoutIntentId,
       destinationId: body.destinationId, providerKey: body.providerKey,
       idempotencyKey: body.idempotencyKey, actorId: access.actor.id
     });
-    if (result.outcome === "not_authorized") return reply.code(409).send({ error: "merchant_payout_intent_not_authorized" });
+    if (result.outcome === "not_found") return reply.code(404).send({ error: "merchant_payout_intent_not_found" });\n    if (result.outcome === "not_authorized") return reply.code(409).send({ error: "merchant_payout_intent_not_authorized" });
     if (result.outcome === "destination_unverified") return reply.code(409).send({ error: "merchant_payout_destination_not_verified" });
     if (result.outcome === "idempotency_conflict") return reply.code(409).send({ error: "merchant_payout_provider_idempotency_conflict" });
     if (!("outboxId" in result)) return reply.code(409).send({ error: "merchant_payout_provider_submission_not_queued" });
