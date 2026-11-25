@@ -166,4 +166,69 @@ export class MoyasarMerchantPayoutProvider implements MerchantPayoutProvider {
     }
     return { status: "unknown", code: "MOYASAR_PAYOUT_RESPONSE_UNVERIFIABLE" };
   }
+
+  /** Fetches provider state for reconciliation; it never submits or retries a payout. */
+  async fetchPayout(input: {
+    outboxId: string;
+    providerReference: string;
+    amountMinor: number;
+    currency: string;
+  }): Promise<
+    | { outcome: "found"; status: "queued" | "initiated" | "paid" | "failed" | "canceled" | "returned"; updatedAt: string }
+    | { outcome: "unknown"; code: string }
+    | { outcome: "rejected"; code: string }
+  > {
+    if (!/^[a-zA-Z0-9_-]{1,200}$/.test(input.outboxId) ||
+        !uuidPattern.test(input.providerReference) ||
+        !Number.isSafeInteger(input.amountMinor) || input.amountMinor <= 0 ||
+        !/^[A-Z]{3}$/.test(input.currency)) {
+      return { outcome: "rejected", code: "INVALID_MOYASAR_PAYOUT_LOOKUP" };
+    }
+
+    let response: Response;
+    try {
+      response = await this.fetchImpl(
+        `https://api.moyasar.com/v1/payout/${encodeURIComponent(input.providerReference)}`,
+        {
+          method: "GET",
+          headers: {
+            authorization: `Basic ${Buffer.from(`${this.options.secretKey}:`, "utf8").toString("base64")}`,
+            accept: "application/json"
+          },
+          redirect: "error",
+          signal: AbortSignal.timeout(this.timeoutMs)
+        }
+      );
+    } catch {
+      return { outcome: "unknown", code: "MOYASAR_PAYOUT_LOOKUP_UNKNOWN" };
+    }
+    if (response.status === 408 || response.status === 425 || response.status === 429 || response.status >= 500 || response.status === 404) {
+      return { outcome: "unknown", code: "MOYASAR_PAYOUT_LOOKUP_UNKNOWN" };
+    }
+    if (!response.ok) return { outcome: "rejected", code: `MOYASAR_PAYOUT_LOOKUP_HTTP_${response.status}` };
+
+    let payload: MoyasarPayoutPayload & { updated_at?: unknown };
+    try {
+      const raw = await response.text();
+      if (raw.length > 32_768) throw new Error("oversized");
+      payload = JSON.parse(raw) as typeof payload;
+    } catch {
+      return { outcome: "unknown", code: "MOYASAR_PAYOUT_LOOKUP_UNVERIFIABLE" };
+    }
+    const status = payload.status;
+    if (payload.id !== input.providerReference || payload.source_id !== this.options.sourceId ||
+        payload.amount !== input.amountMinor || payload.currency !== input.currency ||
+        typeof payload.metadata !== "object" || payload.metadata === null ||
+        (payload.metadata as Record<string, unknown>).outlet_window_outbox_id !== input.outboxId ||
+        !["queued", "initiated", "paid", "failed", "canceled", "returned"].includes(String(status)) ||
+        typeof payload.updated_at !== "string" || !Number.isFinite(Date.parse(payload.updated_at))) {
+      return { outcome: "unknown", code: "MOYASAR_PAYOUT_LOOKUP_MISMATCH" };
+    }
+    return {
+      outcome: "found",
+      status: status as "queued" | "initiated" | "paid" | "failed" | "canceled" | "returned",
+      updatedAt: payload.updated_at
+    };
+  }
+
 }
