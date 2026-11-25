@@ -28,7 +28,7 @@ export class PostgresMerchantPayoutProviderOutbox {
     idempotencyKey: string; actorId: string;
   }): Promise<
     | { outcome: "queued"; outboxId: string }
-    | { outcome: "not_found" | "not_authorized" | "destination_unverified" | "idempotency_conflict" }
+    | { outcome: "not_found" | "not_authorized" | "destination_unverified" | "provider_entity_inactive" | "idempotency_conflict" }
   > {
     if (!input.payoutIntentId.trim() || !input.destinationId.trim() ||
         !/^[a-zA-Z0-9._-]{1,100}$/.test(input.providerKey) ||
@@ -55,6 +55,7 @@ export class PostgresMerchantPayoutProviderOutbox {
       const message = error instanceof Error ? error.message : "";
       if (code === "42501" || message.includes("payout_intent_not_authorized")) return {outcome:"not_authorized"};
       if (message.includes("verified_payout_destination_required")) return {outcome:"destination_unverified"};
+      if (message.includes("active_verified_provider_entity_destination_required")) return {outcome:"provider_entity_inactive"};
       if (code === "23505") return {outcome:"idempotency_conflict"};
       throw error;
     }
@@ -90,6 +91,10 @@ export class PostgresMerchantPayoutProviderOutbox {
              ON i.tenant_id=o.tenant_id AND i.id=o.payout_intent_id
            JOIN merchant_payout_destinations d
              ON d.tenant_id=o.tenant_id AND d.merchant_id=o.merchant_id AND d.id=o.destination_id
+           JOIN merchant_payout_provider_entities e
+             ON e.tenant_id=d.tenant_id AND e.merchant_id=d.merchant_id
+            AND e.provider_key=d.provider_key AND e.id=d.provider_entity_registry_id
+            AND e.status='active'
            WHERE o.status='queued' AND o.available_at<=now()
              AND o.attempt_count<8 AND o.provider_key=$2
              AND i.status='authorized'
@@ -97,16 +102,20 @@ export class PostgresMerchantPayoutProviderOutbox {
              AND d.provider_key=o.provider_key AND d.currency=o.currency
              AND d.verification_status='verified'
            ORDER BY o.available_at,o.created_at,o.id
-           FOR UPDATE OF o SKIP LOCKED LIMIT 1
+           FOR UPDATE OF o,d,e SKIP LOCKED LIMIT 1
          )
          UPDATE merchant_payout_provider_outbox o
          SET status='processing',lease_owner=$1,
              lease_expires_at=now()+($3 * interval '1 second'),
              attempt_count=o.attempt_count+1,updated_at=now()
-         FROM candidate c,merchant_payout_destinations d
+         FROM candidate c,merchant_payout_destinations d,
+              merchant_payout_provider_entities e
          WHERE o.id=c.id AND d.tenant_id=o.tenant_id
            AND d.merchant_id=o.merchant_id AND d.id=o.destination_id
            AND d.verification_status='verified'
+           AND e.tenant_id=d.tenant_id AND e.merchant_id=d.merchant_id
+           AND e.provider_key=d.provider_key AND e.id=d.provider_entity_registry_id
+           AND e.status='active'
          RETURNING o.id,o.tenant_id,o.payout_intent_id,o.merchant_id,o.destination_id,
            d.vault_reference,o.provider_key,o.currency,o.amount_minor,o.idempotency_key,o.attempt_count`,
         [workerId,providerKey,leaseSeconds]

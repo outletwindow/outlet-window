@@ -107,6 +107,19 @@ export interface MerchantPayoutAuthorizationService {
   decide(input: { payoutIntentId: string; actorId: string; actorRole: MerchantPayoutReviewerRole;
     decision: MerchantPayoutDecision; reason?: string }): Promise<MerchantPayoutDecisionOutcome>;
 }
+export interface MerchantPayoutProviderEntityRegistry {
+  register(input: { tenantId: string; merchantId: string; providerKey: string;
+    providerMerchantId: string; providerEntityId: string; actorId: string }): Promise<
+      { outcome: "created"; entity: import("../../../packages/domain/src/postgres-merchant-payout-provider-entity-registry.js").MerchantPayoutProviderEntity } |
+      { outcome: "merchant_not_found" | "identity_conflict" }
+    >;
+  revoke(input: { entityId: string; actorId: string }): Promise<
+    { outcome: "revoked" } | { outcome: "not_found" | "already_revoked" }
+  >;
+  list(input?: { tenantId?: string; limit?: number }): Promise<
+    import("../../../packages/domain/src/postgres-merchant-payout-provider-entity-registry.js").MerchantPayoutProviderEntity[]
+  >;
+}
 export interface CustomerPaymentAdjustmentActions {
   getCustomerAdjustment?(input: { orderId: string; adjustmentId: string; customerId: string }): Promise<
     | { outcome: "found"; adjustment: {
@@ -202,13 +215,14 @@ export interface AppOptions {
   merchantSettlementApprovals?: MerchantSettlementApprovalService;
   merchantSettlementAccountingPoster?: MerchantSettlementAccountingPoster;
   merchantPayoutAuthorization?: MerchantPayoutAuthorizationService;
+  merchantPayoutProviderEntities?: MerchantPayoutProviderEntityRegistry;
   merchantPayoutProviderOutbox?: {
     enqueue(input: {
       payoutIntentId: string; destinationId: string;
       providerKey: string; idempotencyKey: string; actorId: string;
     }): Promise<
       | { outcome: "queued"; outboxId: string }
-      | { outcome: "not_found" | "not_authorized" | "destination_unverified" | "idempotency_conflict" }
+      | { outcome: "not_found" | "not_authorized" | "destination_unverified" | "provider_entity_inactive" | "idempotency_conflict" }
     >;
   };
   merchantBranchWriter?: MerchantBranchWriter;
@@ -1352,6 +1366,118 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       payoutInitiated: false });
   });
 
+  app.get<{ Querystring: { tenantId?: string; limit?: string } }>(
+    "/api/v1/platform/payout-provider-entities", async (request, reply) => {
+      const access = await authorizeRequest(request, options, {
+        resource: "platform.merchant_payout_provider_entity", action: "read", scope: { platform: true }
+      });
+      if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
+      const roles = access.actor.roles ?? [access.actor.role];
+      if (!roles.some(role => role === "platform_admin" || role === "platform_owner")) {
+        return reply.code(403).send({ error: "platform_payout_provider_admin_role_required" });
+      }
+      if (!options.merchantPayoutProviderEntities) return reply.code(503).send({ error: "payout_provider_entity_registry_unavailable" });
+      const limit = request.query.limit === undefined ? 100 : Number(request.query.limit);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 200 ||
+          (request.query.tenantId !== undefined && !/^[A-Za-z0-9._:-]{1,160}$/.test(request.query.tenantId))) {
+        return reply.code(400).send({ error: "invalid_payout_provider_entity_query" });
+      }
+      const entities = await options.merchantPayoutProviderEntities.list({
+        ...(request.query.tenantId === undefined ? {} : { tenantId: request.query.tenantId }), limit
+      });
+      return reply.code(200).send({ entities });
+    }
+  );
+
+  app.post<{ Body: unknown }>("/api/v1/platform/payout-provider-entities", async (request, reply) => {
+    const access = await authorizeRequest(request, options, {
+      resource: "platform.merchant_payout_provider_entity", action: "create", scope: { platform: true }
+    });
+    if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
+    const roles = access.actor.roles ?? [access.actor.role];
+    if (!roles.some(role => role === "platform_admin" || role === "platform_owner")) {
+      return reply.code(403).send({ error: "platform_payout_provider_admin_role_required" });
+    }
+    if (!options.merchantPayoutProviderEntities || !options.auditEvents) {
+      return reply.code(503).send({ error: "payout_provider_entity_registry_unavailable" });
+    }
+    const body = request.body as Record<string, unknown> | null;
+    const keys = ["tenantId", "merchantId", "providerKey", "providerMerchantId", "providerEntityId"];
+    if (!body || keys.some(key => typeof body[key] !== "string" ||
+        !/^[A-Za-z0-9._:-]{1,240}$/.test(body[key] as string)) ||
+        body.providerKey !== "moyasar" || Object.keys(body).some(key => !keys.includes(key))) {
+      return reply.code(400).send({ error: "invalid_payout_provider_entity" });
+    }
+    const input = {
+      tenantId: body.tenantId as string, merchantId: body.merchantId as string,
+      providerKey: "moyasar", providerMerchantId: body.providerMerchantId as string,
+      providerEntityId: body.providerEntityId as string
+    };
+    const auditBase = {
+      id: randomUUID(), category: "payout_governance", occurredAt: new Date().toISOString(),
+      actor: { id: access.actor.id, type: "platform_user" as const, role: access.actor.role },
+      action: "platform.payout_provider_entity.register", resourceType: "payout_provider_entity",
+      resourceId: input.merchantId, tenantId: input.tenantId, merchantId: input.merchantId,
+      correlationId: request.id, source: "api", severity: "critical" as const,
+      metadata: { providerKey: input.providerKey }
+    };
+    await options.auditEvents.append(createAuditEvent({
+      ...auditBase, type: "payout_provider_entity.registration_requested", outcome: "pending"
+    }));
+    const result = await options.merchantPayoutProviderEntities.register({ ...input, actorId: access.actor.id });
+    await options.auditEvents.append(createAuditEvent({
+      ...auditBase, id: randomUUID(),
+      type: result.outcome === "created" ? "payout_provider_entity.registered" : "payout_provider_entity.registration_rejected",
+      outcome: result.outcome === "created" ? "success" : "failure",
+      ...(result.outcome === "created" ? { resourceId: result.entity.id } : {})
+    }));
+    if (result.outcome !== "created") {
+      if (result.outcome === "merchant_not_found") return reply.code(404).send({ error: "active_merchant_not_found_in_tenant" });
+      return reply.code(409).send({ error: "payout_provider_entity_identity_conflict" });
+    }
+    return reply.code(201).send({ entity: result.entity, transfersEnabled: false });
+  });
+
+  app.post<{ Params: { entityId: string } }>(
+    "/api/v1/platform/payout-provider-entities/:entityId/revoke", async (request, reply) => {
+      const access = await authorizeRequest(request, options, {
+        resource: "platform.merchant_payout_provider_entity", action: "manage_access", scope: { platform: true }
+      });
+      if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
+      const roles = access.actor.roles ?? [access.actor.role];
+      if (!roles.some(role => role === "platform_admin" || role === "platform_owner")) {
+        return reply.code(403).send({ error: "platform_payout_provider_admin_role_required" });
+      }
+      if (!options.merchantPayoutProviderEntities || !options.auditEvents) {
+        return reply.code(503).send({ error: "payout_provider_entity_registry_unavailable" });
+      }
+      if (!/^[A-Za-z0-9._:-]{1,160}$/.test(request.params.entityId)) {
+        return reply.code(400).send({ error: "invalid_payout_provider_entity_id" });
+      }
+      const auditBase = {
+        id: randomUUID(), category: "payout_governance", occurredAt: new Date().toISOString(),
+        actor: { id: access.actor.id, type: "platform_user" as const, role: access.actor.role },
+        action: "platform.payout_provider_entity.revoke", resourceType: "payout_provider_entity",
+        resourceId: request.params.entityId, correlationId: request.id, source: "api",
+        severity: "critical" as const, metadata: {}
+      };
+      await options.auditEvents.append(createAuditEvent({
+        ...auditBase, type: "payout_provider_entity.revocation_requested", outcome: "pending"
+      }));
+      const result = await options.merchantPayoutProviderEntities.revoke({
+        entityId: request.params.entityId, actorId: access.actor.id
+      });
+      await options.auditEvents.append(createAuditEvent({
+        ...auditBase, id: randomUUID(),
+        type: result.outcome === "revoked" ? "payout_provider_entity.revoked" : "payout_provider_entity.revocation_rejected",
+        outcome: result.outcome === "revoked" ? "success" : "failure"
+      }));
+      if (result.outcome === "not_found") return reply.code(404).send({ error: "payout_provider_entity_not_found" });
+      if (result.outcome === "already_revoked") return reply.code(409).send({ error: "payout_provider_entity_already_revoked" });
+      return reply.code(200).send({ outcome: "revoked", entityId: request.params.entityId, transfersEnabled: false });
+    }
+  );
+
   app.post<{
     Params: { batchId: string };
     Body: { amountMinor?: number; idempotencyKey?: string };
@@ -1459,6 +1585,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     if (result.outcome === "not_found") return reply.code(404).send({ error: "merchant_payout_intent_not_found" });
     if (result.outcome === "not_authorized") return reply.code(409).send({ error: "merchant_payout_intent_not_authorized" });
     if (result.outcome === "destination_unverified") return reply.code(409).send({ error: "merchant_payout_destination_not_verified" });
+    if (result.outcome === "provider_entity_inactive") return reply.code(409).send({ error: "merchant_payout_provider_entity_inactive" });
     if (result.outcome === "idempotency_conflict") return reply.code(409).send({ error: "merchant_payout_provider_idempotency_conflict" });
     if (!("outboxId" in result)) return reply.code(409).send({ error: "merchant_payout_provider_submission_not_queued" });
     return reply.code(202).send({ outcome: "queued", outboxId: result.outboxId, moneyTransferred: false });

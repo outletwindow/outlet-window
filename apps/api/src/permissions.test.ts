@@ -122,3 +122,21 @@ describe("platform merchant settlement approval permissions", () => {
     }
   });
 });
+
+
+describe("platform payout provider entity permissions", () => {
+  it("grants provider entity registry controls only to platform administrators and owners", () => {
+    for (const role of ["platform_admin", "platform_owner"] as const) {
+      expect(grantsForAssignments([assignment(role)])).toContainEqual({
+        resource: "platform.merchant_payout_provider_entity",
+        actions: ["read", "create", "manage_access"],
+        scope: { platform: true }
+      });
+    }
+    for (const role of ["finance", "operations", "merchant_owner", "merchant_admin"] as const) {
+      expect(grantsForAssignments([assignment(role)]).some(grant =>
+        grant.resource === "platform.merchant_payout_provider_entity"
+      )).toBe(false);
+    }
+  });
+});
