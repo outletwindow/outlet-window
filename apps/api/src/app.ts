@@ -1454,16 +1454,23 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       if (!/^[A-Za-z0-9._:-]{1,160}$/.test(request.params.entityId)) {
         return reply.code(400).send({ error: "invalid_payout_provider_entity_id" });
       }
+      const auditBase = {
+        id: randomUUID(), category: "payout_governance", occurredAt: new Date().toISOString(),
+        actor: { id: access.actor.id, type: "platform_user" as const, role: access.actor.role },
+        action: "platform.payout_provider_entity.revoke", resourceType: "payout_provider_entity",
+        resourceId: request.params.entityId, correlationId: request.id, source: "api",
+        severity: "critical" as const, metadata: {}
+      };
+      await options.auditEvents.append(createAuditEvent({
+        ...auditBase, type: "payout_provider_entity.revocation_requested", outcome: "pending"
+      }));
       const result = await options.merchantPayoutProviderEntities.revoke({
         entityId: request.params.entityId, actorId: access.actor.id
       });
       await options.auditEvents.append(createAuditEvent({
-        id: randomUUID(), type: result.outcome === "revoked" ? "payout_provider_entity.revoked" : "payout_provider_entity.revocation_rejected",
-        category: "payout_governance", occurredAt: new Date().toISOString(),
-        actor: { id: access.actor.id, type: "platform_user", role: access.actor.role },
-        action: "platform.payout_provider_entity.revoke", outcome: result.outcome === "revoked" ? "success" : "failure",
-        resourceType: "payout_provider_entity", resourceId: request.params.entityId,
-        correlationId: request.id, source: "api", severity: "critical", metadata: {}
+        ...auditBase, id: randomUUID(),
+        type: result.outcome === "revoked" ? "payout_provider_entity.revoked" : "payout_provider_entity.revocation_rejected",
+        outcome: result.outcome === "revoked" ? "success" : "failure"
       }));
       if (result.outcome === "not_found") return reply.code(404).send({ error: "payout_provider_entity_not_found" });
       if (result.outcome === "already_revoked") return reply.code(409).send({ error: "payout_provider_entity_already_revoked" });
