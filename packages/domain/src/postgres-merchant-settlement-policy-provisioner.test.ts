@@ -13,7 +13,7 @@ function fakePool(handler: (sql: string, values: readonly unknown[]) => Postgres
     }
   };
   const pool = { connect: async () => client, query: client.query.bind(client) } as unknown as PostgresPool;
-  return { pool, statements, valuesSeen, client };
+  return { pool, statements, client };
 }
 const base = {
   merchantId: "merchant-1", currency: "SAR", contractReference: "contract-1",
