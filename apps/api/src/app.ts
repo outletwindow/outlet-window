@@ -84,6 +84,30 @@ export interface MerchantSettlementReader {
   list(input: { tenantId: string; merchantId: string; status?: "draft" | "approved"; limit?: number }): Promise<import("../../../packages/domain/src/postgres-merchant-settlement-reader.js").MerchantSettlementBatchSummary[]>;
   get(input: { tenantId: string; merchantId: string; batchId: string }): Promise<import("../../../packages/domain/src/postgres-merchant-settlement-reader.js").MerchantSettlementBatch | null>;
 }
+export interface MerchantSettlementPolicyProvisioner {
+  create(input: {
+    merchantId: string; currency: string; contractReference: string; policyVersion: string;
+    policyPayload: Readonly<Record<string, unknown>>;
+    mappings: readonly { deductionCode: string; accountCode: string }[];
+    approvedBy: string; approvedByRole: "finance" | "platform_admin" | "platform_owner";
+  }): Promise<
+    | { outcome: "created" | "duplicate"; policySnapshotId: string; policySha256: string }
+    | { outcome: "merchant_not_found" | "accounts_missing" | "identity_collision" }
+  >;
+  bindToBatch(input: {
+    batchId: string; policySnapshotId: string; actorId: string;
+    actorRole: "finance" | "platform_admin" | "platform_owner";
+  }): Promise<
+    | { outcome: "bound" | "duplicate"; batchId: string; policySnapshotId: string }
+    | { outcome: "batch_not_found" | "policy_not_found" | "batch_not_draft" | "contract_mismatch" | "binding_conflict" }
+  >;
+}
+export interface MerchantSettlementAccountingService {
+  postForPlatform(batchId: string): Promise<
+    | { outcome: "posted" | "duplicate"; batchId: string; journalId: string }
+    | { outcome: "not_found" | "not_authorized" | "policy_missing" | "mapping_missing" | "identity_collision" }
+  >;
+}
 export interface MerchantSettlementApprovalService {
   request(input: { batchId: string; requesterId: string; requesterRole: SettlementApprovalRole }): Promise<SettlementApprovalOutcome>;
   listPending(input?: { limit?: number }): Promise<import("../../../packages/domain/src/postgres-merchant-settlement-approval-store.js").SettlementApprovalRequest[]>;
@@ -177,6 +201,8 @@ export interface AppOptions {
   merchantOrderReader?: { listForBranch(input: { tenantId: string; merchantId: string; branchId: string; status?: OrderStatus; limit?: number }): Promise<MerchantOrderSummary[]> };
   merchantSettlementReader?: MerchantSettlementReader;
   merchantSettlementApprovals?: MerchantSettlementApprovalService;
+  merchantSettlementAccounting?: MerchantSettlementAccountingService;
+  merchantSettlementPolicyProvisioner?: MerchantSettlementPolicyProvisioner;
   merchantBranchWriter?: MerchantBranchWriter;
   /** Optional dependency check used by readiness; failures keep the instance out of service. */
   readinessCheck?: () => Promise<boolean>;
@@ -1233,6 +1259,97 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     if (result.outcome === "invalid_transition") return reply.code(409).send({ error: "settlement_approval_transition_invalid" });
     if (!("request" in result)) return reply.code(409).send({ error: "settlement_approval_decision_not_recorded" });
     return reply.code(200).send({ request: result.request });
+  });
+
+  app.post<{
+    Params: { merchantId: string };
+    Body: {
+      currency?: string; contractReference?: string; policyVersion?: string;
+      policyPayload?: Record<string, unknown>;
+      mappings?: Array<{ deductionCode: string; accountCode: string }>;
+    };
+  }>("/api/v1/platform/merchants/:merchantId/settlement-policies", async (request, reply) => {
+    const access = await authorizeRequest(request, options, {
+      resource: "platform.merchant_settlement", action: "approve", scope: { platform: true }
+    });
+    if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
+    const roles = access.actor.roles ?? [access.actor.role];
+    const approvedByRole = roles.find((role): role is "finance" | "platform_admin" | "platform_owner" =>
+      role === "finance" || role === "platform_admin" || role === "platform_owner");
+    if (!approvedByRole) return reply.code(403).send({ error: "platform_settlement_policy_approver_role_required" });
+    if (!options.merchantSettlementPolicyProvisioner) {
+      return reply.code(503).send({ error: "settlement_policy_provisioner_unavailable" });
+    }
+    const body = request.body;
+    if (!body || typeof body.currency !== "string" ||
+        typeof body.contractReference !== "string" || typeof body.policyVersion !== "string" ||
+        !body.policyPayload || typeof body.policyPayload !== "object" || Array.isArray(body.policyPayload) ||
+        !Array.isArray(body.mappings)) {
+      return reply.code(400).send({ error: "invalid_settlement_policy_payload" });
+    }
+    const result = await options.merchantSettlementPolicyProvisioner.create({
+      merchantId: request.params.merchantId, currency: body.currency,
+      contractReference: body.contractReference, policyVersion: body.policyVersion,
+      policyPayload: body.policyPayload, mappings: body.mappings,
+      approvedBy: access.actor.id, approvedByRole
+    });
+    if (result.outcome === "merchant_not_found") return reply.code(404).send({ error: "merchant_not_found" });
+    if (result.outcome === "accounts_missing") return reply.code(409).send({ error: "settlement_policy_accounts_missing_or_inactive" });
+    if (result.outcome === "identity_collision") return reply.code(409).send({ error: "settlement_policy_version_identity_collision" });
+    return reply.code(result.outcome === "created" ? 201 : 200).send(result);
+  });
+
+  app.post<{
+    Params: { batchId: string };
+    Body: { policySnapshotId?: string };
+  }>("/api/v1/platform/settlements/:batchId/policy-binding", async (request, reply) => {
+    const access = await authorizeRequest(request, options, {
+      resource: "platform.merchant_settlement", action: "approve", scope: { platform: true }
+    });
+    if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
+    const roles = access.actor.roles ?? [access.actor.role];
+    const actorRole = roles.find((role): role is "finance" | "platform_admin" | "platform_owner" =>
+      role === "finance" || role === "platform_admin" || role === "platform_owner");
+    if (!actorRole) return reply.code(403).send({ error: "platform_settlement_policy_approver_role_required" });
+    if (!options.merchantSettlementPolicyProvisioner) {
+      return reply.code(503).send({ error: "settlement_policy_provisioner_unavailable" });
+    }
+    if (typeof request.body?.policySnapshotId !== "string") {
+      return reply.code(400).send({ error: "invalid_settlement_policy_binding" });
+    }
+    const result = await options.merchantSettlementPolicyProvisioner.bindToBatch({
+      batchId: request.params.batchId, policySnapshotId: request.body.policySnapshotId,
+      actorId: access.actor.id, actorRole
+    });
+    if (result.outcome === "batch_not_found") return reply.code(404).send({ error: "settlement_batch_not_found" });
+    if (result.outcome === "policy_not_found") return reply.code(404).send({ error: "settlement_policy_snapshot_not_found" });
+    if (result.outcome === "batch_not_draft") return reply.code(409).send({ error: "settlement_batch_not_draft" });
+    if (result.outcome === "contract_mismatch") return reply.code(409).send({ error: "settlement_policy_contract_mismatch" });
+    if (result.outcome === "binding_conflict") return reply.code(409).send({ error: "settlement_policy_binding_conflict" });
+    return reply.code(result.outcome === "bound" ? 201 : 200).send(result);
+  });
+
+  app.post<{
+    Params: { batchId: string };
+  }>("/api/v1/platform/settlements/:batchId/post-accounting", async (request, reply) => {
+    const access = await authorizeRequest(request, options, {
+      resource: "platform.merchant_settlement", action: "execute", scope: { platform: true }
+    });
+    if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
+    const roles = access.actor.roles ?? [access.actor.role];
+    if (!roles.some(role => role === "finance" || role === "platform_admin" || role === "platform_owner")) {
+      return reply.code(403).send({ error: "platform_settlement_accounting_role_required" });
+    }
+    if (!options.merchantSettlementAccounting) {
+      return reply.code(503).send({ error: "settlement_accounting_unavailable" });
+    }
+    const result = await options.merchantSettlementAccounting.postForPlatform(request.params.batchId);
+    if (result.outcome === "not_found") return reply.code(404).send({ error: "settlement_batch_not_found" });
+    if (result.outcome === "not_authorized") return reply.code(409).send({ error: "settlement_accounting_not_authorized" });
+    if (result.outcome === "policy_missing") return reply.code(409).send({ error: "settlement_policy_snapshot_missing" });
+    if (result.outcome === "mapping_missing") return reply.code(409).send({ error: "settlement_deduction_account_mapping_missing" });
+    if (result.outcome === "identity_collision") return reply.code(409).send({ error: "settlement_journal_idempotency_collision" });
+    return reply.code(result.outcome === "posted" ? 201 : 200).send(result);
   });
 
   app.get<{
