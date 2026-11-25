@@ -41,6 +41,7 @@ export function createMoyasarMerchantPayoutWebhookVerifier(
           typeof parsed.type !== "string" || !parsed.type.trim() ||
           typeof parsed.secret_token !== "string" || !parsed.secret_token ||
           typeof parsed.created_at !== "string" || !Number.isFinite(Date.parse(parsed.created_at)) ||
+          typeof parsed.account_name !== "string" || !parsed.account_name.trim() ||
           typeof parsed.live !== "boolean" || parsed.live !== expectedLiveMode ||
           typeof parsed.merchant_id !== "string" || !parsed.merchant_id.trim() ||
           typeof parsed.entity_id !== "string" || !parsed.entity_id.trim() ||
