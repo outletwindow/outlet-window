@@ -115,3 +115,6 @@ The optional HTTP route is wired at `/api/v1/webhooks/payouts/moyasar`. It is ex
 - The vault resolver must return a typed bank/wallet beneficiary payload only in memory. Raw IBAN, beneficiary name, mobile, and other destination details must never be persisted in the application database or logged.
 
 The runtime worker is intentionally not enabled yet: the repository still needs a production-grade vault resolver and worker composition using a real Moyasar payout source account. Do not use placeholder destination details or environment variables containing beneficiary IBANs.
+- `MoyasarMerchantPayoutProvider.fetchPayout` performs a read-only `GET /v1/payout/:id` lookup and exact-matches payout ID, source account, amount, currency, outbox metadata, and update timestamp. A lookup result is reconciliation evidence only; it does not itself post the payout journal or initiate another transfer.
+
+Official fetch endpoint: https://docs.moyasar.com/api/payouts/06-fetch-payout
