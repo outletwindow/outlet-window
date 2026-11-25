@@ -62,12 +62,16 @@ export class PostgresMerchantSettlementPolicyProvisioner {
   async bindToBatch(input: {
     batchId: string;
     policySnapshotId: string;
+    actorId: string;
+    actorRole: "finance" | "platform_admin" | "platform_owner";
   }): Promise<
     | { outcome: "bound" | "duplicate"; batchId: string; policySnapshotId: string }
     | { outcome: "batch_not_found" | "policy_not_found" | "batch_not_draft" | "contract_mismatch" | "binding_conflict" }
   > {
     if (!input.batchId.trim() || input.batchId.length > 200 ||
-        !input.policySnapshotId.trim() || input.policySnapshotId.length > 200) {
+        !input.policySnapshotId.trim() || input.policySnapshotId.length > 200 ||
+        !input.actorId.trim() || input.actorId.length > 160 ||
+        !["finance","platform_admin","platform_owner"].includes(input.actorRole)) {
       throw new Error("INVALID_SETTLEMENT_POLICY_BINDING");
     }
     const client = await this.pool.connect();
@@ -123,10 +127,10 @@ export class PostgresMerchantSettlementPolicyProvisioner {
           action,outcome,resource_type,resource_id,tenant_id,merchant_id,correlation_id,
           source,severity,metadata)
          VALUES ($1,1,'merchant_settlement_policy_bound_to_batch','finance',clock_timestamp(),
-          'system:settlement-policy-binding','system','system','bind_settlement_policy','success',
+          $6,'platform_user',$7,'bind_settlement_policy','success',
           'merchant_settlement_batch',$2,$3,$4,$5,'merchant_settlement_policy','high',$6::jsonb)`,
-        [`settlement-policy-binding:${batch.id}`,batch.id,batch.tenant_id,batch.merchant_id,
-          batch.id,JSON.stringify({ policySnapshotId:input.policySnapshotId,contractReference:policy.contract_reference })]
+        [`settlement-policy-binding:${batch.id}`,input.actorId,batch.id,batch.tenant_id,batch.merchant_id,
+          input.actorRole,batch.id,JSON.stringify({ policySnapshotId:input.policySnapshotId,contractReference:policy.contract_reference })]
       );
       await client.query("COMMIT");
       return { outcome: "bound", batchId: batch.id, policySnapshotId: input.policySnapshotId };
