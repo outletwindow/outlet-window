@@ -6,7 +6,7 @@ VALUES ('posting-merchant','posting-tenant','Posting LLC','Posting Merchant','SA
 INSERT INTO merchant_branches (id,merchant_id,display_name,city_code,status)
 VALUES ('posting-branch','posting-merchant','Posting Branch','JUB','active');
 INSERT INTO customer_orders (id,tenant_id,customer_id,idempotency_key,status,currency,total_minor)
-VALUES ('posting-order','platform','posting-customer','posting-order-key','pending_validation','SAR',12000);
+VALUES ('posting-order','posting-tenant','posting-customer','posting-order-key','pending_validation','SAR',12000);
 INSERT INTO merchant_suborders (id,tenant_id,order_id,merchant_id,branch_id,status,subtotal_minor)
 VALUES ('posting-suborder','posting-tenant','posting-order','posting-merchant','posting-branch','delivered',12000);
 INSERT INTO financial_accounts
