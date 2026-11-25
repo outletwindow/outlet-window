@@ -89,7 +89,7 @@ describe("Moyasar merchant payout webhook adapter", () => {
   });
 
   it("composes verification, paid-event decoding, and persistence with merchant identity", async () => {
-    let persisted: Record<string, unknown> | undefined;
+    let persisted: unknown;
     const processor = new MoyasarMerchantPayoutConfirmationWebhookProcessor({
       secretResolver: async () => secret,
       expectedLiveMode: false,
