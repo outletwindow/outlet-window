@@ -1258,7 +1258,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     }
     const result = await options.merchantSettlementAccounting.postForPlatform(request.params.batchId);
     if (result.outcome === "not_found") return reply.code(404).send({ error: "settlement_batch_not_found" });
-    if (result.outcome === "not_authorized") return reply.code(403).send({ error: "settlement_accounting_not_authorized" });
+    if (result.outcome === "not_authorized") return reply.code(409).send({ error: "settlement_accounting_not_authorized" });
     if (result.outcome === "policy_missing") return reply.code(409).send({ error: "settlement_policy_snapshot_missing" });
     if (result.outcome === "mapping_missing") return reply.code(409).send({ error: "settlement_deduction_account_mapping_missing" });
     if (result.outcome === "identity_collision") return reply.code(409).send({ error: "settlement_journal_idempotency_collision" });
