@@ -99,3 +99,21 @@ The API records audit events and rejects duplicate active merchant/provider iden
 Each payout destination must reference the immutable provider-entity registry row for the same tenant, merchant, and provider. The database rejects new or newly verified destinations without an active mapping, and the provider submission outbox rejects destinations whose mapping has been revoked. The payout worker also rechecks that mapping while claiming work; revocation therefore blocks future submissions even if a destination still carries a historical `verified` status. Legacy destinations without a mapping remain stored for audit/history but cannot be newly verified or submitted. Re-registering an entity does not silently rebind an old destination; a new destination must be registered against the new mapping.
 
 These controls validate local identity linkage only. They do not verify a bank account with Moyasar, create or send a transfer, or confirm money movement.
+
+
+## Merchant payout destination administration
+
+Platform staff manage payout destinations through these routes:
+
+- `GET /api/v1/platform/payout-destinations?tenantId=...&merchantId=...` lists safe destination summaries. Requires `platform.merchant_payout_destination:read` and a `finance`, `platform_admin`, or `platform_owner` role.
+- `POST /api/v1/platform/payout-destinations` registers a destination. Required fields: `tenantId`, `merchantId`, `providerKey=moyasar`, `currency`, `providerEntityRegistryId`, and `vaultReference`. Platform admin/owner only. New destinations always start as `pending`.
+- `POST /api/v1/platform/payout-destinations/:destinationId/verify` independently approves a pending destination. Requires the `approve` grant and a `finance`, `platform_admin`, or `platform_owner` role. The creator cannot approve their own destination.
+- `POST /api/v1/platform/payout-destinations/:destinationId/revoke` permanently revokes a destination. Platform admin/owner only.
+
+The database enforces creator attribution, pending-on-create, independent approval, immutable destination identity, and terminal revocation. A destination can be verified only while its linked provider entity remains active.
+
+### Vault reference privacy
+
+`vaultReference` is an opaque pointer supplied by a trusted vault integration or operator. This API stores it only for internal payout-worker resolution. It is never included in destination list/create/verify responses or audit metadata. No raw IBAN, bank account number, bank credentials, or provider secrets are accepted or stored by these endpoints. A vault service integration is not provided by this API surface; supplying a reference does not prove that the referenced secret exists or is valid.
+
+These endpoints administer records only. They do not verify a bank account with Moyasar, initiate a transfer, or enable live payouts.
