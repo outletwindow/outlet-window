@@ -32,13 +32,13 @@ function response(payload: unknown, status = 201): Response {
 
 describe("MoyasarMerchantPayoutProvider", () => {
   it("derives a stable UUID v4 given_id from the durable idempotency key", () => {
-    const first = moyasarGivenIdFromOutboxKey(command.idempotencyKey);
-    expect(first).toBe(moyasarGivenIdFromOutboxKey(command.idempotencyKey));
+    const first = moyasarGivenIdFromOutboxKey(command.outboxId, command.idempotencyKey);
+    expect(first).toBe(moyasarGivenIdFromOutboxKey(command.outboxId, command.idempotencyKey));
     expect(first).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
   });
 
   it("submits the exact outbox metadata and treats provider acceptance only as submitted", async () => {
-    const givenId = moyasarGivenIdFromOutboxKey(command.idempotencyKey);
+    const givenId = moyasarGivenIdFromOutboxKey(command.outboxId, command.idempotencyKey);
     const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
       expect(body).toMatchObject({
@@ -98,7 +98,7 @@ describe("MoyasarMerchantPayoutProvider", () => {
   });
 
   it("quarantines mismatched provider responses and maps returned payouts to reconciliation", async () => {
-    const givenId = moyasarGivenIdFromOutboxKey(command.idempotencyKey);
+    const givenId = moyasarGivenIdFromOutboxKey(command.outboxId, command.idempotencyKey);
     const mismatch = new MoyasarMerchantPayoutProvider({
       ...options,
       fetchImpl: vi.fn(async () => response({
