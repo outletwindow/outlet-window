@@ -30,7 +30,7 @@ describe("PostgresMerchantPayoutProviderEntityRegistry", () => {
     expect(result.outcome).toBe("created");
     if(result.outcome==="created") expect(result.entity.tenantId).toBe("tenant-1");
     expect(fake.calls[0].sql).toContain("m.tenant_id=$2 AND m.id=$3 AND m.status='active'");
-    expect(fake.calls[0].values).toEqual(["", "tenant-1", "merchant-1", "moyasar", "pm-1", "pe-1", "admin-1"].slice(1).length ? expect.anything() : []);
+    expect(fake.calls[0].values.slice(1)).toEqual(["tenant-1", "merchant-1", "moyasar", "pm-1", "pe-1", "admin-1"]);
   });
 
   it("rejects duplicate active provider identities", async () => {
