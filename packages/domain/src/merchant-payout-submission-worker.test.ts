@@ -53,7 +53,7 @@ describe("MerchantPayoutSubmissionWorker",()=>{
     const {worker,calls,submit}=makeWorker();
     await expect(worker.runOnce()).resolves.toEqual({outcome:"submitted",outboxId:"outbox-1"});
     expect(submit).toHaveBeenCalledWith({
-      payoutId:"intent-1",amountMinor:12500,currency:"SAR",
+      payoutId:"intent-1",outboxId:"outbox-1",amountMinor:12500,currency:"SAR",
       idempotencyKey:"payout-idempotency-1",destinationToken:"opaque-provider-token"
     });
     expect(calls.some(call=>call.method==="recordSubmitted")).toBe(true);
