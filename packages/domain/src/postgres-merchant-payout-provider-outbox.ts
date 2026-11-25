@@ -28,7 +28,7 @@ export class PostgresMerchantPayoutProviderOutbox {
     idempotencyKey: string; actorId: string;
   }): Promise<
     | { outcome: "queued"; outboxId: string }
-    | { outcome: "not_found" | "not_authorized" | "destination_unverified" | "idempotency_conflict" }
+    | { outcome: "not_found" | "not_authorized" | "destination_unverified" | "provider_entity_inactive" | "idempotency_conflict" }
   > {
     if (!input.payoutIntentId.trim() || !input.destinationId.trim() ||
         !/^[a-zA-Z0-9._-]{1,100}$/.test(input.providerKey) ||
@@ -55,6 +55,7 @@ export class PostgresMerchantPayoutProviderOutbox {
       const message = error instanceof Error ? error.message : "";
       if (code === "42501" || message.includes("payout_intent_not_authorized")) return {outcome:"not_authorized"};
       if (message.includes("verified_payout_destination_required")) return {outcome:"destination_unverified"};
+      if (message.includes("active_verified_provider_entity_destination_required")) return {outcome:"provider_entity_inactive"};
       if (code === "23505") return {outcome:"idempotency_conflict"};
       throw error;
     }
