@@ -64,6 +64,9 @@ BEGIN
   IF to_regclass('public.merchant_payout_provider_events') IS NULL THEN
     RAISE EXCEPTION 'merchant payout provider events table missing';
   END IF;
+  IF to_regclass('public.merchant_payout_provider_entities') IS NULL THEN
+    RAISE EXCEPTION 'merchant payout provider entity mapping table missing';
+  END IF;
   IF to_regprocedure('public.enqueue_merchant_payout_provider_submission(text,text,text,text,text,text,text)') IS NULL THEN
     RAISE EXCEPTION 'payout provider enqueue function missing';
   END IF;
@@ -98,6 +101,24 @@ BEGIN
     WHERE id=queued_id AND status='queued' AND amount_minor=5000
       AND currency='SAR' AND idempotency_key='payout-provider-idem-1'
   ) THEN RAISE EXCEPTION 'payout outbox did not copy exact authorized amount'; END IF;
+
+  INSERT INTO merchant_payout_provider_entities
+    (id,tenant_id,merchant_id,provider_key,provider_merchant_id,provider_entity_id,created_by)
+  VALUES ('payout-provider-entity-map','payout-outbox-tenant','payout-outbox-merchant',
+    'sandbox-provider','provider-merchant-123','provider-entity-456','payout-outbox-finance');
+  IF NOT EXISTS (
+    SELECT 1 FROM merchant_payout_provider_entities
+    WHERE tenant_id='payout-outbox-tenant' AND merchant_id='payout-outbox-merchant'
+      AND provider_key='sandbox-provider' AND provider_merchant_id='provider-merchant-123'
+      AND provider_entity_id='provider-entity-456' AND status='active'
+  ) THEN RAISE EXCEPTION 'provider merchant/entity mapping was not persisted'; END IF;
+  BEGIN
+    UPDATE merchant_payout_provider_entities
+    SET provider_entity_id='provider-entity-tampered'
+    WHERE id='payout-provider-entity-map';
+    RAISE EXCEPTION 'provider entity mapping identity unexpectedly mutable';
+  EXCEPTION WHEN SQLSTATE '55000' THEN NULL;
+  END;
 
   duplicate_id := enqueue_merchant_payout_provider_submission(
     'payout-outbox-row-duplicate','payout-outbox-tenant','payout-outbox-intent',
