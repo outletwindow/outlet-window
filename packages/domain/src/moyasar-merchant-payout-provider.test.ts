@@ -34,6 +34,7 @@ describe("MoyasarMerchantPayoutProvider", () => {
   it("derives a stable UUID v4 given_id from the durable idempotency key", () => {
     const first = moyasarGivenIdFromOutboxKey(command.outboxId, command.idempotencyKey);
     expect(first).toBe(moyasarGivenIdFromOutboxKey(command.outboxId, command.idempotencyKey));
+    expect(first).not.toBe(moyasarGivenIdFromOutboxKey("another-outbox", command.idempotencyKey));
     expect(first).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
   });
 
