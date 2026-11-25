@@ -1054,11 +1054,10 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     const eventId = headerValue(request.headers["x-event-id"]);
     const eventType = headerValue(request.headers["x-event-type"]);
     const eventSecret = headerValue(request.headers["x-event-secret"]);
-    const headers = {
-      ...(eventId === undefined ? {} : { "x-event-id": eventId }),
-      ...(eventType === undefined ? {} : { "x-event-type": eventType }),
-      ...(eventSecret === undefined ? {} : { "x-event-secret": eventSecret })
-    };
+    const headers: Record<string, string> = {};
+    if (eventId !== undefined) headers["x-event-id"] = eventId;
+    if (eventType !== undefined) headers["x-event-type"] = eventType;
+    if (eventSecret !== undefined) headers["x-event-secret"] = eventSecret;
 
     let result: Awaited<ReturnType<MerchantPayoutConfirmationWebhookHandler["process"]>>;
     try {
