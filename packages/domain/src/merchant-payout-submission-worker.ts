@@ -52,6 +52,16 @@ export class MerchantPayoutSubmissionWorker {
   async runOnce(): Promise<MerchantPayoutWorkerResult> {
     const job = await this.store.claimNext(this.workerId,this.providerKey,this.leaseSeconds);
     if (!job) return { outcome: "idle" };
+    const provider = this.providers.get(job.providerKey);
+    if (!provider) {
+      const result = await this.store.recordRetry({
+        outboxId: job.outboxId,workerId: this.workerId,
+        failureCode: "PAYOUT_PROVIDER_NOT_CONFIGURED",delaySeconds: 300
+      });
+      return { outcome: result === "rescheduled" ? "retry_scheduled" :
+        result === "dead_lettered" ? "failed" : "lease_lost",outboxId: job.outboxId };
+    }
+
     let credential: MerchantPayoutDestinationCredential;
     try {
       credential = await this.vault.resolve({
@@ -64,16 +74,6 @@ export class MerchantPayoutSubmissionWorker {
       const result = await this.store.recordRetry({
         outboxId: job.outboxId,workerId: this.workerId,
         failureCode: "PAYOUT_DESTINATION_VAULT_UNAVAILABLE",delaySeconds
-      });
-      return { outcome: result === "rescheduled" ? "retry_scheduled" :
-        result === "dead_lettered" ? "failed" : "lease_lost",outboxId: job.outboxId };
-    }
-
-    const provider = this.providers.get(job.providerKey);
-    if (!provider) {
-      const result = await this.store.recordRetry({
-        outboxId: job.outboxId,workerId: this.workerId,
-        failureCode: "PAYOUT_PROVIDER_NOT_CONFIGURED",delaySeconds: 300
       });
       return { outcome: result === "rescheduled" ? "retry_scheduled" :
         result === "dead_lettered" ? "failed" : "lease_lost",outboxId: job.outboxId };
