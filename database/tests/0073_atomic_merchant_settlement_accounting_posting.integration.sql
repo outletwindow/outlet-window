@@ -49,8 +49,9 @@ VALUES ('posting-decision','posting-tenant','posting-approval','authorize_accoun
  'posting-reviewer','finance','Independent review');
 
 DO $posting$
-DECLARE first_journal text;
-DECLARE retry_journal text;
+DECLARE
+  first_journal text;
+  retry_journal text;
 BEGIN
   first_journal := post_merchant_settlement_accounting(
     'posting-tenant','posting-batch','posting-finance','finance');
