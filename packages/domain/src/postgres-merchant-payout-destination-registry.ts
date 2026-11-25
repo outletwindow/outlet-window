@@ -92,7 +92,11 @@ export class PostgresMerchantPayoutDestinationRegistry {
   async verify(input:{destinationId:string;actorId:string}):Promise<
     {outcome:"verified";destination:MerchantPayoutDestinationSummary}|
     {outcome:"not_found"|"self_approval"|"not_pending"|"provider_entity_inactive"}> {
-    const result=await this.pool.query<any>(`UPDATE merchant_payout_destinations d
+    const result=await this.pool.query<{
+      id:string;tenant_id:string;merchant_id:string;provider_key:string;currency:string;
+      provider_entity_registry_id:string;verification_status:"pending"|"verified"|"revoked";
+      created_by:string;created_at:Date|string;verified_by:string;verified_at:Date|string;
+    }>(`UPDATE merchant_payout_destinations d
       SET verification_status='verified',verified_by=$2,verified_at=now(),updated_at=now()
       WHERE d.id=$1 AND d.verification_status='pending' AND d.created_by<>$2
         AND EXISTS (SELECT 1 FROM merchant_payout_provider_entities e
