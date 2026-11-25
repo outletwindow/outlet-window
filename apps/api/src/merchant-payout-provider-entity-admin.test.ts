@@ -26,7 +26,10 @@ describe("platform payout provider entity administration", () => {
     expect(response.statusCode).toBe(201);
     expect(response.json().transfersEnabled).toBe(false);
     expect(register).toHaveBeenCalledWith({tenantId:"tenant-1",merchantId:"merchant-1",providerKey:"moyasar",providerMerchantId:"pm-1",providerEntityId:"pe-1",actorId:"platform-admin"});
-    expect(append).toHaveBeenCalledTimes(2);
+    expect(append).toHaveBeenCalledTimes(3);
+    const auditTypes = append.mock.calls.map(([event]) => event.type);
+    expect(auditTypes).toContain("payout_provider_entity.registration_requested");
+    expect(auditTypes).toContain("payout_provider_entity.registered");
   });
 
   it("denies merchant actors even if they submit valid provider identifiers",async()=>{
