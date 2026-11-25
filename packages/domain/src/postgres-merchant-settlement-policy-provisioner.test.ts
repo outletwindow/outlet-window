@@ -75,6 +75,54 @@ describe("PostgresMerchantSettlementPolicyProvisioner", () => {
     expect(fake.statements.some(sql => sql.includes("INSERT INTO merchant_settlement_policy_snapshots"))).toBe(false);
   });
 
+  it("binds a matching immutable policy to a draft batch and records the finance actor", async () => {
+    const fake = fakePool(sql => {
+      if (sql.includes("FROM merchant_settlement_batches")) return { rows: [{
+        id: "batch-1", tenant_id: "tenant-1", merchant_id: "merchant-1",
+        currency: "SAR", status: "draft", policy_snapshot_id: null
+      }], rowCount: 1 };
+      if (sql.includes("FROM merchant_settlement_policy_snapshots")) return { rows: [{
+        id: "policy-1", contract_reference: "contract-1"
+      }], rowCount: 1 };
+      if (sql.includes("SELECT DISTINCT contract_reference")) return { rows: [{
+        contract_reference: "contract-1"
+      }], rowCount: 1 };
+      if (sql.includes("UPDATE merchant_settlement_batches")) return { rows: [{ id: "batch-1" }], rowCount: 1 };
+      return { rows: [], rowCount: 1 };
+    });
+    const provisioner = new PostgresMerchantSettlementPolicyProvisioner(fake.pool);
+    const result = await provisioner.bindToBatch({
+      batchId: "batch-1", policySnapshotId: "policy-1",
+      actorId: "finance-1", actorRole: "finance"
+    });
+    expect(result).toEqual({ outcome: "bound", batchId: "batch-1", policySnapshotId: "policy-1" });
+    expect(fake.statements.some(sql => sql.includes("INSERT INTO audit_events"))).toBe(true);
+    expect(fake.statements.at(-1)).toBe("COMMIT");
+  });
+
+  it("refuses to bind a policy whose contract differs from settlement lines", async () => {
+    const fake = fakePool(sql => {
+      if (sql.includes("FROM merchant_settlement_batches")) return { rows: [{
+        id: "batch-1", tenant_id: "tenant-1", merchant_id: "merchant-1",
+        currency: "SAR", status: "draft", policy_snapshot_id: null
+      }], rowCount: 1 };
+      if (sql.includes("FROM merchant_settlement_policy_snapshots")) return { rows: [{
+        id: "policy-1", contract_reference: "contract-1"
+      }], rowCount: 1 };
+      if (sql.includes("SELECT DISTINCT contract_reference")) return { rows: [{
+        contract_reference: "other-contract"
+      }], rowCount: 1 };
+      return { rows: [], rowCount: 0 };
+    });
+    const provisioner = new PostgresMerchantSettlementPolicyProvisioner(fake.pool);
+    await expect(provisioner.bindToBatch({
+      batchId: "batch-1", policySnapshotId: "policy-1",
+      actorId: "finance-1", actorRole: "finance"
+    })).resolves.toEqual({ outcome: "contract_mismatch" });
+    expect(fake.statements).toContain("ROLLBACK");
+    expect(fake.statements.some(sql => sql.includes("UPDATE merchant_settlement_batches"))).toBe(false);
+  });
+
   it("rejects duplicate deduction codes before opening a transaction", async () => {
     const fake = fakePool(() => ({ rows: [], rowCount: 0 }));
     const provisioner = new PostgresMerchantSettlementPolicyProvisioner(fake.pool);
