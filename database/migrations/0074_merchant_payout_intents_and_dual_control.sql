@@ -11,6 +11,7 @@ CREATE TABLE merchant_payout_intents (
   status text NOT NULL DEFAULT 'pending_approval'
     CHECK (status IN ('pending_approval','authorized','rejected')),
   requested_by text NOT NULL,
+  requester_role text NOT NULL CHECK (requester_role IN ('operations','finance','platform_admin','platform_owner')),
   requested_at timestamptz NOT NULL DEFAULT now(),
   reviewed_by text,
   reviewer_role text CHECK (reviewer_role IS NULL OR reviewer_role IN ('finance','platform_admin','platform_owner')),
@@ -20,8 +21,7 @@ CREATE TABLE merchant_payout_intents (
   FOREIGN KEY (tenant_id,settlement_batch_id,merchant_id,currency)
     REFERENCES merchant_settlement_batches (tenant_id,id,merchant_id,currency) ON DELETE RESTRICT,
   UNIQUE (tenant_id,id),
-  UNIQUE (tenant_id,settlement_batch_id),
-  UNIQUE (tenant_id,idempotency_key),
+    UNIQUE (tenant_id,idempotency_key),
   CHECK (
     (status='pending_approval' AND reviewed_by IS NULL AND reviewer_role IS NULL AND reviewed_at IS NULL)
     OR
@@ -29,6 +29,9 @@ CREATE TABLE merchant_payout_intents (
       AND reviewer_role IS NOT NULL AND reviewed_at IS NOT NULL)
   )
 );
+CREATE UNIQUE INDEX merchant_payout_one_active_intent_per_batch_idx
+  ON merchant_payout_intents (tenant_id,settlement_batch_id)
+  WHERE status IN ('pending_approval','authorized');
 CREATE INDEX merchant_payout_intents_review_queue_idx
   ON merchant_payout_intents (status,requested_at,id);
 
@@ -90,7 +93,7 @@ BEGIN
   ) VALUES (
     'merchant-payout-request:' || NEW.tenant_id || ':' || NEW.id,
     1,'merchant_payout_authorization_requested','finance',NEW.requested_at,
-    NEW.requested_by,'platform_user','operations','request_merchant_payout_authorization',
+    NEW.requested_by,'platform_user',NEW.requester_role,'request_merchant_payout_authorization',
     'pending','merchant_payout_intent',NEW.id,NEW.tenant_id,NEW.merchant_id,
     NEW.id,'merchant_payout_authorization','high',
     jsonb_build_object('settlementBatchId',NEW.settlement_batch_id,
@@ -162,6 +165,7 @@ BEGIN
      OR NEW.amount_minor IS DISTINCT FROM OLD.amount_minor
      OR NEW.idempotency_key IS DISTINCT FROM OLD.idempotency_key
      OR NEW.requested_by IS DISTINCT FROM OLD.requested_by
+     OR NEW.requester_role IS DISTINCT FROM OLD.requester_role
      OR NEW.requested_at IS DISTINCT FROM OLD.requested_at
      OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
     RAISE EXCEPTION 'merchant_payout_intent_identity_is_immutable'
