@@ -222,7 +222,7 @@ export interface AppOptions {
       providerKey: string; idempotencyKey: string; actorId: string;
     }): Promise<
       | { outcome: "queued"; outboxId: string }
-      | { outcome: "not_found" | "not_authorized" | "destination_unverified" | "idempotency_conflict" }
+      | { outcome: "not_found" | "not_authorized" | "destination_unverified" | "provider_entity_inactive" | "idempotency_conflict" }
     >;
   };
   merchantBranchWriter?: MerchantBranchWriter;
@@ -1585,6 +1585,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     if (result.outcome === "not_found") return reply.code(404).send({ error: "merchant_payout_intent_not_found" });
     if (result.outcome === "not_authorized") return reply.code(409).send({ error: "merchant_payout_intent_not_authorized" });
     if (result.outcome === "destination_unverified") return reply.code(409).send({ error: "merchant_payout_destination_not_verified" });
+    if (result.outcome === "provider_entity_inactive") return reply.code(409).send({ error: "merchant_payout_provider_entity_inactive" });
     if (result.outcome === "idempotency_conflict") return reply.code(409).send({ error: "merchant_payout_provider_idempotency_conflict" });
     if (!("outboxId" in result)) return reply.code(409).send({ error: "merchant_payout_provider_submission_not_queued" });
     return reply.code(202).send({ outcome: "queued", outboxId: result.outboxId, moneyTransferred: false });
