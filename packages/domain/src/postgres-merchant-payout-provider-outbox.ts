@@ -24,7 +24,7 @@ export class PostgresMerchantPayoutProviderOutbox {
   constructor(private readonly pool: PostgresPool) {}
 
   async enqueue(input: {
-    tenantId: string; payoutIntentId: string; destinationId: string; providerKey: string;
+    payoutIntentId: string; destinationId: string; providerKey: string;
     idempotencyKey: string; actorId: string;
   }): Promise<
     | { outcome: "queued"; outboxId: string }
@@ -35,9 +35,15 @@ export class PostgresMerchantPayoutProviderOutbox {
         !/^[a-zA-Z0-9._:-]{8,240}$/.test(input.idempotencyKey) ||
         !input.actorId.trim()) throw new Error("INVALID_MERCHANT_PAYOUT_ENQUEUE");
     try {
+      const intent = await this.pool.query<{tenant_id:string}>(
+        "SELECT tenant_id FROM merchant_payout_intents WHERE id=$1",
+        [input.payoutIntentId]
+      );
+      const tenantId = intent.rows[0]?.tenant_id;
+      if (!tenantId) return {outcome:"not_found"};
       const result = await this.pool.query<{outbox_id:string}>(
         "SELECT enqueue_merchant_payout_provider_submission($1,$2,$3,$4,$5,$6,$7) AS outbox_id",
-        [randomUUID(),input.tenantId,input.payoutIntentId,input.destinationId,
+        [randomUUID(),tenantId,input.payoutIntentId,input.destinationId,
           input.providerKey,input.idempotencyKey,input.actorId]
       );
       const outboxId = result.rows[0]?.outbox_id;
