@@ -106,3 +106,40 @@ Before posting, the accounting service locks the batch and requires exactly one 
 | `503` | Accounting service unavailable |
 
 This endpoint performs accounting posting only. It does not initiate a PSP refund, bank transfer, or merchant payout. Payout execution remains a separate workflow and requires its own provider reconciliation and controls.
+
+
+## Provision an immutable merchant settlement policy
+
+`POST /api/v1/platform/merchants/:merchantId/settlement-policies`
+
+Requires an authenticated `finance`, `platform_admin`, or `platform_owner` actor with the platform-scoped `platform.merchant_settlement:approve` grant. The API supplies the approver identity from the authenticated session; caller-provided `approvedBy` or role fields are ignored.
+
+Example body:
+
+```json
+{
+  "currency": "SAR",
+  "contractReference": "merchant-contract-2026",
+  "policyVersion": "2026-01",
+  "policyPayload": { "platformFeeBasisPoints": 500 },
+  "mappings": [
+    { "deductionCode": "platform_fee", "accountCode": "PLATFORM_FEE_REVENUE" }
+  ]
+}
+```
+
+The provisioner resolves the merchant tenant from trusted persistence, verifies every referenced account exists and is active for that tenant and currency, hashes canonicalized policy JSON with SHA-256, and inserts the immutable snapshot, deduction mappings, and audit event in one transaction. Repeating the same policy version with the same hash and exact mappings returns the existing snapshot; reusing that version with different content or mappings is rejected.
+
+### Outcomes
+
+| Status | Meaning |
+| --- | --- |
+| `201` | New immutable policy snapshot created |
+| `200` | Exact duplicate; existing snapshot returned |
+| `400` | Invalid policy or mapping input |
+| `403` | Missing platform finance approval authority |
+| `404` | Merchant not found or inactive |
+| `409` | Missing/inactive ledger account or policy-version collision |
+| `503` | Policy provisioner unavailable |
+
+A policy snapshot is configuration evidence. It does not create a settlement batch, post accounting entries, or initiate any payout.
