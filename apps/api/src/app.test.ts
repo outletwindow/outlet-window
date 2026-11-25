@@ -2291,7 +2291,7 @@ describe("platform merchant settlement dual-control routes", () => {
     } finally { await api.close(); }
   });
 
-  it("maps an authorized accounting decision requirement to a conflict without posting", async () => {
+  it("requires a completed dual-control approval before accounting posting", async () => {
     const actor: Actor = {
       id: "finance-poster-1", role: "finance", active: true,
       grants: [{ resource: "platform.merchant_settlement", actions: ["execute"], scope: { platform: true } }]
@@ -2306,7 +2306,7 @@ describe("platform merchant settlement dual-control routes", () => {
       const response = await api.inject({
         method: "POST", url: "/api/v1/platform/settlements/batch-1/post-accounting"
       });
-      expect(response.statusCode).toBe(403);
+      expect(response.statusCode).toBe(409);
       expect(response.json()).toEqual({ error: "settlement_accounting_not_authorized" });
       expect(postForPlatform).toHaveBeenCalledOnce();
     } finally { await api.close(); }
