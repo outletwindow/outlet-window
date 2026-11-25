@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   createMoyasarMerchantPayoutWebhookVerifier,
-  moyasarMerchantPayoutConfirmationEventDecoder
+  moyasarMerchantPayoutConfirmationEventDecoder,
+  MoyasarMerchantPayoutConfirmationWebhookProcessor
 } from "./moyasar-merchant-payout-webhook.js";
 
 const secret = "sandbox-shared-secret";
