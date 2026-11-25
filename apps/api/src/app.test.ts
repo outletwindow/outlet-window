@@ -2307,6 +2307,33 @@ describe("platform merchant settlement dual-control routes", () => {
     } finally { await api.close(); }
   });
 
+  it("binds a settlement policy to a batch using the authenticated finance identity", async () => {
+    const actor: Actor = {
+      id: "finance-binder-1", role: "finance", active: true,
+      grants: [{ resource: "platform.merchant_settlement", actions: ["approve"], scope: { platform: true } }]
+    };
+    const bindToBatch = vi.fn(async (input: {
+      batchId: string; policySnapshotId: string; actorId: string;
+      actorRole: "finance" | "platform_admin" | "platform_owner";
+    }) => ({ outcome: "bound" as const, batchId: input.batchId, policySnapshotId: input.policySnapshotId }));
+    const api = buildApp({
+      resolveActor: async () => actor,
+      merchantSettlementPolicyProvisioner: { create: vi.fn(), bindToBatch }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "POST", url: "/api/v1/platform/settlements/batch-1/policy-binding",
+        payload: { policySnapshotId: "policy-1", actorId: "forged-actor" }
+      });
+      expect(response.statusCode).toBe(201);
+      expect(bindToBatch).toHaveBeenCalledWith({
+        batchId: "batch-1", policySnapshotId: "policy-1",
+        actorId: "finance-binder-1", actorRole: "finance"
+      });
+    } finally { await api.close(); }
+  });
+
   it("posts accounting only through an independently authorized finance actor", async () => {
     const actor: Actor = {
       id: "finance-poster-1", role: "finance", active: true,
