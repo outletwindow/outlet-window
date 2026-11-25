@@ -41,9 +41,9 @@ WHERE tenant_id='payout-tenant' AND id='payout-batch';
 DO $checks$
 BEGIN
   INSERT INTO merchant_payout_intents
-    (id,tenant_id,merchant_id,currency,settlement_batch_id,amount_minor,idempotency_key,requested_by)
+    (id,tenant_id,merchant_id,currency,settlement_batch_id,amount_minor,idempotency_key,requested_by,requester_role)
   VALUES ('payout-intent','payout-tenant','payout-merchant','SAR','payout-batch',5000,
-    'payout-idempotency-1','payout-operations');
+    'payout-idempotency-1','payout-operations','operations');
 
   BEGIN
     INSERT INTO merchant_payout_decisions
