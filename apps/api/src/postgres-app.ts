@@ -17,6 +17,7 @@ import { PostgresMerchantSettlementReader } from "../../../packages/domain/src/p
 import { PostgresMerchantSettlementApprovalStore } from "../../../packages/domain/src/postgres-merchant-settlement-approval-store.js";
 import { PostgresMerchantSettlementAccountingPoster } from "../../../packages/domain/src/postgres-merchant-settlement-accounting-poster.js";
 import { PostgresMerchantPayoutAuthorizationStore } from "../../../packages/domain/src/postgres-merchant-payout-authorization-store.js";
+import { PostgresMerchantPayoutProviderOutbox } from "../../../packages/domain/src/postgres-merchant-payout-provider-outbox.js";
 import { IntegrationHub } from "../../../packages/domain/src/integration-hub.js";
 import { PostgresIntegrationRegistryStore } from "../../../packages/domain/src/postgres-integration-registry-store.js";
 import { PostgresPaymentWebhookInbox } from "../../../packages/domain/src/postgres-payment-webhook-inbox.js";
@@ -122,6 +123,7 @@ export function buildPostgresApp(options: PostgresApiOptions) {
     merchantSettlementApprovals: new PostgresMerchantSettlementApprovalStore(options.pool),
     merchantSettlementAccountingPoster: new PostgresMerchantSettlementAccountingPoster(options.pool),
     merchantPayoutAuthorization: new PostgresMerchantPayoutAuthorizationStore(options.pool),
+    merchantPayoutProviderOutbox: new PostgresMerchantPayoutProviderOutbox(options.pool),
     resolveMerchantTenantId: async (merchantId: string) => {
       const result = await options.pool.query<{ tenant_id: string }>(
         "SELECT tenant_id FROM merchants WHERE id = $1 AND status = 'active'",
@@ -276,7 +278,8 @@ export function buildPostgresApp(options: PostgresApiOptions) {
         "0071_merchant_settlement_dual_control",
         "0072_merchant_settlement_policy_account_mappings",
         "0073_atomic_merchant_settlement_accounting_posting",
-        "0074_merchant_payout_intents_and_dual_control"
+        "0074_merchant_payout_intents_and_dual_control",
+        "0075_merchant_payout_provider_outbox"
       ];
       const result = await options.pool.query<{ version: string }>(
         "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",

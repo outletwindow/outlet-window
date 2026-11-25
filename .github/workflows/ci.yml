@@ -290,6 +290,10 @@ jobs:
         env:
           PGPASSWORD: ci_only_password
         run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0074_merchant_payout_intents_and_dual_control.integration.sql
+      - name: Verify durable merchant payout provider outbox and vault-reference safety
+        env:
+          PGPASSWORD: ci_only_password
+        run: psql -h 127.0.0.1 -U outlet_window -d outlet_window_test -v ON_ERROR_STOP=1 -f database/tests/0075_merchant_payout_provider_outbox.integration.sql
       - name: Verify tenant-scoped courier delivery tasks and immutable evidence
         env:
           PGPASSWORD: ci_only_password
