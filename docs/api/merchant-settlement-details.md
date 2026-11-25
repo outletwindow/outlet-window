@@ -84,3 +84,14 @@ A successful `authorize_accounting` result means only `authorized_for_accounting
 `GET /api/v1/platform/settlement-approval-requests?limit=50`
 
 Returns pending review requests ordered oldest-first. Requires the platform-scoped `platform.merchant_settlement:read` grant and a `finance`, `platform_admin`, or `platform_owner` role. The limit is an integer from 1 to 100 and defaults to 50. Operations requesters cannot browse the finance review queue.
+
+
+## Payout provider entity registry
+
+Platform administrators can register the immutable mapping between a local active merchant and the provider's platform merchant/entity identifiers:
+
+- `GET /api/v1/platform/payout-provider-entities?tenantId=...` lists mappings (platform admin/owner only).
+- `POST /api/v1/platform/payout-provider-entities` registers a mapping using `tenantId`, `merchantId`, `providerKey=moyasar`, `providerMerchantId`, and `providerEntityId`.
+- `POST /api/v1/platform/payout-provider-entities/:entityId/revoke` revokes an active mapping. Revocation is terminal; create a new mapping after correcting provider-side identity.
+
+The API records audit events and rejects duplicate active merchant/provider identities. These identifiers are routing metadata, not bank credentials. Registration does not enable transfers or create a payout instruction; provider eligibility and a separately approved destination/worker remain required.
