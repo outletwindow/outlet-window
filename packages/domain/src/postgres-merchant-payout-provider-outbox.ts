@@ -24,7 +24,7 @@ export class PostgresMerchantPayoutProviderOutbox {
   constructor(private readonly pool: PostgresPool) {}
 
   async enqueue(input: {
-    payoutIntentId: string; destinationId: string; providerKey: string;
+    tenantId: string; payoutIntentId: string; destinationId: string; providerKey: string;
     idempotencyKey: string; actorId: string;
   }): Promise<
     | { outcome: "queued"; outboxId: string }
