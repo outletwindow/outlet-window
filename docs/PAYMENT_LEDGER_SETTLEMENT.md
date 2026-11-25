@@ -181,3 +181,10 @@ The `post_merchant_settlement_accounting` database function is the transaction-s
 The function is idempotent for an already-approved batch and returns its existing journal identifier after rechecking the caller's allowed finance role and requester separation. Missing approval, policy, account mappings, or control accounts fail closed. The operation is ledger reclassification only: it does not call a payment provider, create a payout instruction, or transfer funds.
 
 The API integration must call this function only after resolving the actor from a verified server-side session. The SQL role argument is a defense-in-depth allowlist, not a substitute for API authentication or database privilege management. Keep direct execute privileges restricted to the trusted application database role.
+
+
+## 13D. Merchant payout authorization intents (migration 0074)
+
+A payout intent can only be requested against an already-approved settlement batch with a posted settlement journal, and its amount must exactly match the sum of the batch's net merchant proceeds. One active request per batch is allowed; a rejected request may be replaced with a new idempotent request.
+
+Payout authorization is a separate two-person control: the requester cannot authorize their own intent, decisions are append-only, and both request and decision are audited. An authorized intent is only permission for a future payout workflow. Migration 0074 deliberately contains no provider call, bank instruction, payout status claiming transfer completion, or storage of raw bank credentials. The next stage must add encrypted payout-destination references, a durable provider outbox, provider idempotency, webhook/reconciliation handling, and a separate disbursement journal after confirmed provider outcome.

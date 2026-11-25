@@ -30,6 +30,10 @@ import type {
 import type {
   SettlementAccountingActorRole, SettlementAccountingPostingOutcome
 } from "../../../packages/domain/src/postgres-merchant-settlement-accounting-poster.js";
+import type {
+  MerchantPayoutRequesterRole, MerchantPayoutReviewerRole, MerchantPayoutDecision,
+  MerchantPayoutRequestOutcome, MerchantPayoutDecisionOutcome
+} from "../../../packages/domain/src/postgres-merchant-payout-authorization-store.js";
 
 export interface SallaOAuthFlow {
   begin(input: { tenantId: string; integrationId: string }): Promise<{ authorizationUrl: string }>;
@@ -95,6 +99,13 @@ export interface MerchantSettlementApprovalService {
 }
 export interface MerchantSettlementAccountingPoster {
   post(input: { batchId: string; actorId: string; actorRole: SettlementAccountingActorRole }): Promise<SettlementAccountingPostingOutcome>;
+}
+export interface MerchantPayoutAuthorizationService {
+  request(input: { settlementBatchId: string; amountMinor: number; idempotencyKey: string;
+    requesterId: string; requesterRole: MerchantPayoutRequesterRole }): Promise<MerchantPayoutRequestOutcome>;
+  listPending(input?: { limit?: number }): Promise<import("../../../packages/domain/src/postgres-merchant-payout-authorization-store.js").MerchantPayoutIntent[]>;
+  decide(input: { payoutIntentId: string; actorId: string; actorRole: MerchantPayoutReviewerRole;
+    decision: MerchantPayoutDecision; reason?: string }): Promise<MerchantPayoutDecisionOutcome>;
 }
 export interface CustomerPaymentAdjustmentActions {
   getCustomerAdjustment?(input: { orderId: string; adjustmentId: string; customerId: string }): Promise<
@@ -184,6 +195,7 @@ export interface AppOptions {
   merchantSettlementReader?: MerchantSettlementReader;
   merchantSettlementApprovals?: MerchantSettlementApprovalService;
   merchantSettlementAccountingPoster?: MerchantSettlementAccountingPoster;
+  merchantPayoutAuthorization?: MerchantPayoutAuthorizationService;
   merchantBranchWriter?: MerchantBranchWriter;
   /** Optional dependency check used by readiness; failures keep the instance out of service. */
   readinessCheck?: () => Promise<boolean>;
@@ -1264,6 +1276,84 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     if (result.outcome === "not_ready") return reply.code(409).send({ error: result.reason });
     return reply.code(200).send({ outcome: "accounting_posted", journalId: result.journalId,
       payoutInitiated: false });
+  });
+
+  app.post<{
+    Params: { batchId: string };
+    Body: { amountMinor?: number; idempotencyKey?: string };
+  }>("/api/v1/platform/settlements/:batchId/payout-authorization-requests", async (request, reply) => {
+    const access = await authorizeRequest(request, options, {
+      resource: "platform.merchant_settlement", action: "create", scope: { platform: true }
+    });
+    if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
+    const roles = access.actor.roles ?? [access.actor.role];
+    const requesterRole = roles.find((role): role is MerchantPayoutRequesterRole =>
+      role === "operations" || role === "finance" || role === "platform_admin" || role === "platform_owner");
+    if (!requesterRole) return reply.code(403).send({ error: "platform_payout_request_role_required" });
+    const body = request.body;
+    if (!body || !Number.isSafeInteger(body.amountMinor) || (body.amountMinor ?? 0) <= 0 ||
+        typeof body.idempotencyKey !== "string" || body.idempotencyKey.trim().length < 8 ||
+        body.idempotencyKey.length > 240) {
+      return reply.code(400).send({ error: "invalid_merchant_payout_request" });
+    }
+    if (!options.merchantPayoutAuthorization) return reply.code(503).send({ error: "merchant_payout_authorization_unavailable" });
+    const result = await options.merchantPayoutAuthorization.request({
+      settlementBatchId: request.params.batchId, amountMinor: body.amountMinor as number,
+      idempotencyKey: body.idempotencyKey, requesterId: access.actor.id, requesterRole
+    });
+    if (result.outcome === "not_found") return reply.code(404).send({ error: "settlement_batch_not_found" });
+    if (result.outcome === "already_active") return reply.code(409).send({ error: "merchant_payout_request_already_active_or_duplicate" });
+    if (result.outcome === "invalid_batch") return reply.code(409).send({ error: "merchant_payout_requires_approved_settlement_and_exact_net_amount" });
+    if (!("intent" in result)) return reply.code(409).send({ error: "merchant_payout_request_not_created" });
+    return reply.code(201).send({ intent: result.intent, moneyTransferred: false });
+  });
+
+  app.get<{ Querystring: { limit?: string } }>(
+    "/api/v1/platform/payout-authorization-requests", async (request, reply) => {
+      const access = await authorizeRequest(request, options, {
+        resource: "platform.merchant_settlement", action: "read", scope: { platform: true }
+      });
+      if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
+      const roles = access.actor.roles ?? [access.actor.role];
+      if (!roles.some(role => role === "finance" || role === "platform_admin" || role === "platform_owner")) {
+        return reply.code(403).send({ error: "platform_payout_reviewer_role_required" });
+      }
+      if (!options.merchantPayoutAuthorization) return reply.code(503).send({ error: "merchant_payout_authorization_unavailable" });
+      const limit = request.query.limit === undefined ? 50 : Number(request.query.limit);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100) return reply.code(400).send({ error: "invalid_limit" });
+      const intents = await options.merchantPayoutAuthorization.listPending({ limit });
+      return reply.code(200).send({ intents });
+    }
+  );
+
+  app.post<{
+    Params: { payoutIntentId: string };
+    Body: { decision?: string; reason?: string };
+  }>("/api/v1/platform/payout-authorization-requests/:payoutIntentId/decision", async (request, reply) => {
+    const access = await authorizeRequest(request, options, {
+      resource: "platform.merchant_settlement", action: "approve", scope: { platform: true }
+    });
+    if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
+    const roles = access.actor.roles ?? [access.actor.role];
+    const actorRole = roles.find((role): role is MerchantPayoutReviewerRole =>
+      role === "finance" || role === "platform_admin" || role === "platform_owner");
+    if (!actorRole) return reply.code(403).send({ error: "platform_payout_approver_role_required" });
+    const body = request.body;
+    if (!body || (body.decision !== "authorize" && body.decision !== "reject") ||
+        (body.reason !== undefined && (typeof body.reason !== "string" || body.reason.length > 1000))) {
+      return reply.code(400).send({ error: "invalid_merchant_payout_decision" });
+    }
+    if (!options.merchantPayoutAuthorization) return reply.code(503).send({ error: "merchant_payout_authorization_unavailable" });
+    const result = await options.merchantPayoutAuthorization.decide({
+      payoutIntentId: request.params.payoutIntentId, actorId: access.actor.id, actorRole,
+      decision: body.decision, ...(body.reason === undefined ? {} : { reason: body.reason })
+    });
+    if (result.outcome === "not_found") return reply.code(404).send({ error: "merchant_payout_intent_not_found" });
+    if (result.outcome === "self_approval") return reply.code(403).send({ error: "payout_requester_cannot_approve_own_request" });
+    if (result.outcome === "already_decided") return reply.code(409).send({ error: "merchant_payout_already_decided" });
+    if (result.outcome === "invalid_transition") return reply.code(409).send({ error: "merchant_payout_transition_invalid" });
+    if (!("intent" in result)) return reply.code(409).send({ error: "merchant_payout_decision_not_recorded" });
+    return reply.code(200).send({ intent: result.intent, moneyTransferred: false });
   });
 
   app.get<{
