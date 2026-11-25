@@ -18,12 +18,14 @@ export interface MoyasarMerchantPayoutClientOptions {
 }
 
 /** Stable RFC 4122 v4-shaped idempotency key derived from the durable outbox key. */
-export function moyasarGivenIdFromOutboxKey(idempotencyKey: string): string {
-  if (!idempotencyKey.trim() || idempotencyKey.length > 240) {
+export function moyasarGivenIdFromOutboxKey(outboxId: string, idempotencyKey: string): string {
+  if (!/^[a-zA-Z0-9_-]{1,200}$/.test(outboxId) || !idempotencyKey.trim() || idempotencyKey.length > 240) {
     throw new Error("INVALID_MOYASAR_PAYOUT_IDEMPOTENCY_KEY");
   }
   const bytes = createHash("sha256")
     .update("outlet-window:moyasar:payout:v1:", "utf8")
+    .update(outboxId, "utf8")
+    .update(":", "utf8")
     .update(idempotencyKey, "utf8")
     .digest()
     .subarray(0, 16);
@@ -101,7 +103,7 @@ export class MoyasarMerchantPayoutProvider implements MerchantPayoutProvider {
     }
 
     let givenId: string;
-    try { givenId = moyasarGivenIdFromOutboxKey(input.idempotencyKey); }
+    try { givenId = moyasarGivenIdFromOutboxKey(input.outboxId, input.idempotencyKey); }
     catch { return { status: "rejected", code: "INVALID_MOYASAR_PAYOUT_IDEMPOTENCY_KEY" }; }
 
     let response: Response;
