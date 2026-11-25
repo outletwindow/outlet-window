@@ -2247,6 +2247,66 @@ describe("platform merchant settlement dual-control routes", () => {
     } finally { await api.close(); }
   });
 
+  it("creates a settlement policy snapshot using the authenticated finance approver identity", async () => {
+    const actor: Actor = {
+      id: "finance-policy-approver", role: "finance", active: true,
+      grants: [{ resource: "platform.merchant_settlement", actions: ["approve"], scope: { platform: true } }]
+    };
+    const create = vi.fn(async (input: {
+      merchantId: string; currency: string; contractReference: string; policyVersion: string;
+      policyPayload: Readonly<Record<string, unknown>>;
+      mappings: readonly { deductionCode: string; accountCode: string }[];
+      approvedBy: string; approvedByRole: "finance" | "platform_admin" | "platform_owner";
+    }) => ({ outcome: "created" as const, policySnapshotId: "policy-1", policySha256: "a".repeat(64) }));
+    const api = buildApp({
+      resolveActor: async () => actor,
+      merchantSettlementPolicyProvisioner: { create }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "POST", url: "/api/v1/platform/merchants/merchant-1/settlement-policies",
+        payload: {
+          currency: "SAR", contractReference: "contract-1", policyVersion: "v1",
+          policyPayload: { deductions: { platform_fee: 1000 } },
+          mappings: [{ deductionCode: "platform_fee", accountCode: "PLATFORM_FEE_REVENUE" }],
+          approvedBy: "forged-user", approvedByRole: "platform_owner"
+        }
+      });
+      expect(response.statusCode).toBe(201);
+      expect(create).toHaveBeenCalledWith({
+        merchantId: "merchant-1", currency: "SAR", contractReference: "contract-1",
+        policyVersion: "v1", policyPayload: { deductions: { platform_fee: 1000 } },
+        mappings: [{ deductionCode: "platform_fee", accountCode: "PLATFORM_FEE_REVENUE" }],
+        approvedBy: "finance-policy-approver", approvedByRole: "finance"
+      });
+    } finally { await api.close(); }
+  });
+
+  it("denies settlement policy creation to operations requesters", async () => {
+    const actor: Actor = {
+      id: "operations-user", role: "operations", active: true,
+      grants: [{ resource: "platform.merchant_settlement", actions: ["create"], scope: { platform: true } }]
+    };
+    const create = vi.fn();
+    const api = buildApp({
+      resolveActor: async () => actor,
+      merchantSettlementPolicyProvisioner: { create }
+    });
+    await api.ready();
+    try {
+      const response = await api.inject({
+        method: "POST", url: "/api/v1/platform/merchants/merchant-1/settlement-policies",
+        payload: {
+          currency: "SAR", contractReference: "contract-1", policyVersion: "v1",
+          policyPayload: {}, mappings: []
+        }
+      });
+      expect(response.statusCode).toBe(403);
+      expect(create).not.toHaveBeenCalled();
+    } finally { await api.close(); }
+  });
+
   it("posts accounting only through an independently authorized finance actor", async () => {
     const actor: Actor = {
       id: "finance-poster-1", role: "finance", active: true,
