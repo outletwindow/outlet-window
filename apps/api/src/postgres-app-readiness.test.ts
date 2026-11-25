@@ -56,7 +56,8 @@ describe("PostgreSQL API readiness migration gate", () => {
     "0073_atomic_merchant_settlement_accounting_posting",
     "0074_merchant_payout_intents_and_dual_control",
     "0075_merchant_payout_provider_outbox",
-    "0076_confirmed_merchant_payout_reconciliation"
+    "0076_confirmed_merchant_payout_reconciliation",
+    "0077_merchant_payout_provider_entity_mapping"
 
   ])("keeps the API unready when migration %s is missing", async missing => {
     const app = buildPostgresApp({
