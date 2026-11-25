@@ -38,6 +38,18 @@ export class PostgresMerchantSettlementAccountingService {
     private readonly createId: () => string = randomUUID
   ) {}
 
+  /** Resolve tenant ownership from the immutable batch row for platform-only API callers. */
+  async postForPlatform(batchId: string): Promise<MerchantSettlementPostingOutcome> {
+    if (!batchId.trim()) throw new Error("SETTLEMENT_IDENTITY_INVALID");
+    const result = await this.pool.query<{ tenant_id: string }>(
+      "SELECT tenant_id FROM merchant_settlement_batches WHERE id=$1",
+      [batchId]
+    );
+    const tenantId = result.rows[0]?.tenant_id;
+    if (!tenantId) return { outcome: "not_found" };
+    return this.post({ tenantId, batchId });
+  }
+
   async post(input: { tenantId: string; batchId: string }): Promise<MerchantSettlementPostingOutcome> {
     if (!input.tenantId.trim() || !input.batchId.trim()) throw new Error("SETTLEMENT_IDENTITY_INVALID");
     const client = await this.pool.connect();
