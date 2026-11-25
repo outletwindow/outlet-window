@@ -99,10 +99,18 @@ BEGIN
       AND tgname='merchant_payout_destination_dual_control' AND NOT tgisinternal
   ) THEN RAISE EXCEPTION 'payout destination dual-control guard missing'; END IF;
 
+  INSERT INTO merchant_payout_destinations
+    (id,tenant_id,merchant_id,provider_key,currency,vault_reference,
+     verification_status,provider_entity_registry_id,created_by)
+  VALUES ('payout-outbox-self-approve-destination','payout-outbox-tenant',
+    'payout-outbox-merchant','sandbox-provider','SAR',
+    'vault://tenant/merchant/self-approval','pending','payout-provider-entity-map',
+    'payout-outbox-destination-creator');
+
   BEGIN
     UPDATE merchant_payout_destinations
     SET verification_status='verified',verified_by='payout-outbox-destination-creator',verified_at=now()
-    WHERE id='payout-outbox-destination';
+    WHERE id='payout-outbox-self-approve-destination';
     RAISE EXCEPTION 'destination creator unexpectedly approved their own destination';
   EXCEPTION WHEN check_violation THEN NULL;
   END;
