@@ -16,6 +16,10 @@ export function grantsForAssignments(assignments: readonly RoleAssignment[]): re
       resource: "platform.merchant_settlement",
       actions: ["read", "create", "approve"] as const,
       scope: { platform: true }
+    }, {
+      resource: "platform.merchant_payout_destination",
+      actions: ["read", "approve"] as const,
+      scope: { platform: true }
     }];
     if (assignment.role === "platform_admin" || assignment.role === "platform_owner") return [{
       resource: "platform.merchant_settlement",
@@ -24,6 +28,10 @@ export function grantsForAssignments(assignments: readonly RoleAssignment[]): re
     }, {
       resource: "platform.merchant_payout_provider_entity",
       actions: ["read", "create", "manage_access"] as const,
+      scope: { platform: true }
+    }, {
+      resource: "platform.merchant_payout_destination",
+      actions: ["read", "create", "approve", "manage_access"] as const,
       scope: { platform: true }
     }];
     // Customers may edit only the exact order explicitly present in their active IAM scope.
