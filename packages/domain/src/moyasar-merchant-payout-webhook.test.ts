@@ -87,4 +87,32 @@ describe("Moyasar merchant payout webhook adapter", () => {
       JSON.stringify({ ...payload, data: { ...payload.data, metadata: {} } })
     )).toBeNull();
   });
+
+  it("composes verification, paid-event decoding, and persistence with merchant identity", async () => {
+    let persisted: Record<string, unknown> | undefined;
+    const processor = new MoyasarMerchantPayoutConfirmationWebhookProcessor({
+      secretResolver: async () => secret,
+      expectedLiveMode: false,
+      auditActorId: "payout-webhook-service",
+      store: {
+        confirmVerified: async input => {
+          persisted = input;
+          return { outcome: "confirmed" as const, journalId: "journal-1" };
+        }
+      }
+    });
+    await expect(processor.process({ rawBody, headers })).resolves.toEqual({
+      outcome: "confirmed", journalId: "journal-1"
+    });
+    expect(persisted).toMatchObject({
+      providerKey: "moyasar",
+      providerEventId: payload.id,
+      outboxId: "outbox-123",
+      providerReference: "payout-789",
+      amountMinor: 12500,
+      currency: "SAR",
+      merchantId: "merchant-123",
+      entityId: "entity-456"
+    });
+  });
 });
