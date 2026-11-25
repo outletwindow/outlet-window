@@ -2267,4 +2267,75 @@ describe("platform merchant settlement dual-control routes", () => {
       expect(decide).not.toHaveBeenCalled();
     } finally { await api.close(); }
   });
+
+describe("merchant payout webhook intake", () => {
+  it("preserves the exact raw body and forwards Moyasar event headers", async () => {
+    const rawBody = '{ "id":"evt-payout-api", "type":"merchant_payout_paid" }';
+    const process = vi.fn(async () => ({ outcome: "confirmed" as const, journalId: "journal-api-1" }));
+    const app = buildApp({ merchantPayoutConfirmationWebhook: { process } });
+    await app.ready();
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/v1/webhooks/payouts/moyasar",
+        headers: {
+          "content-type": "application/json",
+          "x-event-id": "evt-payout-api",
+          "x-event-type": "merchant_payout_paid",
+          "x-event-secret": "sandbox-secret"
+        },
+        payload: rawBody
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ outcome: "confirmed", journalId: "journal-api-1" });
+      expect(process).toHaveBeenCalledWith({
+        rawBody,
+        headers: {
+          "x-event-id": "evt-payout-api",
+          "x-event-type": "merchant_payout_paid",
+          "x-event-secret": "sandbox-secret"
+        }
+      });
+    } finally { await app.close(); }
+  });
+
+  it("fails closed when the handler is unavailable or the provider is unsupported", async () => {
+    const unavailable = buildApp();
+    await unavailable.ready();
+    try {
+      const response = await unavailable.inject({
+        method: "POST", url: "/api/v1/webhooks/payouts/moyasar",
+        headers: { "content-type": "application/json" }, payload: "{}"
+      });
+      expect(response.statusCode).toBe(503);
+    } finally { await unavailable.close(); }
+
+    const process = vi.fn(async () => ({ outcome: "confirmed" as const, journalId: "unused" }));
+    const app = buildApp({ merchantPayoutConfirmationWebhook: { process } });
+    await app.ready();
+    try {
+      const response = await app.inject({
+        method: "POST", url: "/api/v1/webhooks/payouts/other",
+        headers: { "content-type": "application/json" }, payload: "{}"
+      });
+      expect(response.statusCode).toBe(404);
+      expect(process).not.toHaveBeenCalled();
+    } finally { await app.close(); }
+  });
+
+  it("does not acknowledge a payout event when processing throws", async () => {
+    const process = vi.fn(async () => { throw new Error("database unavailable"); });
+    const app = buildApp({ merchantPayoutConfirmationWebhook: { process } });
+    await app.ready();
+    try {
+      const response = await app.inject({
+        method: "POST", url: "/api/v1/webhooks/payouts/moyasar",
+        headers: { "content-type": "application/json" }, payload: "{}"
+      });
+      expect(response.statusCode).toBe(500);
+      expect(response.json()).toEqual({ error: "payout_webhook_processing_failed" });
+    } finally { await app.close(); }
+  });
+});
+
 });
