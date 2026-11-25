@@ -172,3 +172,10 @@ Migration 0072 adds immutable, tenant/merchant/currency-scoped policy snapshots.
 A draft settlement batch may be bound once to a policy snapshot. Once bound, the binding cannot be changed, and newly inserted settlement lines must use the snapshot's contract reference. Existing historical batches remain nullable for backward compatibility; the new accounting-posting path must reject an unbound batch and must fail closed for any deduction code without exactly one mapping.
 
 This migration provides immutable configuration evidence only. It does not independently validate the legal correctness of the policy payload, calculate commissions or taxes, post a journal, approve a batch, or initiate a payout. Those operations remain gated for the transaction-scoped accounting service and its integration tests.
+
+
+## 13C. Atomic accounting posting (settlement accounting service)
+
+The domain accounting service locks the tenant-scoped draft batch, requires exactly one accounting-authorized dual-control request, and rejects batches without an immutable policy snapshot. It verifies each line's gross/deduction/net arithmetic and contract reference, resolves every deduction code through the bound snapshot's account mapping, and requires active same-tenant/same-currency control and deduction accounts.
+
+The service writes the balanced double-entry journal, posts it, transitions the settlement batch to approved, and appends the finance audit event inside the same PostgreSQL transaction. Any failed write rolls the entire operation back. A stable tenant-scoped idempotency key prevents duplicate journals; an already-approved batch returns its existing journal reference. This is accounting posting only: no payout provider is called and no funds are transferred.
