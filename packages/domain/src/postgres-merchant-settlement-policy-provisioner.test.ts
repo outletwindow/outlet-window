@@ -1,15 +1,14 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import type { PostgresPool, PostgresClient, PostgresQueryResult } from "./postgres-iam-store.js";
 import { PostgresMerchantSettlementPolicyProvisioner } from "./postgres-merchant-settlement-policy-provisioner.js";
 
 function fakePool(handler: (sql: string, values: readonly unknown[]) => PostgresQueryResult<unknown> | Promise<PostgresQueryResult<unknown>>) {
   const statements: string[] = [];
-  const valuesSeen: readonly unknown[][] = [];
   const client: PostgresClient = {
     release: vi.fn(),
     async query<Row>(sql: string, values: readonly unknown[] = []) {
       statements.push(sql);
-      (valuesSeen as unknown[][]).push([...values]);
       return await handler(sql,values) as PostgresQueryResult<Row>;
     }
   };
@@ -49,7 +48,7 @@ describe("PostgresMerchantSettlementPolicyProvisioner", () => {
     const fake = fakePool(sql => {
       if (sql.includes("FROM merchants")) return { rows: [{ tenant_id: "tenant-1" }], rowCount: 1 };
       if (sql.includes("FROM merchant_settlement_policy_snapshots")) return { rows: [{
-        id: "existing-policy", policy_sha256: "a".repeat(64)
+        id: "existing-policy", policy_sha256: createHash("sha256").update('{"deductions":{"platform_fee":1000},"name":"base"}').digest("hex")
       }], rowCount: 1 };
       if (sql.includes("FROM merchant_settlement_deduction_account_mappings")) return { rows: [{
         deduction_code: "platform_fee", account_code: "PLATFORM_FEE_REVENUE"
@@ -58,7 +57,7 @@ describe("PostgresMerchantSettlementPolicyProvisioner", () => {
     });
     const provisioner = new PostgresMerchantSettlementPolicyProvisioner(fake.pool);
     const result = await provisioner.create(base);
-    expect(result.outcome).toBe("identity_collision");
+    expect(result.outcome).toBe("duplicate");
     expect(fake.statements.at(-1)).toBe("COMMIT");
     expect(fake.statements.some(sql => sql.includes("INSERT INTO merchant_settlement_policy_snapshots"))).toBe(false);
   });
