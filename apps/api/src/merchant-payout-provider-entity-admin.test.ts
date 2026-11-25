@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import type { Actor } from "../../../packages/domain/src/authorization.js";
+import type { AuditEvent } from "../../../packages/domain/src/audit.js";
 import { buildApp } from "./app.js";
 
 describe("platform payout provider entity administration", () => {
@@ -17,7 +18,7 @@ describe("platform payout provider entity administration", () => {
       providerMerchantId:"pm-1",providerEntityId:"pe-1",status:"active" as const,
       createdBy:"platform-admin",createdAt:"2026-11-25T10:00:00.000Z",revokedAt:null
     }}));
-    const append=vi.fn(async()=> "inserted" as const);
+    const append=vi.fn(async (_event: AuditEvent) => "inserted" as const);
     const app=buildApp({resolveActor:async()=>admin,merchantPayoutProviderEntities:{register,revoke:vi.fn(),list:vi.fn(async()=>[])},auditEvents:{append}});
     apps.push(app);await app.ready();
     const response=await app.inject({method:"POST",url:"/api/v1/platform/payout-provider-entities",payload:{
