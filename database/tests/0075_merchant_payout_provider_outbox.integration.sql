@@ -52,9 +52,10 @@ VALUES ('payout-outbox-decision','payout-outbox-tenant','payout-outbox-intent','
     'sandbox-provider','provider-merchant-123','provider-entity-456','payout-outbox-finance');
 
 INSERT INTO merchant_payout_destinations
-(id,tenant_id,merchant_id,provider_key,currency,vault_reference,verification_status,provider_entity_registry_id)
+(id,tenant_id,merchant_id,provider_key,currency,vault_reference,verification_status,provider_entity_registry_id,created_by)
 VALUES ('payout-outbox-destination','payout-outbox-tenant','payout-outbox-merchant',
- 'sandbox-provider','SAR','vault://tenant/merchant/payout','pending','payout-provider-entity-map');
+ 'sandbox-provider','SAR','vault://tenant/merchant/payout','pending','payout-provider-entity-map',
+ 'payout-outbox-destination-creator');
 UPDATE merchant_payout_destinations
 SET verification_status='verified',verified_by='payout-outbox-finance',verified_at=now()
 WHERE tenant_id='payout-outbox-tenant' AND id='payout-outbox-destination';
@@ -91,6 +92,21 @@ BEGIN
     WHERE tgrelid='public.merchant_payout_provider_outbox'::regclass
       AND tgname='merchant_payout_provider_outbox_guard' AND NOT tgisinternal
   ) THEN RAISE EXCEPTION 'payout outbox immutable transition guard missing'; END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger
+    WHERE tgrelid='public.merchant_payout_destinations'::regclass
+      AND tgname='merchant_payout_destination_dual_control' AND NOT tgisinternal
+  ) THEN RAISE EXCEPTION 'payout destination dual-control guard missing'; END IF;
+
+  BEGIN
+    UPDATE merchant_payout_destinations
+    SET verification_status='verified',verified_by='payout-outbox-destination-creator',verified_at=now()
+    WHERE id='payout-outbox-destination';
+    RAISE EXCEPTION 'destination creator unexpectedly approved their own destination';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+
   IF NOT EXISTS (
     SELECT 1 FROM pg_indexes
     WHERE schemaname='public' AND tablename='merchant_payout_provider_outbox'
