@@ -2260,7 +2260,7 @@ describe("platform merchant settlement dual-control routes", () => {
     }) => ({ outcome: "created" as const, policySnapshotId: "policy-1", policySha256: "a".repeat(64) }));
     const api = buildApp({
       resolveActor: async () => actor,
-      merchantSettlementPolicyProvisioner: { create }
+      merchantSettlementPolicyProvisioner: { create, bindToBatch: vi.fn() }
     });
     await api.ready();
     try {
@@ -2291,7 +2291,7 @@ describe("platform merchant settlement dual-control routes", () => {
     const create = vi.fn();
     const api = buildApp({
       resolveActor: async () => actor,
-      merchantSettlementPolicyProvisioner: { create }
+      merchantSettlementPolicyProvisioner: { create, bindToBatch: vi.fn() }
     });
     await api.ready();
     try {
