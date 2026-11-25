@@ -37,13 +37,17 @@ export type MerchantPayoutDecisionOutcome =
   | { outcome: "decided"; intent: MerchantPayoutIntent }
   | { outcome: "not_found" | "already_decided" | "self_approval" | "invalid_transition" };
 
+function iso(value: Date | string): string {
+  const date = value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(date.getTime())) throw new Error("invalid_merchant_payout_timestamp");
+  return date.toISOString();
+}
 function mapRow(row: PayoutRow): MerchantPayoutIntent {
   const amountMinor = Number(row.amount_minor);
-  const requestedAtUtc = new Date(row.requested_at).toISOString();
-  const reviewedAtUtc = row.reviewed_at === null ? null : new Date(row.reviewed_at).toISOString();
+  const requestedAtUtc = iso(row.requested_at);
+  const reviewedAtUtc = row.reviewed_at === null ? null : iso(row.reviewed_at);
   if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0 ||
-      !Number.isFinite(Date.parse(requestedAtUtc)) ||
-      (reviewedAtUtc !== null && !Number.isFinite(Date.parse(reviewedAtUtc)))) {
+      !requestedAtUtc || (reviewedAtUtc !== null && !reviewedAtUtc)) {
     throw new Error("invalid_merchant_payout_intent_row");
   }
   return {
