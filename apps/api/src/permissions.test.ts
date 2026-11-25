@@ -97,7 +97,7 @@ describe("customer order permissions", () => {
 });
 
 describe("platform merchant settlement approval permissions", () => {
-  it("grants request authority to operations and request plus approval to finance", () => {
+  it("grants request authority to operations and explicit accounting execution to finance and platform owners", () => {
     const operations = grantsForAssignments([assignment("operations")]);
     expect(operations).toContainEqual({
       resource: "platform.merchant_settlement", actions: ["create"], scope: { platform: true }
@@ -105,8 +105,17 @@ describe("platform merchant settlement approval permissions", () => {
     expect(operations.some(grant => grant.actions.includes("approve"))).toBe(false);
     const finance = grantsForAssignments([assignment("finance")]);
     expect(finance).toContainEqual({
-      resource: "platform.merchant_settlement", actions: ["read", "create", "approve"], scope: { platform: true }
+      resource: "platform.merchant_settlement", actions: ["read", "create", "approve", "execute"], scope: { platform: true }
     });
+  });
+
+  it("grants accounting execution only to finance and platform administrators or owners", () => {
+    for (const role of ["finance", "platform_admin", "platform_owner"] as const) {
+      const grants = grantsForAssignments([assignment(role)]);
+      expect(grants.some(grant => grant.resource === "platform.merchant_settlement" && grant.actions.includes("execute") && grant.scope.platform === true)).toBe(true);
+    }
+    const operations = grantsForAssignments([assignment("operations")]);
+    expect(operations.some(grant => grant.resource === "platform.merchant_settlement" && grant.actions.includes("execute"))).toBe(false);
   });
 
   it("grants read access to finance review queues but not operations requesters", () => {
