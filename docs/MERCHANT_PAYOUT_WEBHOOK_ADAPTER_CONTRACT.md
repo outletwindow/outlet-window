@@ -104,4 +104,14 @@ The repository now contains:
 
 The outbound payout request must include `metadata.outlet_window_outbox_id` set to the exact durable outbox ID. The platform webhook registration for this confirmation endpoint must subscribe to `merchant_payout_paid` only. Failed, canceled, and returned events must be handled by a separate reconciliation path; they must never be passed to the paid-confirmation journal function or receive a false 2xx from a handler that silently ignores them.
 
-This code is still not a public HTTP route, does not yet register a webhook with Moyasar, does not provision the provider-entity mapping through an authorized admin API, and does not initiate a transfer. Keep the endpoint disabled until those pieces and CI are complete.
+The optional HTTP route is wired at `/api/v1/webhooks/payouts/moyasar`. It is exposed only when `MOYASAR_PAYOUT_WEBHOOK_SECRET` is configured with at least 32 characters; `MOYASAR_EXPECT_LIVE` selects test/live mode and `MOYASAR_PAYOUT_AUDIT_ACTOR_ID` can override the audit actor. The webhook is not registered with Moyasar automatically, and the provider-entity mapping does not yet have an authorized management API. The outbound worker is not yet composed with the Moyasar provider and a production vault resolver, so no live transfer is initiated.
+## Outbound Moyasar provider client boundary
+
+- `MoyasarMerchantPayoutProvider` calls `POST /v1/payouts` with a configured source payout account, `purpose=payment_to_merchant`, the bank/wallet beneficiary details resolved transiently from the vault, and `metadata.outlet_window_outbox_id`.
+- A stable UUID v4-shaped `given_id` is derived deterministically from the durable outbox idempotency key so retries use the same provider identity.
+- The client treats network timeouts, 408/425/429, 5xx, and unverifiable responses as unknown; it never blindly retries an ambiguous transfer.
+- `queued`, `initiated`, and `paid` provider responses are recorded only as submitted. A separately verified `merchant_payout_paid` webhook is still required to post the payout journal.
+- `failed` and `canceled` responses are rejected; `returned` is quarantined for reconciliation.
+- The vault resolver must return a typed bank/wallet beneficiary payload only in memory. Raw IBAN, beneficiary name, mobile, and other destination details must never be persisted in the application database or logged.
+
+The runtime worker is intentionally not enabled yet: the repository still needs a production-grade vault resolver and worker composition using a real Moyasar payout source account. Do not use placeholder destination details or environment variables containing beneficiary IBANs.
