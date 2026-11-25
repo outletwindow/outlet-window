@@ -27,6 +27,7 @@ BEGIN
   IF p_tenant_id IS NULL OR length(trim(p_tenant_id))=0
      OR p_batch_id IS NULL OR length(trim(p_batch_id))=0
      OR p_actor_id IS NULL OR length(trim(p_actor_id))=0
+     OR p_actor_role IS NULL
      OR p_actor_role NOT IN ('finance','platform_admin','platform_owner') THEN
     RAISE EXCEPTION 'settlement_accounting_actor_not_authorized'
       USING ERRCODE='42501';
@@ -216,3 +217,6 @@ BEGIN
   RETURN journal_id_value;
 END
 $$;
+
+-- Do not expose the posting primitive to arbitrary database roles.
+REVOKE ALL ON FUNCTION post_merchant_settlement_accounting(text,text,text,text) FROM PUBLIC;
