@@ -46,10 +46,15 @@ INSERT INTO merchant_payout_decisions
 VALUES ('payout-outbox-decision','payout-outbox-tenant','payout-outbox-intent','authorize',
  'payout-outbox-finance','finance');
 
+  INSERT INTO merchant_payout_provider_entities
+    (id,tenant_id,merchant_id,provider_key,provider_merchant_id,provider_entity_id,created_by)
+  VALUES ('payout-provider-entity-map','payout-outbox-tenant','payout-outbox-merchant',
+    'sandbox-provider','provider-merchant-123','provider-entity-456','payout-outbox-finance');
+
 INSERT INTO merchant_payout_destinations
-(id,tenant_id,merchant_id,provider_key,currency,vault_reference,verification_status)
+(id,tenant_id,merchant_id,provider_key,currency,vault_reference,verification_status,provider_entity_registry_id)
 VALUES ('payout-outbox-destination','payout-outbox-tenant','payout-outbox-merchant',
- 'sandbox-provider','SAR','vault://tenant/merchant/payout','pending');
+ 'sandbox-provider','SAR','vault://tenant/merchant/payout','pending','payout-provider-entity-map');
 UPDATE merchant_payout_destinations
 SET verification_status='verified',verified_by='payout-outbox-finance',verified_at=now()
 WHERE tenant_id='payout-outbox-tenant' AND id='payout-outbox-destination';
@@ -102,10 +107,6 @@ BEGIN
       AND currency='SAR' AND idempotency_key='payout-provider-idem-1'
   ) THEN RAISE EXCEPTION 'payout outbox did not copy exact authorized amount'; END IF;
 
-  INSERT INTO merchant_payout_provider_entities
-    (id,tenant_id,merchant_id,provider_key,provider_merchant_id,provider_entity_id,created_by)
-  VALUES ('payout-provider-entity-map','payout-outbox-tenant','payout-outbox-merchant',
-    'sandbox-provider','provider-merchant-123','provider-entity-456','payout-outbox-finance');
   IF NOT EXISTS (
     SELECT 1 FROM merchant_payout_provider_entities
     WHERE tenant_id='payout-outbox-tenant' AND merchant_id='payout-outbox-merchant'
