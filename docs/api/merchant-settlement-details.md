@@ -94,4 +94,8 @@ Platform administrators can register the immutable mapping between a local activ
 - `POST /api/v1/platform/payout-provider-entities` registers a mapping using `tenantId`, `merchantId`, `providerKey=moyasar`, `providerMerchantId`, and `providerEntityId`.
 - `POST /api/v1/platform/payout-provider-entities/:entityId/revoke` revokes an active mapping. Revocation is terminal; create a new mapping after correcting provider-side identity.
 
-The API records audit events and rejects duplicate active merchant/provider identities. These identifiers are routing metadata, not bank credentials. Registration does not enable transfers or create a payout instruction; provider eligibility and a separately approved destination/worker remain required.
+The API records audit events and rejects duplicate active merchant/provider identities. These identifiers are routing metadata, not bank credentials. Registration does not enable transfers or create a payout instruction.
+
+Each payout destination must reference the immutable provider-entity registry row for the same tenant, merchant, and provider. The database rejects new or newly verified destinations without an active mapping, and the provider submission outbox rejects destinations whose mapping has been revoked. The payout worker also rechecks that mapping while claiming work; revocation therefore blocks future submissions even if a destination still carries a historical `verified` status. Legacy destinations without a mapping remain stored for audit/history but cannot be newly verified or submitted. Re-registering an entity does not silently rebind an old destination; a new destination must be registered against the new mapping.
+
+These controls validate local identity linkage only. They do not verify a bank account with Moyasar, create or send a transfer, or confirm money movement.
