@@ -12,6 +12,24 @@ export interface ClaimedMerchantPayout {
   amountMinor: number;
   idempotencyKey: string;
   attemptCount: number;
+
+  async recordRejected(input: {
+    outboxId: string; workerId: string; failureCode: string;
+  }): Promise<"failed" | "lease_lost"> {
+    if (!/^[a-zA-Z0-9_-]{1,200}$/.test(input.outboxId) ||
+        !/^[a-zA-Z0-9_-]{1,200}$/.test(input.workerId) ||
+        !/^[A-Z0-9_.:-]{1,100}$/.test(input.failureCode)) {
+      throw new Error("INVALID_MERCHANT_PAYOUT_PROVIDER_REJECTION");
+    }
+    const result = await this.pool.query(
+      `UPDATE merchant_payout_provider_outbox
+       SET status='failed',last_error_code=$3,lease_owner=NULL,
+           lease_expires_at=NULL,updated_at=now()
+       WHERE id=$1 AND status='processing' AND lease_owner=$2 AND lease_expires_at>now()`,
+      [input.outboxId,input.workerId,input.failureCode]
+    );
+    return result.rowCount === 1 ? "failed" : "lease_lost";
+  }
 }
 export type MerchantPayoutOutboxClaimResult = ClaimedMerchantPayout | null;
 
