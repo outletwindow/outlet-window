@@ -1391,7 +1391,8 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       destinationId: body.destinationId, providerKey: body.providerKey,
       idempotencyKey: body.idempotencyKey, actorId: access.actor.id
     });
-    if (result.outcome === "not_found") return reply.code(404).send({ error: "merchant_payout_intent_not_found" });\n    if (result.outcome === "not_authorized") return reply.code(409).send({ error: "merchant_payout_intent_not_authorized" });
+    if (result.outcome === "not_found") return reply.code(404).send({ error: "merchant_payout_intent_not_found" });
+    if (result.outcome === "not_authorized") return reply.code(409).send({ error: "merchant_payout_intent_not_authorized" });
     if (result.outcome === "destination_unverified") return reply.code(409).send({ error: "merchant_payout_destination_not_verified" });
     if (result.outcome === "idempotency_conflict") return reply.code(409).send({ error: "merchant_payout_provider_idempotency_conflict" });
     if (!("outboxId" in result)) return reply.code(409).send({ error: "merchant_payout_provider_submission_not_queued" });
