@@ -295,7 +295,9 @@ export function buildPostgresApp(options: PostgresApiOptions) {
         "0074_merchant_payout_intents_and_dual_control",
         "0075_merchant_payout_provider_outbox",
         "0076_confirmed_merchant_payout_reconciliation",
-        "0077_merchant_payout_provider_entity_mapping"
+        "0077_merchant_payout_provider_entity_mapping",
+        "0078_bind_payout_destinations_to_provider_entities",
+        "0079_merchant_payout_destination_dual_control"
       ];
       const result = await options.pool.query<{ version: string }>(
         "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",
