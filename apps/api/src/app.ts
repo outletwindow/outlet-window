@@ -120,6 +120,18 @@ export interface MerchantPayoutProviderEntityRegistry {
     import("../../../packages/domain/src/postgres-merchant-payout-provider-entity-registry.js").MerchantPayoutProviderEntity[]
   >;
 }
+export interface MerchantPayoutDestinationRegistry {
+  register(input:{tenantId:string;merchantId:string;providerKey:string;currency:string;
+    providerEntityRegistryId:string;vaultReference:string;actorId:string}):Promise<
+      {outcome:"created";destination:import("../../../packages/domain/src/postgres-merchant-payout-destination-registry.js").MerchantPayoutDestinationSummary}|
+      {outcome:"provider_entity_not_found"|"duplicate"}>;
+  list(input?:{tenantId?:string;merchantId?:string;limit?:number}):Promise<
+    import("../../../packages/domain/src/postgres-merchant-payout-destination-registry.js").MerchantPayoutDestinationSummary[]>;
+  verify(input:{destinationId:string;actorId:string}):Promise<
+    {outcome:"verified";destination:import("../../../packages/domain/src/postgres-merchant-payout-destination-registry.js").MerchantPayoutDestinationSummary}|
+    {outcome:"not_found"|"self_approval"|"not_pending"|"provider_entity_inactive"}>;
+  revoke(input:{destinationId:string;actorId:string}):Promise<{outcome:"revoked"}|{outcome:"not_found"|"already_revoked"}>;
+}
 export interface CustomerPaymentAdjustmentActions {
   getCustomerAdjustment?(input: { orderId: string; adjustmentId: string; customerId: string }): Promise<
     | { outcome: "found"; adjustment: {
@@ -216,6 +228,7 @@ export interface AppOptions {
   merchantSettlementAccountingPoster?: MerchantSettlementAccountingPoster;
   merchantPayoutAuthorization?: MerchantPayoutAuthorizationService;
   merchantPayoutProviderEntities?: MerchantPayoutProviderEntityRegistry;
+  merchantPayoutDestinations?: MerchantPayoutDestinationRegistry;
   merchantPayoutProviderOutbox?: {
     enqueue(input: {
       payoutIntentId: string; destinationId: string;
@@ -1477,6 +1490,109 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       return reply.code(200).send({ outcome: "revoked", entityId: request.params.entityId, transfersEnabled: false });
     }
   );
+
+  app.get<{ Querystring:{tenantId?:string;merchantId?:string;limit?:string} }>(
+    "/api/v1/platform/payout-destinations", async(request,reply)=>{
+      const access=await authorizeRequest(request,options,{resource:"platform.merchant_payout_destination",action:"read",scope:{platform:true}});
+      if(!access.actor) return sendAuthorizationFailure(reply,access.statusCode,access.decision.reason);
+      const roles=access.actor.roles??[access.actor.role];
+      if(!roles.some(role=>role==="platform_admin"||role==="platform_owner"||role==="finance"))
+        return reply.code(403).send({error:"platform_payout_destination_admin_role_required"});
+      if(!options.merchantPayoutDestinations) return reply.code(503).send({error:"payout_destination_registry_unavailable"});
+      const limit=request.query.limit===undefined?100:Number(request.query.limit);
+      if(!Number.isInteger(limit)||limit<1||limit>200||
+        (request.query.tenantId!==undefined&&!/^[A-Za-z0-9._:-]{1,160}$/.test(request.query.tenantId))||
+        (request.query.merchantId!==undefined&&!/^[A-Za-z0-9._:-]{1,160}$/.test(request.query.merchantId)))
+        return reply.code(400).send({error:"invalid_payout_destination_query"});
+      const destinations=await options.merchantPayoutDestinations.list({
+        ...(request.query.tenantId===undefined?{}:{tenantId:request.query.tenantId}),
+        ...(request.query.merchantId===undefined?{}:{merchantId:request.query.merchantId}),limit
+      });
+      return reply.code(200).send({destinations});
+    }
+  );
+
+  app.post<{Body:unknown}>("/api/v1/platform/payout-destinations",async(request,reply)=>{
+    const access=await authorizeRequest(request,options,{resource:"platform.merchant_payout_destination",action:"create",scope:{platform:true}});
+    if(!access.actor) return sendAuthorizationFailure(reply,access.statusCode,access.decision.reason);
+    const roles=access.actor.roles??[access.actor.role];
+    if(!roles.some(role=>role==="platform_admin"||role==="platform_owner"))
+      return reply.code(403).send({error:"platform_payout_destination_admin_role_required"});
+    if(!options.merchantPayoutDestinations||!options.auditEvents)
+      return reply.code(503).send({error:"payout_destination_registry_unavailable"});
+    const body=request.body as Record<string,unknown>|null;
+    const keys=["tenantId","merchantId","providerKey","currency","providerEntityRegistryId","vaultReference"];
+    if(!body||Object.keys(body).some(key=>!keys.includes(key))||
+      keys.some(key=>typeof body[key]!=="string")||body.providerKey!=="moyasar"||
+      !/^[A-Z]{3}$/.test(body.currency as string)||
+      (body.vaultReference as string).trim().length<8||(body.vaultReference as string).length>500)
+      return reply.code(400).send({error:"invalid_payout_destination"});
+    const input={tenantId:body.tenantId as string,merchantId:body.merchantId as string,
+      providerKey:"moyasar",currency:body.currency as string,
+      providerEntityRegistryId:body.providerEntityRegistryId as string,
+      vaultReference:body.vaultReference as string};
+    const base={id:randomUUID(),category:"payout_governance",occurredAt:new Date().toISOString(),
+      actor:{id:access.actor.id,type:"platform_user" as const,role:access.actor.role},
+      action:"platform.payout_destination.register",resourceType:"merchant_payout_destination",
+      resourceId:input.merchantId,tenantId:input.tenantId,merchantId:input.merchantId,
+      correlationId:request.id,source:"api",severity:"critical" as const,
+      metadata:{providerKey:input.providerKey,currency:input.currency,providerEntityRegistryId:input.providerEntityRegistryId}};
+    await options.auditEvents.append(createAuditEvent({...base,type:"payout_destination.registration_requested",outcome:"pending"}));
+    const result=await options.merchantPayoutDestinations.register({...input,actorId:access.actor.id});
+    await options.auditEvents.append(createAuditEvent({...base,id:randomUUID(),
+      type:result.outcome==="created"?"payout_destination.registered":"payout_destination.registration_rejected",
+      outcome:result.outcome==="created"?"success":"failure",
+      ...(result.outcome==="created"?{resourceId:result.destination.id}:{})}));
+    if(result.outcome==="provider_entity_not_found") return reply.code(409).send({error:"active_provider_entity_required"});
+    if(result.outcome==="duplicate") return reply.code(409).send({error:"payout_destination_duplicate"});
+    return reply.code(201).send({destination:result.destination});
+  });
+
+  app.post<{Params:{destinationId:string}}>("/api/v1/platform/payout-destinations/:destinationId/verify",async(request,reply)=>{
+    const access=await authorizeRequest(request,options,{resource:"platform.merchant_payout_destination",action:"approve",scope:{platform:true}});
+    if(!access.actor) return sendAuthorizationFailure(reply,access.statusCode,access.decision.reason);
+    const roles=access.actor.roles??[access.actor.role];
+    if(!roles.some(role=>role==="finance"||role==="platform_admin"||role==="platform_owner"))
+      return reply.code(403).send({error:"platform_payout_destination_reviewer_role_required"});
+    if(!options.merchantPayoutDestinations||!options.auditEvents)
+      return reply.code(503).send({error:"payout_destination_registry_unavailable"});
+    if(!/^[A-Za-z0-9._:-]{1,160}$/.test(request.params.destinationId))
+      return reply.code(400).send({error:"invalid_payout_destination_id"});
+    const result=await options.merchantPayoutDestinations.verify({destinationId:request.params.destinationId,actorId:access.actor.id});
+    await options.auditEvents.append(createAuditEvent({id:randomUUID(),category:"payout_governance",
+      occurredAt:new Date().toISOString(),actor:{id:access.actor.id,type:"platform_user",role:access.actor.role},
+      action:"platform.payout_destination.verify",resourceType:"merchant_payout_destination",
+      resourceId:request.params.destinationId,correlationId:request.id,source:"api",severity:"critical",
+      type:result.outcome==="verified"?"payout_destination.verified":"payout_destination.verification_rejected",
+      outcome:result.outcome==="verified"?"success":"failure",metadata:{reason:result.outcome}}));
+    if(result.outcome==="not_found") return reply.code(404).send({error:"payout_destination_not_found"});
+    if(result.outcome==="self_approval") return reply.code(409).send({error:"payout_destination_self_approval_forbidden"});
+    if(result.outcome==="not_pending") return reply.code(409).send({error:"payout_destination_not_pending"});
+    if(result.outcome==="provider_entity_inactive") return reply.code(409).send({error:"active_provider_entity_required"});
+    return reply.code(200).send({destination:result.destination});
+  });
+
+  app.post<{Params:{destinationId:string}}>("/api/v1/platform/payout-destinations/:destinationId/revoke",async(request,reply)=>{
+    const access=await authorizeRequest(request,options,{resource:"platform.merchant_payout_destination",action:"manage_access",scope:{platform:true}});
+    if(!access.actor) return sendAuthorizationFailure(reply,access.statusCode,access.decision.reason);
+    const roles=access.actor.roles??[access.actor.role];
+    if(!roles.some(role=>role==="platform_admin"||role==="platform_owner"))
+      return reply.code(403).send({error:"platform_payout_destination_admin_role_required"});
+    if(!options.merchantPayoutDestinations||!options.auditEvents)
+      return reply.code(503).send({error:"payout_destination_registry_unavailable"});
+    if(!/^[A-Za-z0-9._:-]{1,160}$/.test(request.params.destinationId))
+      return reply.code(400).send({error:"invalid_payout_destination_id"});
+    const result=await options.merchantPayoutDestinations.revoke({destinationId:request.params.destinationId,actorId:access.actor.id});
+    await options.auditEvents.append(createAuditEvent({id:randomUUID(),category:"payout_governance",
+      occurredAt:new Date().toISOString(),actor:{id:access.actor.id,type:"platform_user",role:access.actor.role},
+      action:"platform.payout_destination.revoke",resourceType:"merchant_payout_destination",
+      resourceId:request.params.destinationId,correlationId:request.id,source:"api",severity:"critical",
+      type:result.outcome==="revoked"?"payout_destination.revoked":"payout_destination.revocation_rejected",
+      outcome:result.outcome==="revoked"?"success":"failure",metadata:{reason:result.outcome}}));
+    if(result.outcome==="not_found") return reply.code(404).send({error:"payout_destination_not_found"});
+    if(result.outcome==="already_revoked") return reply.code(409).send({error:"payout_destination_already_revoked"});
+    return reply.code(200).send({outcome:"revoked"});
+  });
 
   app.post<{
     Params: { batchId: string };
