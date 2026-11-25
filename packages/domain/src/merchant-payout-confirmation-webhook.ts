@@ -15,6 +15,8 @@ export interface MerchantPayoutConfirmationEvent {
   providerReference: string;
   amountMinor: number;
   currency: string;
+  merchantId?: string;
+  entityId?: string;
 }
 
 export interface MerchantPayoutConfirmationEventDecoder {
@@ -31,6 +33,8 @@ export interface VerifiedMerchantPayoutConfirmationStore {
     providerReference: string;
     amountMinor: number;
     currency: string;
+    merchantId?: string;
+    entityId?: string;
   }): Promise<{ outcome: "confirmed" | "duplicate"; journalId: string }>;
 }
 
@@ -106,7 +110,9 @@ export class MerchantPayoutConfirmationWebhookProcessor {
         typeof event.providerReference !== "string" || !event.providerReference.trim() ||
         event.providerReference.length > 240 ||
         !Number.isSafeInteger(event.amountMinor) || event.amountMinor <= 0 ||
-        !/^[A-Z]{3}$/.test(event.currency)) {
+        !/^[A-Z]{3}$/.test(event.currency) ||
+        (event.merchantId !== undefined && !/^[a-zA-Z0-9._:-]{1,240}$/.test(event.merchantId)) ||
+        (event.entityId !== undefined && !/^[a-zA-Z0-9._:-]{1,240}$/.test(event.entityId))) {
       return { outcome: "invalid_signature_or_event" };
     }
 
@@ -118,7 +124,9 @@ export class MerchantPayoutConfirmationWebhookProcessor {
       outboxId: event.outboxId,
       providerReference: event.providerReference,
       amountMinor: event.amountMinor,
-      currency: event.currency
+      currency: event.currency,
+      ...(event.merchantId === undefined ? {} : { merchantId: event.merchantId }),
+      ...(event.entityId === undefined ? {} : { entityId: event.entityId })
     });
   }
 }
