@@ -94,6 +94,13 @@ export interface MerchantSettlementPolicyProvisioner {
     | { outcome: "created" | "duplicate"; policySnapshotId: string; policySha256: string }
     | { outcome: "merchant_not_found" | "accounts_missing" | "identity_collision" }
   >;
+  bindToBatch(input: {
+    batchId: string; policySnapshotId: string; actorId: string;
+    actorRole: "finance" | "platform_admin" | "platform_owner";
+  }): Promise<
+    | { outcome: "bound" | "duplicate"; batchId: string; policySnapshotId: string }
+    | { outcome: "batch_not_found" | "policy_not_found" | "batch_not_draft" | "contract_mismatch" | "binding_conflict" }
+  >;
 }
 export interface MerchantSettlementAccountingService {
   postForPlatform(batchId: string): Promise<
@@ -1290,6 +1297,36 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     if (result.outcome === "accounts_missing") return reply.code(409).send({ error: "settlement_policy_accounts_missing_or_inactive" });
     if (result.outcome === "identity_collision") return reply.code(409).send({ error: "settlement_policy_version_identity_collision" });
     return reply.code(result.outcome === "created" ? 201 : 200).send(result);
+  });
+
+  app.post<{
+    Params: { batchId: string };
+    Body: { policySnapshotId?: string };
+  }>("/api/v1/platform/settlements/:batchId/policy-binding", async (request, reply) => {
+    const access = await authorizeRequest(request, options, {
+      resource: "platform.merchant_settlement", action: "approve", scope: { platform: true }
+    });
+    if (!access.actor) return sendAuthorizationFailure(reply, access.statusCode, access.decision.reason);
+    const roles = access.actor.roles ?? [access.actor.role];
+    const actorRole = roles.find((role): role is "finance" | "platform_admin" | "platform_owner" =>
+      role === "finance" || role === "platform_admin" || role === "platform_owner");
+    if (!actorRole) return reply.code(403).send({ error: "platform_settlement_policy_approver_role_required" });
+    if (!options.merchantSettlementPolicyProvisioner) {
+      return reply.code(503).send({ error: "settlement_policy_provisioner_unavailable" });
+    }
+    if (typeof request.body?.policySnapshotId !== "string") {
+      return reply.code(400).send({ error: "invalid_settlement_policy_binding" });
+    }
+    const result = await options.merchantSettlementPolicyProvisioner.bindToBatch({
+      batchId: request.params.batchId, policySnapshotId: request.body.policySnapshotId,
+      actorId: access.actor.id, actorRole
+    });
+    if (result.outcome === "batch_not_found") return reply.code(404).send({ error: "settlement_batch_not_found" });
+    if (result.outcome === "policy_not_found") return reply.code(404).send({ error: "settlement_policy_snapshot_not_found" });
+    if (result.outcome === "batch_not_draft") return reply.code(409).send({ error: "settlement_batch_not_draft" });
+    if (result.outcome === "contract_mismatch") return reply.code(409).send({ error: "settlement_policy_contract_mismatch" });
+    if (result.outcome === "binding_conflict") return reply.code(409).send({ error: "settlement_policy_binding_conflict" });
+    return reply.code(result.outcome === "bound" ? 201 : 200).send(result);
   });
 
   app.post<{
