@@ -19,7 +19,7 @@ function fixture(options: { identity?: boolean; duplicate?: boolean } = {}) {
   const calls: Array<{ sql: string; values?: readonly unknown[] }> = [];
   const client = {
     async query<Row>(sql: string, values?: readonly unknown[]) {
-      calls.push({ sql, values });
+      calls.push({ sql, ...(values === undefined ? {} : { values }) });
       if (sql.includes("SELECT o.tenant_id")) {
         return {
           rows: options.identity === false ? [] : [{ tenant_id: "tenant-1" }] as Row[],
@@ -87,7 +87,8 @@ describe("PostgresMoyasarMerchantPayoutConfirmationStore", () => {
 
   it("rejects incomplete provider identity before opening a database transaction", async () => {
     const f = fixture();
-    await expect(f.store.confirmVerified({ ...input, entityId: undefined }))
+    const { entityId: _entityId, ...withoutEntity } = input;
+    await expect(f.store.confirmVerified(withoutEntity))
       .rejects.toThrow("INVALID_MOYASAR_MERCHANT_PAYOUT_CONFIRMATION");
     expect(f.calls).toHaveLength(0);
   });
