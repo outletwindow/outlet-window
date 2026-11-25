@@ -19,6 +19,7 @@ import { PostgresMerchantSettlementAccountingPoster } from "../../../packages/do
 import { PostgresMerchantPayoutAuthorizationStore } from "../../../packages/domain/src/postgres-merchant-payout-authorization-store.js";
 import { PostgresMerchantPayoutProviderOutbox } from "../../../packages/domain/src/postgres-merchant-payout-provider-outbox.js";
 import { PostgresMerchantPayoutProviderEntityRegistry } from "../../../packages/domain/src/postgres-merchant-payout-provider-entity-registry.js";
+import { PostgresMerchantPayoutDestinationRegistry } from "../../../packages/domain/src/postgres-merchant-payout-destination-registry.js";
 import { MoyasarMerchantPayoutConfirmationWebhookProcessor } from "../../../packages/domain/src/moyasar-merchant-payout-webhook.js";
 import { PostgresMoyasarMerchantPayoutConfirmationStore } from "../../../packages/domain/src/postgres-moyasar-merchant-payout-confirmation-store.js";
 import { IntegrationHub } from "../../../packages/domain/src/integration-hub.js";
@@ -128,6 +129,7 @@ export function buildPostgresApp(options: PostgresApiOptions) {
     merchantPayoutAuthorization: new PostgresMerchantPayoutAuthorizationStore(options.pool),
     merchantPayoutProviderOutbox: new PostgresMerchantPayoutProviderOutbox(options.pool),
     merchantPayoutProviderEntities: new PostgresMerchantPayoutProviderEntityRegistry(options.pool),
+    merchantPayoutDestinations: new PostgresMerchantPayoutDestinationRegistry(options.pool),
     ...(typeof process.env.MOYASAR_PAYOUT_WEBHOOK_SECRET === "string" &&
       process.env.MOYASAR_PAYOUT_WEBHOOK_SECRET.length >= 32 ? {
         merchantPayoutConfirmationWebhook: new MoyasarMerchantPayoutConfirmationWebhookProcessor({
