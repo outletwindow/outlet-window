@@ -92,3 +92,16 @@ Official references:
 5. Verify live/test mode, merchant_id, entity_id, payout ID, exact amount, currency, and the locally mapped outbox record before any state transition.
 6. Treat initiated as submitted, paid as confirmed, failed/canceled as terminal failure subject to reconciliation, and returned as a reversal requiring a separate accounting workflow.
 7. Use the same given_id for all create-payout retries and reconcile ambiguous timeouts by fetching payout state before any further attempt.
+
+## Implemented Moyasar domain boundary (not yet exposed as a public endpoint)
+
+The repository now contains:
+- `createMoyasarMerchantPayoutWebhookVerifier`: validates the exact shared-secret token in both the JSON envelope and `X-Event-Secret` using constant-time comparison; also checks `X-Event-ID`, `X-Event-Type`, and test/live mode. It is not described as HMAC.
+- `moyasarMerchantPayoutConfirmationEventDecoder`: accepts only `merchant_payout_paid`, validates the payout status/amount/currency, and requires `data.metadata.outlet_window_outbox_id`.
+- `MoyasarMerchantPayoutConfirmationWebhookProcessor`: composes verification, decoding, and the generic confirmation processor.
+- `PostgresMoyasarMerchantPayoutConfirmationStore`: verifies provider merchant/entity identifiers against the local immutable mapping, exact-matches the submitted outbox, and invokes the atomic `post_confirmed_merchant_payout` SQL function.
+- Migration `0077_merchant_payout_provider_entity_mapping`: stores provider merchant/entity identity against a local tenant/merchant with active-identity uniqueness and immutable identity fields.
+
+The outbound payout request must include `metadata.outlet_window_outbox_id` set to the exact durable outbox ID. The platform webhook registration for this confirmation endpoint must subscribe to `merchant_payout_paid` only. Failed, canceled, and returned events must be handled by a separate reconciliation path; they must never be passed to the paid-confirmation journal function or receive a false 2xx from a handler that silently ignores them.
+
+This code is still not a public HTTP route, does not yet register a webhook with Moyasar, does not provision the provider-entity mapping through an authorized admin API, and does not initiate a transfer. Keep the endpoint disabled until those pieces and CI are complete.
