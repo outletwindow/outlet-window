@@ -21,6 +21,10 @@ export function grantsForAssignments(assignments: readonly RoleAssignment[]): re
       resource: "platform.merchant_settlement",
       actions: ["read", "create", "approve"] as const,
       scope: { platform: true }
+    }, {
+      resource: "platform.merchant_payout_provider_entity",
+      actions: ["read", "create", "manage_access"] as const,
+      scope: { platform: true }
     }];
     // Customers may edit only the exact order explicitly present in their active IAM scope.
     if (assignment.role === "courier") return [{
