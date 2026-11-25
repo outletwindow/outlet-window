@@ -199,3 +199,12 @@ A payout provider outbox entry can be enqueued only for an independently authori
 The outbox supports queued, leased processing, submitted, confirmed, failed, and reconciliation-required states. Identity fields are immutable and database transition guards reject invalid transitions. Provider event IDs are deduplicated per tenant/provider, and event rows are append-only. The database stores whether the application verified the provider signature; the application must perform cryptographic verification before inserting a trusted event and must match provider, amount, currency, reference, and payout intent.
 
 **Not yet implemented or enabled:** payout worker/PSP adapter, vault resolution, cryptographic webhook verifier and authenticated webhook route, event-to-outbox reconciliation processor, and the disbursement journal. No transfer is sent by migration 0075. Do not mark a payout paid or post a disbursement journal until a verified provider-confirmed outcome is matched exactly. Ambiguous outcomes must enter reconciliation and must never be blindly resubmitted. The migration and schema checks are a foundation, not a production payout integration.
+
+
+### Submission worker core
+
+The domain now includes `PostgresMerchantPayoutProviderOutbox` and `MerchantPayoutSubmissionWorker`. The worker claims only queued rows whose payout intent remains authorized and whose destination remains verified for the same tenant, merchant, provider, and currency. Claims use `FOR UPDATE SKIP LOCKED` and expiring leases.
+
+The worker resolves the opaque destination reference through an injected vault interface and submits the exact authorized amount with the durable idempotency key through an injected provider registry. Provider acceptance advances only to `submitted`; it is not a completed payout. Explicit provider rejection is terminal. A retry is allowed only when the provider explicitly reports a safe-to-retry outcome or when vault resolution fails before the provider call. Exceptions after provider submission and expired leases are quarantined as `reconciliation_required`, never blindly resubmitted.
+
+The worker core is unit tested. It is not yet wired to a production runtime because the payout provider contract and secure payout-destination vault resolver must be selected and configured. No live payout worker is enabled. The remaining steps are provider-specific signed webhook ingestion, exact event reconciliation, and atomic disbursement journal posting before a payout can be marked confirmed.
