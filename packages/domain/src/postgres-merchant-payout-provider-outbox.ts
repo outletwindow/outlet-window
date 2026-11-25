@@ -28,7 +28,7 @@ export class PostgresMerchantPayoutProviderOutbox {
     idempotencyKey: string; actorId: string;
   }): Promise<
     | { outcome: "queued"; outboxId: string }
-    | { outcome: "not_authorized" | "destination_unverified" | "idempotency_conflict" }
+    | { outcome: "not_found" | "not_authorized" | "destination_unverified" | "idempotency_conflict" }
   > {
     if (!input.payoutIntentId.trim() || !input.destinationId.trim() ||
         !/^[a-zA-Z0-9._-]{1,100}$/.test(input.providerKey) ||
