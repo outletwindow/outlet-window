@@ -127,10 +127,11 @@ export class PostgresMerchantSettlementPolicyProvisioner {
           action,outcome,resource_type,resource_id,tenant_id,merchant_id,correlation_id,
           source,severity,metadata)
          VALUES ($1,1,'merchant_settlement_policy_bound_to_batch','finance',clock_timestamp(),
-          $6,'platform_user',$7,'bind_settlement_policy','success',
-          'merchant_settlement_batch',$2,$3,$4,$5,'merchant_settlement_policy','high',$6::jsonb)`,
-        [`settlement-policy-binding:${batch.id}`,input.actorId,batch.id,batch.tenant_id,batch.merchant_id,
-          input.actorRole,batch.id,JSON.stringify({ policySnapshotId:input.policySnapshotId,contractReference:policy.contract_reference })]
+          $2,'platform_user',$3,'bind_settlement_policy','success',
+          'merchant_settlement_batch',$4,$5,$6,$7,'merchant_settlement_policy','high',$8::jsonb)`,
+        [`settlement-policy-binding:${batch.id}`,input.actorId,input.actorRole,batch.id,
+          batch.tenant_id,batch.merchant_id,batch.id,
+          JSON.stringify({ policySnapshotId:input.policySnapshotId,contractReference:policy.contract_reference })]
       );
       await client.query("COMMIT");
       return { outcome: "bound", batchId: batch.id, policySnapshotId: input.policySnapshotId };
