@@ -116,4 +116,6 @@ The database enforces creator attribution, pending-on-create, independent approv
 
 `vaultReference` is an opaque pointer supplied by a trusted vault integration or operator. This API stores it only for internal payout-worker resolution. It is never included in destination list/create/verify responses or audit metadata. No raw IBAN, bank account number, bank credentials, or provider secrets are accepted or stored by these endpoints. A vault service integration is not provided by this API surface; supplying a reference does not prove that the referenced secret exists or is valid.
 
+The payout outbox also rejects a direct transition from `submitted` to `confirmed` unless the same transaction has first recorded a matching, signature-verified `payout_confirmed` provider event. The event table does not grant ordinary application roles insert/update/delete access; the trusted reconciliation function records the event and posts the balanced journal atomically. A provider acceptance response remains `submitted`, never `confirmed`.
+
 These endpoints administer records only. They do not verify a bank account with Moyasar, initiate a transfer, or enable live payouts.
