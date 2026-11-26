@@ -115,6 +115,26 @@ BEGIN
   EXCEPTION WHEN check_violation THEN NULL;
   END;
 
+  BEGIN
+    UPDATE merchant_payout_destinations SET verification_status='revoked'
+    WHERE id='payout-outbox-destination';
+    RAISE EXCEPTION 'destination revocation without actor unexpectedly accepted';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  UPDATE merchant_payout_destinations
+  SET verification_status='revoked',revoked_by='payout-outbox-admin',revoked_at=now()
+  WHERE id='payout-outbox-destination';
+  IF NOT EXISTS (SELECT 1 FROM merchant_payout_destinations WHERE id='payout-outbox-destination'
+    AND verification_status='revoked' AND revoked_by='payout-outbox-admin' AND revoked_at IS NOT NULL) THEN
+    RAISE EXCEPTION 'destination revocation actor was not persisted';
+  END IF;
+  BEGIN
+    UPDATE merchant_payout_destinations SET verification_status='verified'
+    WHERE id='payout-outbox-destination';
+    RAISE EXCEPTION 'revoked destination unexpectedly reactivated';
+  EXCEPTION WHEN SQLSTATE '55000' THEN NULL;
+  END;
+
   IF NOT EXISTS (
     SELECT 1 FROM pg_indexes
     WHERE schemaname='public' AND tablename='merchant_payout_provider_outbox'
