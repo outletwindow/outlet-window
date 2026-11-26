@@ -313,7 +313,8 @@ export function buildPostgresApp(options: PostgresApiOptions) {
         "0079_merchant_payout_destination_dual_control",
         "0080_merchant_payout_destination_revocation_attribution",
         "0081_require_verified_event_for_payout_confirmation",
-         "0082_verified_merchant_payout_exception_cases"
+         "0082_verified_merchant_payout_exception_cases",
+         "0083_merchant_payout_exception_dual_control"
       ];
       const result = await options.pool.query<{ version: string }>(
         "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",
