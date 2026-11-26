@@ -123,7 +123,7 @@ export class PostgresMerchantPayoutDestinationRegistry {
   }
 
   async revoke(input:{destinationId:string;actorId:string}):Promise<{outcome:"revoked"}|{outcome:"not_found"|"already_revoked"}>{
-    const result=await this.pool.query("UPDATE merchant_payout_destinations SET verification_status='revoked',updated_at=now() WHERE id=$1 AND verification_status<>'revoked' RETURNING id",[input.destinationId]);
+    const result=await this.pool.query("UPDATE merchant_payout_destinations SET verification_status='revoked',revoked_by=$2,revoked_at=now(),updated_at=now() WHERE id=$1 AND verification_status<>'revoked' RETURNING id",[input.destinationId,input.actorId]);
     if(result.rowCount===1) return {outcome:"revoked"};
     const existing=await this.pool.query<{verification_status:string}>("SELECT verification_status FROM merchant_payout_destinations WHERE id=$1",[input.destinationId]);
     if(!existing.rows[0]) return {outcome:"not_found"};
