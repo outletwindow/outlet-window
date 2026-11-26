@@ -121,7 +121,7 @@ The payout outbox also rejects a direct transition from `submitted` to `confirme
 
 ### Failed, canceled, and returned payout reconciliation
 
-Verified provider events with `payout_failed`, `payout_canceled`, or `payout_returned` are recorded as immutable provider evidence and open an immutable-evidence reconciliation case in `merchant_payout_exception_cases`. The case starts as `open`; review status may progress to `under_review` and then `resolved`, with a resolution code, actor, and timestamp required for closure. Resolved cases are terminal.
+The database now provides a trusted persistence function for verified `payout_failed`, `payout_canceled`, and `payout_returned` events. When invoked by a provider adapter after signature verification and exact event decoding, it records immutable provider evidence and opens a case in `merchant_payout_exception_cases`. The current Moyasar webhook decoder is still limited to `merchant_payout_paid`; the non-paid event adapter/HTTP routing is not yet wired, so these exception cases are not yet populated automatically from live webhook deliveries. The case starts as `open`; review status may progress to `under_review` and then `resolved`, with a resolution code, actor, and timestamp required for closure. Resolved cases are terminal.
 
 The database function `record_verified_merchant_payout_exception` exact-matches the tenant, outbox, provider, provider reference, amount, currency, and expected outbox state. Re-delivery of the same verified provider event returns the original case; conflicting reuse of an event ID is rejected. A `payout_returned` event is accepted only for an already-confirmed payout.
 
