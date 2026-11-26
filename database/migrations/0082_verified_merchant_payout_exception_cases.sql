@@ -109,7 +109,7 @@ BEGIN
     OR p_provider_key IS NULL OR length(trim(p_provider_key))=0
     OR p_provider_event_id IS NULL OR length(trim(p_provider_event_id)) NOT BETWEEN 1 AND 240
     OR p_provider_reference IS NULL OR length(trim(p_provider_reference)) NOT BETWEEN 1 AND 240
-    OR p_event_type NOT IN ('payout_failed','payout_canceled','payout_returned')
+    OR p_event_type IS NULL OR p_event_type NOT IN ('payout_failed','payout_canceled','payout_returned')
     OR p_amount_minor IS NULL OR p_amount_minor<=0
     OR p_currency !~ '^[A-Z]{3}$' THEN
     RAISE EXCEPTION 'merchant_payout_exception_input_invalid' USING ERRCODE='22023';
