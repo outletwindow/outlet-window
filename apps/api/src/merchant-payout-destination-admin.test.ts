@@ -64,4 +64,56 @@ describe("platform merchant payout destination administration",()=>{
       type:"payout_destination.revoked",outcome:"success",resourceId:"destination-1"
     }));
   });
+  it("lists exception cases for finance reviewers",async()=>{
+    const finance:Actor={id:"finance-1",role:"finance",active:true,grants:[
+      {resource:"platform.merchant_payout_exception_case",actions:["read","approve"],scope:{platform:true}}
+    ]};
+    const exceptionCase={id:"case-1",tenantId:"tenant-1",outboxId:"outbox-1",providerKey:"moyasar",
+      providerEventId:"evt-1",providerReference:"payout-1",eventType:"payout_returned" as const,
+      amountMinor:12500,currency:"SAR",reviewStatus:"open" as const,reviewStartedBy:null,reviewStartedAt:null,
+      resolutionCode:null,resolutionNote:null,resolvedBy:null,resolvedAt:null,createdAt:"2026-11-26T10:00:00.000Z"};
+    const list=vi.fn(async()=>[exceptionCase]);
+    const app=buildApp({resolveActor:async()=>finance,merchantPayoutExceptionCases:{
+      list,startReview:vi.fn(),resolve:vi.fn()
+    }});
+    apps.push(app);await app.ready();
+    const response=await app.inject({method:"GET",url:"/api/v1/platform/payout-exception-cases?status=open"});
+    expect(response.statusCode).toBe(200);
+    expect(response.json().cases).toEqual([exceptionCase]);
+  });
+
+  it("requires a different finance actor to resolve a case after review",async()=>{
+    const finance:Actor={id:"finance-2",role:"finance",active:true,grants:[
+      {resource:"platform.merchant_payout_exception_case",actions:["read","approve"],scope:{platform:true}}
+    ]};
+    const resolve=vi.fn(async()=>({outcome:"reviewer_cannot_resolve" as const}));
+    const append=vi.fn(async(_event:AuditEvent)=>"inserted" as const);
+    const app=buildApp({resolveActor:async()=>finance,merchantPayoutExceptionCases:{
+      list:vi.fn(async()=>[]),startReview:vi.fn(),resolve
+    },auditEvents:{append}});
+    apps.push(app);await app.ready();
+    const response=await app.inject({method:"POST",url:"/api/v1/platform/payout-exception-cases/case-1/resolve",
+      payload:{resolutionCode:"BANK_RETURN_CONFIRMED",resolutionNote:"Confirmed with provider"}});
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error).toBe("payout_exception_independent_reviewer_required");
+    expect(resolve).toHaveBeenCalledWith({caseId:"case-1",actorId:"finance-2",
+      resolutionCode:"BANK_RETURN_CONFIRMED",resolutionNote:"Confirmed with provider"});
+    expect(append).toHaveBeenCalledWith(expect.objectContaining({
+      type:"payout_exception.resolution_rejected",outcome:"failure"
+    }));
+  });
+
+  it("rejects unknown resolution fields",async()=>{
+    const finance:Actor={id:"finance-3",role:"finance",active:true,grants:[
+      {resource:"platform.merchant_payout_exception_case",actions:["read","approve"],scope:{platform:true}}
+    ]};
+    const app=buildApp({resolveActor:async()=>finance,merchantPayoutExceptionCases:{
+      list:vi.fn(async()=>[]),startReview:vi.fn(),resolve:vi.fn()
+    },auditEvents:{append:vi.fn(async(_event:AuditEvent)=>"inserted" as const)}});
+    apps.push(app);await app.ready();
+    const response=await app.inject({method:"POST",url:"/api/v1/platform/payout-exception-cases/case-1/resolve",
+      payload:{resolutionCode:"VALID_CODE",reverseTransfer:true}});
+    expect(response.statusCode).toBe(400);
+  });
+
 });
