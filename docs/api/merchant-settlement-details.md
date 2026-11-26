@@ -118,4 +118,13 @@ The database enforces creator attribution, pending-on-create, independent approv
 
 The payout outbox also rejects a direct transition from `submitted` to `confirmed` unless the same transaction has first recorded a matching, signature-verified `payout_confirmed` provider event. The event table does not grant ordinary application roles insert/update/delete access; the trusted reconciliation function records the event and posts the balanced journal atomically. A provider acceptance response remains `submitted`, never `confirmed`.
 
+
+### Failed, canceled, and returned payout reconciliation
+
+Verified provider events with `payout_failed`, `payout_canceled`, or `payout_returned` are recorded as immutable provider evidence and open an immutable-evidence reconciliation case in `merchant_payout_exception_cases`. The case starts as `open`; review status may progress to `under_review` and then `resolved`, with a resolution code, actor, and timestamp required for closure. Resolved cases are terminal.
+
+The database function `record_verified_merchant_payout_exception` exact-matches the tenant, outbox, provider, provider reference, amount, currency, and expected outbox state. Re-delivery of the same verified provider event returns the original case; conflicting reuse of an event ID is rejected. A `payout_returned` event is accepted only for an already-confirmed payout.
+
+**No automatic reversal is posted.** A returned transfer remains a finance reconciliation case until the underlying bank/provider movement and accounting treatment are independently reviewed. Any reversal journal must be a separate, balanced, approved accounting operation; this migration does not alter the original posted payout journal or claim that returned funds have been recovered.
+
 These endpoints administer records only. They do not verify a bank account with Moyasar, initiate a transfer, or enable live payouts.
