@@ -253,6 +253,48 @@ BEGIN
     RAISE EXCEPTION 'duplicate payout confirmation created a second journal';
   END IF;
 
+  -- A verified returned event opens a controlled exception case; it does not
+  -- silently reverse or rewrite the already-posted payout journal.
+  IF record_verified_merchant_payout_exception(
+    'payout-return-case-1','payout-return-event-row-1','payout-outbox-tenant',
+    queued_id,'sandbox-provider','provider-return-event-1','provider-payout-ref-1',
+    'payout_returned',5000,'SAR'
+  ) <> 'payout-return-case-1' THEN
+    RAISE EXCEPTION 'returned payout event did not create its reconciliation case';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM merchant_payout_exception_cases
+    WHERE id='payout-return-case-1' AND review_status='open'
+      AND event_type='payout_returned' AND amount_minor=5000 AND currency='SAR'
+  ) THEN
+    RAISE EXCEPTION 'returned payout reconciliation case was not persisted';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM merchant_payout_provider_events
+    WHERE tenant_id='payout-outbox-tenant' AND provider_event_id='provider-return-event-1'
+      AND event_type='payout_returned' AND signature_verified=true
+  ) THEN
+    RAISE EXCEPTION 'verified returned provider event evidence was not persisted';
+  END IF;
+  IF (SELECT count(*) FROM financial_journals
+      WHERE tenant_id='payout-outbox-tenant' AND source_type='merchant_payout')<>1 THEN
+    RAISE EXCEPTION 'returned event unexpectedly created an automatic reversal journal';
+  END IF;
+  IF record_verified_merchant_payout_exception(
+    'payout-return-case-duplicate','payout-return-event-row-duplicate','payout-outbox-tenant',
+    queued_id,'sandbox-provider','provider-return-event-1','provider-payout-ref-1',
+    'payout_returned',5000,'SAR'
+  ) <> 'payout-return-case-1' THEN
+    RAISE EXCEPTION 'duplicate returned event did not return original exception case';
+  END IF;
+  BEGIN
+    UPDATE merchant_payout_exception_cases
+    SET provider_reference='tampered-reference'
+    WHERE id='payout-return-case-1';
+    RAISE EXCEPTION 'payout exception evidence unexpectedly mutable';
+  EXCEPTION WHEN SQLSTATE '55000' THEN NULL;
+  END;
+
   -- A revoked provider identity must not accept a new payout submission,
   -- even when the old destination remains marked verified.
   UPDATE merchant_payout_provider_entities
