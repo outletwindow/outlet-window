@@ -22,6 +22,8 @@ import { PostgresMerchantPayoutProviderEntityRegistry } from "../../../packages/
 import { PostgresMerchantPayoutDestinationRegistry } from "../../../packages/domain/src/postgres-merchant-payout-destination-registry.js";
 import { MoyasarMerchantPayoutConfirmationWebhookProcessor } from "../../../packages/domain/src/moyasar-merchant-payout-webhook.js";
 import { PostgresMoyasarMerchantPayoutConfirmationStore } from "../../../packages/domain/src/postgres-moyasar-merchant-payout-confirmation-store.js";
+import { MoyasarMerchantPayoutExceptionWebhookProcessor } from "../../../packages/domain/src/moyasar-merchant-payout-exception-processor.js";
+import { PostgresMoyasarMerchantPayoutExceptionStore } from "../../../packages/domain/src/postgres-moyasar-merchant-payout-exception-store.js";
 import { IntegrationHub } from "../../../packages/domain/src/integration-hub.js";
 import { PostgresIntegrationRegistryStore } from "../../../packages/domain/src/postgres-integration-registry-store.js";
 import { PostgresPaymentWebhookInbox } from "../../../packages/domain/src/postgres-payment-webhook-inbox.js";
@@ -137,6 +139,15 @@ export function buildPostgresApp(options: PostgresApiOptions) {
             providerKey === "moyasar" ? process.env.MOYASAR_PAYOUT_WEBHOOK_SECRET ?? null : null,
           store: new PostgresMoyasarMerchantPayoutConfirmationStore(options.pool),
           auditActorId: process.env.MOYASAR_PAYOUT_AUDIT_ACTOR_ID ?? "payout-webhook-service",
+          expectedLiveMode: process.env.MOYASAR_EXPECT_LIVE === "true"
+        })
+      } : {}),
+    ...(typeof process.env.MOYASAR_PAYOUT_WEBHOOK_SECRET === "string" &&
+      process.env.MOYASAR_PAYOUT_WEBHOOK_SECRET.length >= 32 ? {
+        merchantPayoutExceptionWebhook: new MoyasarMerchantPayoutExceptionWebhookProcessor({
+          secretResolver: async providerKey =>
+            providerKey === "moyasar" ? process.env.MOYASAR_PAYOUT_WEBHOOK_SECRET ?? null : null,
+          store: new PostgresMoyasarMerchantPayoutExceptionStore(options.pool),
           expectedLiveMode: process.env.MOYASAR_EXPECT_LIVE === "true"
         })
       } : {}),
