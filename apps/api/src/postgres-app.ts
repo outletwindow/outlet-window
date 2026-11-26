@@ -24,6 +24,7 @@ import { MoyasarMerchantPayoutConfirmationWebhookProcessor } from "../../../pack
 import { PostgresMoyasarMerchantPayoutConfirmationStore } from "../../../packages/domain/src/postgres-moyasar-merchant-payout-confirmation-store.js";
 import { MoyasarMerchantPayoutExceptionWebhookProcessor } from "../../../packages/domain/src/moyasar-merchant-payout-exception-processor.js";
 import { PostgresMoyasarMerchantPayoutExceptionStore } from "../../../packages/domain/src/postgres-moyasar-merchant-payout-exception-store.js";
+import { PostgresMerchantPayoutExceptionCaseStore } from "../../../packages/domain/src/postgres-merchant-payout-exception-case-store.js";
 import { IntegrationHub } from "../../../packages/domain/src/integration-hub.js";
 import { PostgresIntegrationRegistryStore } from "../../../packages/domain/src/postgres-integration-registry-store.js";
 import { PostgresPaymentWebhookInbox } from "../../../packages/domain/src/postgres-payment-webhook-inbox.js";
@@ -132,6 +133,7 @@ export function buildPostgresApp(options: PostgresApiOptions) {
     merchantPayoutProviderOutbox: new PostgresMerchantPayoutProviderOutbox(options.pool),
     merchantPayoutProviderEntities: new PostgresMerchantPayoutProviderEntityRegistry(options.pool),
     merchantPayoutDestinations: new PostgresMerchantPayoutDestinationRegistry(options.pool),
+    merchantPayoutExceptionCases: new PostgresMerchantPayoutExceptionCaseStore(options.pool),
     ...(typeof process.env.MOYASAR_PAYOUT_WEBHOOK_SECRET === "string" &&
       process.env.MOYASAR_PAYOUT_WEBHOOK_SECRET.length >= 32 ? {
         merchantPayoutConfirmationWebhook: new MoyasarMerchantPayoutConfirmationWebhookProcessor({
