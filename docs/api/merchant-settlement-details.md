@@ -110,7 +110,7 @@ Platform staff manage payout destinations through these routes:
 - `POST /api/v1/platform/payout-destinations/:destinationId/verify` independently approves a pending destination. Requires the `approve` grant and a `finance`, `platform_admin`, or `platform_owner` role. The creator cannot approve their own destination.
 - `POST /api/v1/platform/payout-destinations/:destinationId/revoke` permanently revokes a destination. Platform admin/owner only.
 
-The database enforces creator attribution, pending-on-create, independent approval, immutable destination identity, and terminal revocation. A destination can be verified only while its linked provider entity remains active.
+The database enforces creator attribution, pending-on-create, independent approval, immutable destination identity, and terminal revocation. Revocation requires an authenticated actor and timestamp (`revoked_by`, `revoked_at`); the actor and timestamp are immutable, and a revoked destination cannot be reactivated. A destination can be verified only while its linked provider entity remains active.
 
 ### Vault reference privacy
 
