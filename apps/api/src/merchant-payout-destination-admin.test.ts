@@ -49,4 +49,19 @@ describe("platform merchant payout destination administration",()=>{
       metadata:expect.objectContaining({reason:"self_approval"})
     }));
   });
+
+  it("records the authenticated actor when revoking a payout destination",async()=>{
+    const revoke=vi.fn(async()=>({outcome:"revoked" as const}));
+    const append=vi.fn(async(_event:AuditEvent)=>"inserted" as const);
+    const app=buildApp({resolveActor:async()=>admin,merchantPayoutDestinations:{
+      register:vi.fn(),list:vi.fn(async()=>[]),verify:vi.fn(),revoke
+    },auditEvents:{append}});
+    apps.push(app);await app.ready();
+    const response=await app.inject({method:"POST",url:"/api/v1/platform/payout-destinations/destination-1/revoke"});
+    expect(response.statusCode).toBe(200);
+    expect(revoke).toHaveBeenCalledWith({destinationId:"destination-1",actorId:"platform-admin"});
+    expect(append).toHaveBeenCalledWith(expect.objectContaining({
+      type:"payout_destination.revoked",outcome:"success",resourceId:"destination-1"
+    }));
+  });
 });
