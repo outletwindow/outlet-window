@@ -125,6 +125,11 @@ The database now provides a trusted persistence function for verified `payout_fa
 
 The database function `record_verified_merchant_payout_exception` exact-matches the tenant, outbox, provider, provider reference, amount, currency, and expected outbox state. Re-delivery of the same verified provider event returns the original case; conflicting reuse of an event ID is rejected. A `payout_returned` event is accepted only for an already-confirmed payout.
 
+
+### Finance review and independent case resolution
+
+Platform finance reviewers can list exception cases with `GET /api/v1/platform/payout-exception-cases?status=open|under_review|resolved`. A reviewer starts a case using `POST /api/v1/platform/payout-exception-cases/:caseId/review`; this records the authenticated actor and timestamp. A different finance/platform administrator may close it using `POST /api/v1/platform/payout-exception-cases/:caseId/resolve` with a controlled `resolutionCode` and optional note. The database rejects resolution by the same actor who started the review, requires attribution, and makes resolved cases terminal. All actions require finance/platform-admin/platform-owner authorization and are audited. Resolution is an administrative disposition only: the response explicitly reports `accountingReversalPosted: false`; it does not create a journal, move funds, or enable payout execution.
+
 **No automatic reversal is posted.** A returned transfer remains a finance reconciliation case until the underlying bank/provider movement and accounting treatment are independently reviewed. Any reversal journal must be a separate, balanced, approved accounting operation; this migration does not alter the original posted payout journal or claim that returned funds have been recovered.
 
 These endpoints administer records only. They do not verify a bank account with Moyasar, initiate a transfer, or enable live payouts.
