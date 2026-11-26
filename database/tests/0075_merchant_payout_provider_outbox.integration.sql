@@ -115,22 +115,29 @@ BEGIN
   EXCEPTION WHEN check_violation THEN NULL;
   END;
 
+  INSERT INTO merchant_payout_destinations
+    (id,tenant_id,merchant_id,provider_key,currency,vault_reference,verification_status,provider_entity_registry_id,created_by)
+  VALUES ('payout-outbox-revocation-test','payout-outbox-tenant','payout-outbox-merchant',
+    'sandbox-provider','SAR','vault://tenant/merchant/revoke-test','pending',
+    'payout-provider-entity-map','payout-outbox-revoke-creator');
+  UPDATE merchant_payout_destinations SET verification_status='verified',verified_by='payout-outbox-finance',verified_at=now()
+  WHERE id='payout-outbox-revocation-test';
   BEGIN
     UPDATE merchant_payout_destinations SET verification_status='revoked'
-    WHERE id='payout-outbox-destination';
+    WHERE id='payout-outbox-revocation-test';
     RAISE EXCEPTION 'destination revocation without actor unexpectedly accepted';
   EXCEPTION WHEN check_violation THEN NULL;
   END;
   UPDATE merchant_payout_destinations
   SET verification_status='revoked',revoked_by='payout-outbox-admin',revoked_at=now()
-  WHERE id='payout-outbox-destination';
-  IF NOT EXISTS (SELECT 1 FROM merchant_payout_destinations WHERE id='payout-outbox-destination'
+  WHERE id='payout-outbox-revocation-test';
+  IF NOT EXISTS (SELECT 1 FROM merchant_payout_destinations WHERE id='payout-outbox-revocation-test'
     AND verification_status='revoked' AND revoked_by='payout-outbox-admin' AND revoked_at IS NOT NULL) THEN
     RAISE EXCEPTION 'destination revocation actor was not persisted';
   END IF;
   BEGIN
     UPDATE merchant_payout_destinations SET verification_status='verified'
-    WHERE id='payout-outbox-destination';
+    WHERE id='payout-outbox-revocation-test';
     RAISE EXCEPTION 'revoked destination unexpectedly reactivated';
   EXCEPTION WHEN SQLSTATE '55000' THEN NULL;
   END;
