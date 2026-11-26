@@ -206,6 +206,21 @@ BEGIN
       submitted_at=now(),lease_owner=NULL,lease_expires_at=NULL
   WHERE tenant_id='payout-outbox-tenant' AND id=queued_id AND status='processing';
 
+  -- A direct status update must not manufacture a successful provider transfer.
+  BEGIN
+    UPDATE merchant_payout_provider_outbox
+    SET status='confirmed',confirmed_at=now()
+    WHERE tenant_id='payout-outbox-tenant' AND id=queued_id;
+    RAISE EXCEPTION 'direct payout confirmation without provider event unexpectedly accepted';
+  EXCEPTION WHEN SQLSTATE '55000' THEN NULL;
+  END;
+  IF NOT EXISTS (
+    SELECT 1 FROM merchant_payout_provider_outbox
+    WHERE tenant_id='payout-outbox-tenant' AND id=queued_id AND status='submitted'
+  ) THEN
+    RAISE EXCEPTION 'rejected direct confirmation changed payout state';
+  END IF;
+
   posted_journal_id := post_confirmed_merchant_payout(
     'payout-provider-event-1','payout-outbox-tenant',queued_id,'sandbox-provider',
     'provider-event-1','provider-payout-ref-1',5000,'SAR','payout-outbox-finance'
