@@ -295,6 +295,37 @@ BEGIN
   EXCEPTION WHEN SQLSTATE '55000' THEN NULL;
   END;
 
+  UPDATE merchant_payout_exception_cases
+  SET review_status='under_review',review_started_by='finance-reviewer-1',review_started_at=now()
+  WHERE id='payout-return-case-1';
+  BEGIN
+    UPDATE merchant_payout_exception_cases
+    SET review_status='resolved',resolution_code='BANK_RETURN_CONFIRMED',
+      resolved_by='finance-reviewer-1',resolved_at=now()
+    WHERE id='payout-return-case-1';
+    RAISE EXCEPTION 'reviewer unexpectedly resolved own payout exception';
+  EXCEPTION WHEN SQLSTATE '23514' THEN NULL;
+  END;
+  IF (SELECT review_status FROM merchant_payout_exception_cases
+      WHERE id='payout-return-case-1')<>'under_review' THEN
+    RAISE EXCEPTION 'self-resolution attempt changed payout exception state';
+  END IF;
+  UPDATE merchant_payout_exception_cases
+  SET review_status='resolved',resolution_code='BANK_RETURN_CONFIRMED',
+    resolution_note='Provider and bank evidence checked',resolved_by='finance-reviewer-2',resolved_at=now()
+  WHERE id='payout-return-case-1';
+  IF NOT EXISTS (SELECT 1 FROM merchant_payout_exception_cases
+      WHERE id='payout-return-case-1' AND review_status='resolved'
+        AND review_started_by='finance-reviewer-1' AND resolved_by='finance-reviewer-2') THEN
+    RAISE EXCEPTION 'independent payout exception resolution was not attributed';
+  END IF;
+  BEGIN
+    UPDATE merchant_payout_exception_cases SET review_status='under_review'
+    WHERE id='payout-return-case-1';
+    RAISE EXCEPTION 'resolved payout exception was reopened';
+  EXCEPTION WHEN SQLSTATE '55000' THEN NULL;
+  END;
+
   -- A revoked provider identity must not accept a new payout submission,
   -- even when the old destination remains marked verified.
   UPDATE merchant_payout_provider_entities
