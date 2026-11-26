@@ -96,7 +96,8 @@ async function main(): Promise<void> {
       { version: "0077_merchant_payout_provider_entity_mapping", file: "0077_merchant_payout_provider_entity_mapping.sql" },
       { version: "0078_bind_payout_destinations_to_provider_entities", file: "0078_bind_payout_destinations_to_provider_entities.sql" },
       { version: "0079_merchant_payout_destination_dual_control", file: "0079_merchant_payout_destination_dual_control.sql" },
-      { version: "0080_merchant_payout_destination_revocation_attribution", file: "0080_merchant_payout_destination_revocation_attribution.sql" }
+      { version: "0080_merchant_payout_destination_revocation_attribution", file: "0080_merchant_payout_destination_revocation_attribution.sql" },
+      { version: "0081_require_verified_event_for_payout_confirmation", file: "0081_require_verified_event_for_payout_confirmation.sql" }
     ].map(async migration => ({
       version: migration.version,
       sql: await readFile(resolve(process.cwd(), `../../database/migrations/${migration.file}`), "utf8")
