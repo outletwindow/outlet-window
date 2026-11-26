@@ -52,9 +52,10 @@ VALUES ('payout-outbox-decision','payout-outbox-tenant','payout-outbox-intent','
     'sandbox-provider','provider-merchant-123','provider-entity-456','payout-outbox-finance');
 
 INSERT INTO merchant_payout_destinations
-(id,tenant_id,merchant_id,provider_key,currency,vault_reference,verification_status,provider_entity_registry_id)
+(id,tenant_id,merchant_id,provider_key,currency,vault_reference,verification_status,provider_entity_registry_id,created_by)
 VALUES ('payout-outbox-destination','payout-outbox-tenant','payout-outbox-merchant',
- 'sandbox-provider','SAR','vault://tenant/merchant/payout','pending','payout-provider-entity-map');
+ 'sandbox-provider','SAR','vault://tenant/merchant/payout','pending','payout-provider-entity-map',
+ 'payout-outbox-destination-creator');
 UPDATE merchant_payout_destinations
 SET verification_status='verified',verified_by='payout-outbox-finance',verified_at=now()
 WHERE tenant_id='payout-outbox-tenant' AND id='payout-outbox-destination';
@@ -91,6 +92,56 @@ BEGIN
     WHERE tgrelid='public.merchant_payout_provider_outbox'::regclass
       AND tgname='merchant_payout_provider_outbox_guard' AND NOT tgisinternal
   ) THEN RAISE EXCEPTION 'payout outbox immutable transition guard missing'; END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger
+    WHERE tgrelid='public.merchant_payout_destinations'::regclass
+      AND tgname='merchant_payout_destination_dual_control' AND NOT tgisinternal
+  ) THEN RAISE EXCEPTION 'payout destination dual-control guard missing'; END IF;
+
+  INSERT INTO merchant_payout_destinations
+    (id,tenant_id,merchant_id,provider_key,currency,vault_reference,
+     verification_status,provider_entity_registry_id,created_by)
+  VALUES ('payout-outbox-self-approve-destination','payout-outbox-tenant',
+    'payout-outbox-merchant','sandbox-provider','SAR',
+    'vault://tenant/merchant/self-approval','pending','payout-provider-entity-map',
+    'payout-outbox-destination-creator');
+
+  BEGIN
+    UPDATE merchant_payout_destinations
+    SET verification_status='verified',verified_by='payout-outbox-destination-creator',verified_at=now()
+    WHERE id='payout-outbox-self-approve-destination';
+    RAISE EXCEPTION 'destination creator unexpectedly approved their own destination';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+
+  INSERT INTO merchant_payout_destinations
+    (id,tenant_id,merchant_id,provider_key,currency,vault_reference,verification_status,provider_entity_registry_id,created_by)
+  VALUES ('payout-outbox-revocation-test','payout-outbox-tenant','payout-outbox-merchant',
+    'sandbox-provider','SAR','vault://tenant/merchant/revoke-test','pending',
+    'payout-provider-entity-map','payout-outbox-revoke-creator');
+  UPDATE merchant_payout_destinations SET verification_status='verified',verified_by='payout-outbox-finance',verified_at=now()
+  WHERE id='payout-outbox-revocation-test';
+  BEGIN
+    UPDATE merchant_payout_destinations SET verification_status='revoked'
+    WHERE id='payout-outbox-revocation-test';
+    RAISE EXCEPTION 'destination revocation without actor unexpectedly accepted';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  UPDATE merchant_payout_destinations
+  SET verification_status='revoked',revoked_by='payout-outbox-admin',revoked_at=now()
+  WHERE id='payout-outbox-revocation-test';
+  IF NOT EXISTS (SELECT 1 FROM merchant_payout_destinations WHERE id='payout-outbox-revocation-test'
+    AND verification_status='revoked' AND revoked_by='payout-outbox-admin' AND revoked_at IS NOT NULL) THEN
+    RAISE EXCEPTION 'destination revocation actor was not persisted';
+  END IF;
+  BEGIN
+    UPDATE merchant_payout_destinations SET verification_status='verified'
+    WHERE id='payout-outbox-revocation-test';
+    RAISE EXCEPTION 'revoked destination unexpectedly reactivated';
+  EXCEPTION WHEN SQLSTATE '55000' THEN NULL;
+  END;
+
   IF NOT EXISTS (
     SELECT 1 FROM pg_indexes
     WHERE schemaname='public' AND tablename='merchant_payout_provider_outbox'
@@ -155,6 +206,21 @@ BEGIN
       submitted_at=now(),lease_owner=NULL,lease_expires_at=NULL
   WHERE tenant_id='payout-outbox-tenant' AND id=queued_id AND status='processing';
 
+  -- A direct status update must not manufacture a successful provider transfer.
+  BEGIN
+    UPDATE merchant_payout_provider_outbox
+    SET status='confirmed',confirmed_at=now()
+    WHERE tenant_id='payout-outbox-tenant' AND id=queued_id;
+    RAISE EXCEPTION 'direct payout confirmation without provider event unexpectedly accepted';
+  EXCEPTION WHEN SQLSTATE '55000' THEN NULL;
+  END;
+  IF NOT EXISTS (
+    SELECT 1 FROM merchant_payout_provider_outbox
+    WHERE tenant_id='payout-outbox-tenant' AND id=queued_id AND status='submitted'
+  ) THEN
+    RAISE EXCEPTION 'rejected direct confirmation changed payout state';
+  END IF;
+
   posted_journal_id := post_confirmed_merchant_payout(
     'payout-provider-event-1','payout-outbox-tenant',queued_id,'sandbox-provider',
     'provider-event-1','provider-payout-ref-1',5000,'SAR','payout-outbox-finance'
@@ -186,6 +252,79 @@ BEGIN
       WHERE tenant_id='payout-outbox-tenant' AND source_type='merchant_payout')<>1 THEN
     RAISE EXCEPTION 'duplicate payout confirmation created a second journal';
   END IF;
+
+  -- A verified returned event opens a controlled exception case; it does not
+  -- silently reverse or rewrite the already-posted payout journal.
+  IF record_verified_merchant_payout_exception(
+    'payout-return-case-1','payout-return-event-row-1','payout-outbox-tenant',
+    queued_id,'sandbox-provider','provider-return-event-1','provider-payout-ref-1',
+    'payout_returned',5000,'SAR'
+  ) <> 'payout-return-case-1' THEN
+    RAISE EXCEPTION 'returned payout event did not create its reconciliation case';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM merchant_payout_exception_cases
+    WHERE id='payout-return-case-1' AND review_status='open'
+      AND event_type='payout_returned' AND amount_minor=5000 AND currency='SAR'
+  ) THEN
+    RAISE EXCEPTION 'returned payout reconciliation case was not persisted';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM merchant_payout_provider_events
+    WHERE tenant_id='payout-outbox-tenant' AND provider_event_id='provider-return-event-1'
+      AND event_type='payout_returned' AND signature_verified=true
+  ) THEN
+    RAISE EXCEPTION 'verified returned provider event evidence was not persisted';
+  END IF;
+  IF (SELECT count(*) FROM financial_journals
+      WHERE tenant_id='payout-outbox-tenant' AND source_type='merchant_payout')<>1 THEN
+    RAISE EXCEPTION 'returned event unexpectedly created an automatic reversal journal';
+  END IF;
+  IF record_verified_merchant_payout_exception(
+    'payout-return-case-duplicate','payout-return-event-row-duplicate','payout-outbox-tenant',
+    queued_id,'sandbox-provider','provider-return-event-1','provider-payout-ref-1',
+    'payout_returned',5000,'SAR'
+  ) <> 'payout-return-case-1' THEN
+    RAISE EXCEPTION 'duplicate returned event did not return original exception case';
+  END IF;
+  BEGIN
+    UPDATE merchant_payout_exception_cases
+    SET provider_reference='tampered-reference'
+    WHERE id='payout-return-case-1';
+    RAISE EXCEPTION 'payout exception evidence unexpectedly mutable';
+  EXCEPTION WHEN SQLSTATE '55000' THEN NULL;
+  END;
+
+  UPDATE merchant_payout_exception_cases
+  SET review_status='under_review',review_started_by='finance-reviewer-1',review_started_at=now()
+  WHERE id='payout-return-case-1';
+  BEGIN
+    UPDATE merchant_payout_exception_cases
+    SET review_status='resolved',resolution_code='BANK_RETURN_CONFIRMED',
+      resolved_by='finance-reviewer-1',resolved_at=now()
+    WHERE id='payout-return-case-1';
+    RAISE EXCEPTION 'reviewer unexpectedly resolved own payout exception';
+  EXCEPTION WHEN SQLSTATE '23514' THEN NULL;
+  END;
+  IF (SELECT review_status FROM merchant_payout_exception_cases
+      WHERE id='payout-return-case-1')<>'under_review' THEN
+    RAISE EXCEPTION 'self-resolution attempt changed payout exception state';
+  END IF;
+  UPDATE merchant_payout_exception_cases
+  SET review_status='resolved',resolution_code='BANK_RETURN_CONFIRMED',
+    resolution_note='Provider and bank evidence checked',resolved_by='finance-reviewer-2',resolved_at=now()
+  WHERE id='payout-return-case-1';
+  IF NOT EXISTS (SELECT 1 FROM merchant_payout_exception_cases
+      WHERE id='payout-return-case-1' AND review_status='resolved'
+        AND review_started_by='finance-reviewer-1' AND resolved_by='finance-reviewer-2') THEN
+    RAISE EXCEPTION 'independent payout exception resolution was not attributed';
+  END IF;
+  BEGIN
+    UPDATE merchant_payout_exception_cases SET review_status='under_review'
+    WHERE id='payout-return-case-1';
+    RAISE EXCEPTION 'resolved payout exception was reopened';
+  EXCEPTION WHEN SQLSTATE '55000' THEN NULL;
+  END;
 
   -- A revoked provider identity must not accept a new payout submission,
   -- even when the old destination remains marked verified.

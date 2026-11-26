@@ -99,3 +99,37 @@ The API records audit events and rejects duplicate active merchant/provider iden
 Each payout destination must reference the immutable provider-entity registry row for the same tenant, merchant, and provider. The database rejects new or newly verified destinations without an active mapping, and the provider submission outbox rejects destinations whose mapping has been revoked. The payout worker also rechecks that mapping while claiming work; revocation therefore blocks future submissions even if a destination still carries a historical `verified` status. Legacy destinations without a mapping remain stored for audit/history but cannot be newly verified or submitted. Re-registering an entity does not silently rebind an old destination; a new destination must be registered against the new mapping.
 
 These controls validate local identity linkage only. They do not verify a bank account with Moyasar, create or send a transfer, or confirm money movement.
+
+
+## Merchant payout destination administration
+
+Platform staff manage payout destinations through these routes:
+
+- `GET /api/v1/platform/payout-destinations?tenantId=...&merchantId=...` lists safe destination summaries. Requires `platform.merchant_payout_destination:read` and a `finance`, `platform_admin`, or `platform_owner` role.
+- `POST /api/v1/platform/payout-destinations` registers a destination. Required fields: `tenantId`, `merchantId`, `providerKey=moyasar`, `currency`, `providerEntityRegistryId`, and `vaultReference`. Platform admin/owner only. New destinations always start as `pending`.
+- `POST /api/v1/platform/payout-destinations/:destinationId/verify` independently approves a pending destination. Requires the `approve` grant and a `finance`, `platform_admin`, or `platform_owner` role. The creator cannot approve their own destination.
+- `POST /api/v1/platform/payout-destinations/:destinationId/revoke` permanently revokes a destination. Platform admin/owner only.
+
+The database enforces creator attribution, pending-on-create, independent approval, immutable destination identity, and terminal revocation. Revocation requires an authenticated actor and timestamp (`revoked_by`, `revoked_at`); the actor and timestamp are immutable, and a revoked destination cannot be reactivated. A destination can be verified only while its linked provider entity remains active.
+
+### Vault reference privacy
+
+`vaultReference` is an opaque pointer supplied by a trusted vault integration or operator. This API stores it only for internal payout-worker resolution. It is never included in destination list/create/verify responses or audit metadata. No raw IBAN, bank account number, bank credentials, or provider secrets are accepted or stored by these endpoints. A vault service integration is not provided by this API surface; supplying a reference does not prove that the referenced secret exists or is valid.
+
+The payout outbox also rejects a direct transition from `submitted` to `confirmed` unless the same transaction has first recorded a matching, signature-verified `payout_confirmed` provider event. The event table does not grant ordinary application roles insert/update/delete access; the trusted reconciliation function records the event and posts the balanced journal atomically. A provider acceptance response remains `submitted`, never `confirmed`.
+
+
+### Failed, canceled, and returned payout reconciliation
+
+The database now provides a trusted persistence function for verified `payout_failed`, `payout_canceled`, and `payout_returned` events. When invoked by a provider adapter after signature verification and exact event decoding, it records immutable provider evidence and opens a case in `merchant_payout_exception_cases`. The Moyasar exception adapter now verifies the same signed body and event headers as the paid path, then accepts only `merchant_payout_failed`, `merchant_payout_canceled`, and `merchant_payout_returned` with matching payout status. It persists cases through the trusted database function after exact provider merchant/entity, outbox, reference, amount, currency, and status matching. The endpoint is `POST /api/v1/webhooks/payouts/moyasar/exceptions`; it uses the existing `MOYASAR_PAYOUT_WEBHOOK_SECRET` and `MOYASAR_EXPECT_LIVE` settings. Failed/canceled events require an outbox in `submitted`; returned requires an already `confirmed` outbox. The adapter deliberately leaves the outbox and financial journal unchanged pending finance review. The case starts as `open`; review status may progress to `under_review` and then `resolved`, with a resolution code, actor, and timestamp required for closure. Resolved cases are terminal.
+
+The database function `record_verified_merchant_payout_exception` exact-matches the tenant, outbox, provider, provider reference, amount, currency, and expected outbox state. Re-delivery of the same verified provider event returns the original case; conflicting reuse of an event ID is rejected. A `payout_returned` event is accepted only for an already-confirmed payout.
+
+
+### Finance review and independent case resolution
+
+Platform finance reviewers can list exception cases with `GET /api/v1/platform/payout-exception-cases?status=open|under_review|resolved`. A reviewer starts a case using `POST /api/v1/platform/payout-exception-cases/:caseId/review`; this records the authenticated actor and timestamp. A different finance/platform administrator may close it using `POST /api/v1/platform/payout-exception-cases/:caseId/resolve` with a controlled `resolutionCode` and optional note. The database rejects resolution by the same actor who started the review, requires attribution, and makes resolved cases terminal. All actions require finance/platform-admin/platform-owner authorization and are audited. Resolution is an administrative disposition only: the response explicitly reports `accountingReversalPosted: false`; it does not create a journal, move funds, or enable payout execution.
+
+**No automatic reversal is posted.** A returned transfer remains a finance reconciliation case until the underlying bank/provider movement and accounting treatment are independently reviewed. Any reversal journal must be a separate, balanced, approved accounting operation; this migration does not alter the original posted payout journal or claim that returned funds have been recovered.
+
+These endpoints administer records only. They do not verify a bank account with Moyasar, initiate a transfer, or enable live payouts.

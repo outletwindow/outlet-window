@@ -19,8 +19,12 @@ import { PostgresMerchantSettlementAccountingPoster } from "../../../packages/do
 import { PostgresMerchantPayoutAuthorizationStore } from "../../../packages/domain/src/postgres-merchant-payout-authorization-store.js";
 import { PostgresMerchantPayoutProviderOutbox } from "../../../packages/domain/src/postgres-merchant-payout-provider-outbox.js";
 import { PostgresMerchantPayoutProviderEntityRegistry } from "../../../packages/domain/src/postgres-merchant-payout-provider-entity-registry.js";
+import { PostgresMerchantPayoutDestinationRegistry } from "../../../packages/domain/src/postgres-merchant-payout-destination-registry.js";
 import { MoyasarMerchantPayoutConfirmationWebhookProcessor } from "../../../packages/domain/src/moyasar-merchant-payout-webhook.js";
 import { PostgresMoyasarMerchantPayoutConfirmationStore } from "../../../packages/domain/src/postgres-moyasar-merchant-payout-confirmation-store.js";
+import { MoyasarMerchantPayoutExceptionWebhookProcessor } from "../../../packages/domain/src/moyasar-merchant-payout-exception-processor.js";
+import { PostgresMoyasarMerchantPayoutExceptionStore } from "../../../packages/domain/src/postgres-moyasar-merchant-payout-exception-store.js";
+import { PostgresMerchantPayoutExceptionCaseStore } from "../../../packages/domain/src/postgres-merchant-payout-exception-case-store.js";
 import { IntegrationHub } from "../../../packages/domain/src/integration-hub.js";
 import { PostgresIntegrationRegistryStore } from "../../../packages/domain/src/postgres-integration-registry-store.js";
 import { PostgresPaymentWebhookInbox } from "../../../packages/domain/src/postgres-payment-webhook-inbox.js";
@@ -128,6 +132,8 @@ export function buildPostgresApp(options: PostgresApiOptions) {
     merchantPayoutAuthorization: new PostgresMerchantPayoutAuthorizationStore(options.pool),
     merchantPayoutProviderOutbox: new PostgresMerchantPayoutProviderOutbox(options.pool),
     merchantPayoutProviderEntities: new PostgresMerchantPayoutProviderEntityRegistry(options.pool),
+    merchantPayoutDestinations: new PostgresMerchantPayoutDestinationRegistry(options.pool),
+    merchantPayoutExceptionCases: new PostgresMerchantPayoutExceptionCaseStore(options.pool),
     ...(typeof process.env.MOYASAR_PAYOUT_WEBHOOK_SECRET === "string" &&
       process.env.MOYASAR_PAYOUT_WEBHOOK_SECRET.length >= 32 ? {
         merchantPayoutConfirmationWebhook: new MoyasarMerchantPayoutConfirmationWebhookProcessor({
@@ -135,6 +141,15 @@ export function buildPostgresApp(options: PostgresApiOptions) {
             providerKey === "moyasar" ? process.env.MOYASAR_PAYOUT_WEBHOOK_SECRET ?? null : null,
           store: new PostgresMoyasarMerchantPayoutConfirmationStore(options.pool),
           auditActorId: process.env.MOYASAR_PAYOUT_AUDIT_ACTOR_ID ?? "payout-webhook-service",
+          expectedLiveMode: process.env.MOYASAR_EXPECT_LIVE === "true"
+        })
+      } : {}),
+    ...(typeof process.env.MOYASAR_PAYOUT_WEBHOOK_SECRET === "string" &&
+      process.env.MOYASAR_PAYOUT_WEBHOOK_SECRET.length >= 32 ? {
+        merchantPayoutExceptionWebhook: new MoyasarMerchantPayoutExceptionWebhookProcessor({
+          secretResolver: async providerKey =>
+            providerKey === "moyasar" ? process.env.MOYASAR_PAYOUT_WEBHOOK_SECRET ?? null : null,
+          store: new PostgresMoyasarMerchantPayoutExceptionStore(options.pool),
           expectedLiveMode: process.env.MOYASAR_EXPECT_LIVE === "true"
         })
       } : {}),
@@ -295,7 +310,13 @@ export function buildPostgresApp(options: PostgresApiOptions) {
         "0074_merchant_payout_intents_and_dual_control",
         "0075_merchant_payout_provider_outbox",
         "0076_confirmed_merchant_payout_reconciliation",
-        "0077_merchant_payout_provider_entity_mapping"
+        "0077_merchant_payout_provider_entity_mapping",
+        "0078_bind_payout_destinations_to_provider_entities",
+        "0079_merchant_payout_destination_dual_control",
+        "0080_merchant_payout_destination_revocation_attribution",
+        "0081_require_verified_event_for_payout_confirmation",
+         "0082_verified_merchant_payout_exception_cases",
+         "0083_merchant_payout_exception_dual_control"
       ];
       const result = await options.pool.query<{ version: string }>(
         "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",
