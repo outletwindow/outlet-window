@@ -170,6 +170,13 @@ export interface MerchantPayoutConfirmationWebhookHandler {
     | { outcome: "invalid_signature_or_event" | "provider_not_configured" }
   >;
 }
+export interface MerchantPayoutExceptionWebhookHandler {
+  process(input: { rawBody: string; headers: Readonly<Record<string, string>> }): Promise<
+    | { outcome: "recorded" | "duplicate"; caseId: string }
+    | { outcome: "invalid_signature_or_event" | "provider_not_configured" }
+  >;
+}
+
 export interface PaymentRefundWebhookHandler {
   process(input: { providerKey: string; rawBody: string }): Promise<
     | { outcome: "applied" | "ignored" | "reconciliation_required" | "duplicate" }
@@ -302,6 +309,7 @@ export interface AppOptions {
   paymentCaptureWebhookHandler?: PaymentCaptureWebhookHandler;
   paymentRefundWebhookHandler?: PaymentRefundWebhookHandler;
   merchantPayoutConfirmationWebhook?: MerchantPayoutConfirmationWebhookHandler;
+  merchantPayoutExceptionWebhook?: MerchantPayoutExceptionWebhookHandler;
   paymentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
   fulfillmentHandoverInbox?: FulfillmentHandoverInboxWriter;
   fulfillmentWebhookSecretResolver?: (providerKey: string) => Promise<string | null>;
@@ -1098,6 +1106,50 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     if (result.outcome === "invalid_signature_or_event") {
       return reply.code(401).send({ error: "invalid_webhook_secret_or_event" });
     }
+    return reply.code(200).send(result);
+  });
+
+  app.post<{
+    Params: { providerKey: string };
+    Body: unknown;
+  }>("/api/v1/webhooks/payouts/:providerKey/exceptions", {
+    bodyLimit: 65_536,
+    preParsing: async (request, reply, payload) => {
+      const chunks: Buffer[] = [];
+      let size = 0;
+      for await (const chunk of payload) {
+        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
+        size += buffer.length;
+        if (size > 65_536) {
+          reply.code(413).send({ error: "webhook_payload_too_large" });
+          return Readable.from([]);
+        }
+        chunks.push(buffer);
+      }
+      const raw = Buffer.concat(chunks);
+      merchantPayoutWebhookRawBodies.set(request, raw.toString("utf8"));
+      return Readable.from([raw]);
+    }
+  }, async (request, reply) => {
+    if (reply.sent) return reply;
+    if (request.params.providerKey !== "moyasar") return reply.code(404).send({ error: "payout_provider_not_supported" });
+    if (!options.merchantPayoutExceptionWebhook) return reply.code(503).send({ error: "payout_exception_webhook_unavailable" });
+    const rawBody = merchantPayoutWebhookRawBodies.get(request);
+    if (!rawBody) return reply.code(400).send({ error: "empty_webhook_body" });
+    const headerValue = (value: string | string[] | undefined): string | undefined =>
+      value === undefined ? undefined : Array.isArray(value) ? value.join(",") : value;
+    const headers: Record<string, string> = {};
+    const eventId = headerValue(request.headers["x-event-id"]);
+    const eventType = headerValue(request.headers["x-event-type"]);
+    const eventSecret = headerValue(request.headers["x-event-secret"]);
+    if (eventId !== undefined) headers["x-event-id"] = eventId;
+    if (eventType !== undefined) headers["x-event-type"] = eventType;
+    if (eventSecret !== undefined) headers["x-event-secret"] = eventSecret;
+    let result: Awaited<ReturnType<MerchantPayoutExceptionWebhookHandler["process"]>>;
+    try { result = await options.merchantPayoutExceptionWebhook.process({ rawBody, headers }); }
+    catch { return reply.code(500).send({ error: "payout_exception_processing_failed" }); }
+    if (result.outcome === "provider_not_configured") return reply.code(503).send({ error: "webhook_provider_not_configured" });
+    if (result.outcome === "invalid_signature_or_event") return reply.code(401).send({ error: "invalid_webhook_secret_or_event" });
     return reply.code(200).send(result);
   });
 
