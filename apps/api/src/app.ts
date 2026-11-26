@@ -1593,8 +1593,10 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     await options.auditEvents.append(createAuditEvent({...base,id:randomUUID(),
       type:result.outcome==="started"?"payout_exception.review_started":"payout_exception.review_rejected",
       outcome:result.outcome==="started"?"success":"failure",metadata:{caseId:request.params.caseId,reason:result.outcome}}));
-    if(result.outcome==="not_found") return reply.code(404).send({error:"payout_exception_case_not_found"});
-    if(result.outcome==="not_open") return reply.code(409).send({error:"payout_exception_case_not_open"});
+    if(result.outcome!=="started") {
+      if(result.outcome==="not_found") return reply.code(404).send({error:"payout_exception_case_not_found"});
+      return reply.code(409).send({error:"payout_exception_case_not_open"});
+    }
     return reply.code(200).send({case:result.case});
   });
 
@@ -1627,9 +1629,11 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       type:result.outcome==="resolved"?"payout_exception.resolved":"payout_exception.resolution_rejected",
       outcome:result.outcome==="resolved"?"success":"failure",metadata:{caseId:request.params.caseId,
         resolutionCode:body.resolutionCode,reason:result.outcome}}));
-    if(result.outcome==="not_found") return reply.code(404).send({error:"payout_exception_case_not_found"});
-    if(result.outcome==="not_under_review") return reply.code(409).send({error:"payout_exception_case_not_under_review"});
-    if(result.outcome==="reviewer_cannot_resolve") return reply.code(409).send({error:"payout_exception_independent_reviewer_required"});
+    if(result.outcome!=="resolved") {
+      if(result.outcome==="not_found") return reply.code(404).send({error:"payout_exception_case_not_found"});
+      if(result.outcome==="not_under_review") return reply.code(409).send({error:"payout_exception_case_not_under_review"});
+      return reply.code(409).send({error:"payout_exception_independent_reviewer_required"});
+    }
     return reply.code(200).send({case:result.case,accountingReversalPosted:false});
   });
 
